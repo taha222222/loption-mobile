@@ -1,0 +1,68 @@
+{
+  "expo": {
+    "name": "LOPTION",
+    "slug": "loption",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "loption",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#111827"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.loption.app",
+      "jsEngine": "jsc",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "L'OPTION needs your location to track deliveries",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#111827"
+      },
+      "package": "com.loption.app",
+      "jsEngine": "jsc",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#111827",
+          "sounds": [
+            "./assets/notification.wav"
+          ]
+        }
+      ],
+      "expo-localization",
+      "expo-status-bar"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "newArchEnabled": true,
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ab960bde-29d4-47e4-b7e5-8b428bf38913"
+      }
+    }
+  }
+}

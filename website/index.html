@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>L'OPTION - Premium Fitness Meals</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #ffffff;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 60px;
+    }
+    .logo {
+      font-size: 48px;
+      font-weight: bold;
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 16px;
+    }
+    .tagline {
+      font-size: 20px;
+      color: #94a3b8;
+    }
+    .plans {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 30px;
+      margin-bottom: 60px;
+    }
+    .plan {
+      background: #1e293b;
+      border-radius: 24px;
+      padding: 32px;
+      position: relative;
+      transition: transform 0.3s;
+    }
+    .plan:hover {
+      transform: translateY(-5px);
+    }
+    .plan.popular {
+      border: 2px solid #fbbf24;
+    }
+    .popular-badge {
+      position: absolute;
+      top: -12px;
+      right: 20px;
+      background: #fbbf24;
+      color: #0f172a;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    .plan-name {
+      font-size: 24px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+    .plan-price {
+      font-size: 36px;
+      font-weight: bold;
+      color: #fbbf24;
+      margin: 16px 0;
+    }
+    .plan-price small {
+      font-size: 14px;
+      color: #94a3b8;
+    }
+    .features {
+      list-style: none;
+      margin: 24px 0;
+    }
+    .features li {
+      padding: 8px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .features li::before {
+      content: "✓";
+      color: #10b981;
+      font-weight: bold;
+    }
+    button {
+      width: 100%;
+      padding: 16px;
+      background: #3b82f6;
+      border: none;
+      border-radius: 12px;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background: #2563eb;
+    }
+    button.gold {
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      color: #0f172a;
+    }
+    .footer {
+      text-align: center;
+      color: #64748b;
+      font-size: 14px;
+      margin-top: 40px;
+    }
+    @media (max-width: 768px) {
+      .plans {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <img src="/assets/loption.png" alt="L'OPTION" style="height: 48px; width: auto;">
+      <div class="tagline">Transform your body. Elevate your life.</div>
+    </div>
+
+    <div class="plans">
+      <!-- Meals Only Plan -->
+      <div class="plan">
+        <div class="plan-name">Meals Only</div>
+        <div class="plan-price">499 MAD <small>/month</small></div>
+        <ul class="features">
+          <li>Full menu access</li>
+          <li>Free delivery</li>
+          <li>Basic nutrition tracking</li>
+          <li>Order history</li>
+        </ul>
+        <button onclick="subscribe('meals_only')">Get Started</button>
+      </div>
+
+      <!-- Coaching Plan - Popular -->
+      <div class="plan popular">
+        <div class="popular-badge">MOST POPULAR</div>
+        <div class="plan-name">Coaching</div>
+        <div class="plan-price">799 MAD <small>/month</small></div>
+        <ul class="features">
+          <li>Everything in Meals Only</li>
+          <li>Weekly coaching calls</li>
+          <li>Custom meal plans</li>
+          <li>Priority support</li>
+          <li>10% off all meals</li>
+        </ul>
+        <button class="gold" onclick="subscribe('coaching')">Get Started</button>
+      </div>
+
+      <!-- Transformation Plan -->
+      <div class="plan">
+        <div class="plan-name">Transformation</div>
+        <div class="plan-price">1,299 MAD <small>/month</small></div>
+        <ul class="features">
+          <li>Everything in Coaching</li>
+          <li>Daily check-ins</li>
+          <li>Before/after analysis</li>
+          <li>Unlimited meal swaps</li>
+          <li>20% off all meals</li>
+        </ul>
+        <button onclick="subscribe('transformation')">Get Started</button>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>Secure payment powered by Stripe • Cancel anytime • 7-day money-back guarantee</p>
+    </div>
+  </div>
+
+  <script>
+    function subscribe(plan) {
+      // In production, redirect to Stripe checkout
+      // For now, simulate subscription and deep link to app
+      console.log('Selected plan:', plan);
+      
+      // Simulate successful payment
+      const userId = localStorage.getItem('userId') || 'test-user-123';
+      
+      // In production, this would be a POST to your backend
+      fetch('/api/create-subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, plan })
+      }).then(() => {
+        // Deep link to mobile app
+        window.location.href = `loption://subscription/active?plan=${plan}`;
+      }).catch(() => {
+        alert('Demo: Subscription would activate now');
+        window.location.href = `loption://subscription/active?plan=${plan}`;
+      });
+    }
+  </script>
+</body>
+</html>

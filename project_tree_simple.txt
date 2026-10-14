@@ -1,0 +1,43 @@
+Project: loption-mobile
+============================================================
+.
+├── app/
+│   ├── (admin)/
+│   ├── (app)/
+│   │   └── order-tracking/
+│   ├── (auth)/
+│   ├── (collaborator)/
+│   │   └── orders/
+│   ├── (driver)/
+│   │   └── orders/
+│   └── webview/
+├── assets/
+├── src/
+│   ├── components/
+│   │   ├── admin/
+│   │   ├── maps/
+│   │   ├── subscription/
+│   │   └── ui/
+│   ├── hooks/
+│   ├── i18n/
+│   ├── lib/
+│   ├── services/
+│   ├── stores/
+│   ├── theme/
+│   └── types/
+├── web/
+│   └── index.html (559B)
+├── website/
+│   └── index.html (5.7KB)
+├── babel.config.js (111B)
+└── metro.config.js (266B)
+
+============================================================
+
+PROJECT SUMMARY:
+Total directories: 26
+Total files: 4
+PHP files: 0
+Important files (PHP/JS/CSS/HTML/SQL/ENV): 4
+Excluded directories: .git, .idea, .vscode, __pycache__, cache, logs, node_modules, temp, tmp, vendor
+Tree depth limit: 4

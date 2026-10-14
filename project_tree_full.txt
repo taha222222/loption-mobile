@@ -1,0 +1,130 @@
+Project: loption-mobile
+============================================================
+.
+├── app/
+│   ├── (admin)/
+│   │   ├── _layout.tsx (2.1KB)
+│   │   ├── collaborators.tsx (18.2KB)
+│   │   ├── drivers.tsx (14.9KB)
+│   │   ├── earnings.tsx (6.4KB)
+│   │   ├── index.tsx (14.4KB)
+│   │   ├── meals.tsx (27.1KB)
+│   │   └── orders.tsx (12.1KB)
+│   ├── (app)/
+│   │   ├── order-tracking/
+│   │   │   └── [id].tsx (11.4KB)
+│   │   ├── _layout.tsx (12.7KB)
+│   │   ├── cart.tsx (9.2KB)
+│   │   ├── checkout.tsx (11.1KB)
+│   │   ├── index.tsx (12.4KB)
+│   │   ├── menu.tsx (11.0KB)
+│   │   ├── my-plan.tsx (13.8KB)
+│   │   ├── orders.tsx (6.9KB)
+│   │   ├── profile.tsx (23.1KB)
+│   │   ├── progress.tsx (4.8KB)
+│   │   ├── reorder.tsx (10.1KB)
+│   │   ├── test.tsx (12.9KB)
+│   │   └── upgrade.tsx (12.8KB)
+│   ├── (auth)/
+│   │   ├── _layout.tsx (240B)
+│   │   ├── login.tsx (12.3KB)
+│   │   └── signup.tsx (18.0KB)
+│   ├── (collaborator)/
+│   │   ├── orders/
+│   │   │   └── [id].tsx (15.6KB)
+│   │   ├── _layout.tsx (1.6KB)
+│   │   ├── earnings.tsx (10.3KB)
+│   │   ├── index.tsx (9.9KB)
+│   │   ├── orders.tsx (10.2KB)
+│   │   └── profile.tsx (8.2KB)
+│   ├── (driver)/
+│   │   ├── orders/
+│   │   │   └── [id].tsx (23.5KB)
+│   │   ├── _layout.tsx (1.8KB)
+│   │   ├── earnings.tsx (15.3KB)
+│   │   ├── extractor.py (2.1KB)
+│   │   ├── history.tsx (8.9KB)
+│   │   ├── index.tsx (18.7KB)
+│   │   ├── output.txt (76.1KB)
+│   │   └── profile.tsx (7.7KB)
+│   ├── webview/
+│   │   └── index.tsx (2.8KB)
+│   ├── _layout.tsx (6.6KB)
+│   ├── index.tsx (117B)
+│   └── onboarding.tsx (25.8KB)
+├── assets/
+│   ├── ChatGPT Image Jun 5, 2026, 05_35_46 PM.png (2.1MB)
+│   ├── adaptive-icon.png (17.1KB)
+│   ├── favicon.png (1.4KB)
+│   ├── icon.png (109.4KB)
+│   ├── icon_BAK.png (21.9KB)
+│   ├── loption.png (259.6KB)
+│   ├── onboarding.png (588.9KB)
+│   └── splash-icon.png (17.1KB)
+├── src/
+│   ├── components/
+│   │   ├── admin/
+│   │   │   └── AdminAuthModal.tsx (5.2KB)
+│   │   ├── maps/
+│   │   │   └── DriverMap.tsx (4.8KB)
+│   │   ├── subscription/
+│   │   │   └── TierCard.tsx (4.4KB)
+│   │   └── ui/
+│   │       ├── Button.tsx (3.8KB)
+│   │       ├── Card.tsx (1.0KB)
+│   │       ├── MealCard.tsx (5.8KB)
+│   │       └── QuantitySelector.tsx (1.9KB)
+│   ├── hooks/
+│   │   └── useTranslation.ts (142B)
+│   ├── i18n/
+│   │   └── index.ts (9.2KB)
+│   ├── lib/
+│   │   └── supabase.ts (457B)
+│   ├── services/
+│   │   ├── locationService.ts (5.7KB)
+│   │   └── notificationService.ts (5.4KB)
+│   ├── stores/
+│   │   ├── adminStore.ts (10.7KB)
+│   │   ├── authStore.ts (5.0KB)
+│   │   ├── cartStore.ts (2.5KB)
+│   │   ├── collaboratorStore.ts (6.9KB)
+│   │   ├── driverEarningsStore.ts (1.6KB)
+│   │   ├── subscriptionStore.ts (1.6KB)
+│   │   └── userStore.ts (5.1KB)
+│   ├── theme/
+│   │   ├── colors.ts (878B)
+│   │   ├── gradients.ts (257B)
+│   │   ├── index.ts (327B)
+│   │   ├── shadows.ts (703B)
+│   │   ├── spacing.ts (160B)
+│   │   └── typography.ts (619B)
+│   └── types/
+│       └── onboarding.ts (512B)
+├── web/
+│   └── index.html (559B)
+├── website/
+│   └── index.html (5.7KB)
+├── App.tsx (27B)
+├── App.tsx.disabled.bak (455B)
+├── DEPLOYMENT_ANALYSIS_REPORT.txt (6.8KB)
+├── analyze_project.py (23.2KB)
+├── app.json (1.3KB)
+├── babel.config.js (111B)
+├── expo-env.d.ts (110B)
+├── extractor.py (2.1KB)
+├── index.ts (27B)
+├── metro.config.js (266B)
+├── package.json (1.4KB)
+├── s.txt (10.7KB)
+├── script.py (12.9KB)
+└── tsconfig.json (183B)
+
+============================================================
+
+PROJECT SUMMARY:
+Total directories: 26
+Total files: 91
+PHP files: 0
+Important files (PHP/JS/CSS/HTML/SQL/ENV): 4
+Excluded directories: .git, .idea, .vscode, __pycache__, cache, logs, node_modules, temp, tmp, vendor
+Tree depth limit: 5

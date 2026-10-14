@@ -1,0 +1,38 @@
+export const typography = {
+  fonts: {
+    regular: 'System',
+    medium: 'System',
+    semibold: 'System',
+    bold: 'System',
+  },
+  sizes: {
+    xs: 12,
+    sm: 14,
+    md: 16,
+    lg: 18,
+    xl: 20,
+    '2xl': 24,
+    '3xl': 28,
+    '4xl': 32,
+    '5xl': 40,
+    '6xl': 48,
+  },
+  lineHeights: {
+    xs: 16,
+    sm: 20,
+    md: 24,
+    lg: 28,
+    xl: 32,
+    '2xl': 36,
+    '3xl': 40,
+    '4xl': 48,
+    '5xl': 56,
+    '6xl': 64,
+  },
+  weights: {
+    normal: '400' as const,
+    medium: '500' as const,
+    semibold: '600' as const,
+    bold: '700' as const,
+  },
+} as const;
