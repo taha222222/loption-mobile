@@ -165,6 +165,8 @@ select extname, extversion from pg_extension order by 1;
 
 *Query check:* all 21 statements above were executed without error on a disposable local PostgreSQL 16 instance. It held minimal stand-in objects (roles, a `storage.buckets` table, a few `public` tables, a policy, a grant, a trigger, an enum, a view and a publication) created only so every query had something to return. The instance was deleted afterwards. This checks the SQL only and says nothing about L'OPTION's schema. Supabase runs PostgreSQL 15/17 depending on the project; the catalogs used here are the same.
 
+**Single-query option (no Docker, no password):** `supabase/evidence/phase1b_catalog_query.sql` combines Q1–Q12, Q14 and Q15 into one read-only query that returns a single JSON document. It also reports effective `anon`/`authenticated` privileges per table and function, column-level ACLs, and the definitions of functions used by triggers on `public`/`auth`/`storage` tables. Run Q13 separately. This was added because `supabase db dump` needs Docker, which is not installed on the machine used.
+
 **Dashboard settings (read only, screenshots or notes):**
 - Auth: whether sign-ups are enabled, email confirmation, enabled providers, JWT expiry.
 - **Auth Hooks**, especially any custom access-token hook that adds role claims.
