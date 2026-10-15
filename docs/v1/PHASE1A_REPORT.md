@@ -2,7 +2,7 @@
 
 Branch: `claude/phase-1a-client-hardening` (branched from `claude/peaceful-shannon-ewahm3` @ `545a835`, which holds the Phase 0 audit). **Not merged.** Awaiting CTO review.
 
-Phase 1A changes the client only. No migrations were written, applied or deployed; no Supabase project was touched; no RLS, columns, kitchen schema or pricing were invented. Card payments were not touched (still a UI option that creates an unpaid order — Phase 2/3).
+Phase 1A changes the client only. No migrations were written, applied or deployed; no Supabase project was touched; no RLS, columns, kitchen schema or pricing were invented. Card payments: removed from checkout by the CTO follow-up (§6). V1 checkout is Cash on Delivery only.
 
 ## 1. Files changed
 
@@ -79,7 +79,7 @@ The tests caught one bug in my first draft (a cold start wiped the same user's p
 
 **Intentionally unchanged:**
 - The role cascade order and the "no rows anywhere → customer" default (to preserve existing accounts).
-- Checkout, pricing (hard-coded 15 MAD), order creation, `'card'` option, driver/partner flows, financial screens. These are Phase 2–3. COD orders are still not represented as paid or unpaid in any new way.
+- Checkout pricing (hard-coded 15 MAD), non-atomic order creation, driver/partner flows, financial screens. These are Phase 2–3. (The `'card'` option was removed in §6.)
 - The partner (`collaborator`) role and screens still exist for compatibility with existing data. No new partner features were added. Per the new direction, they should become kitchen/cashier staff roles in Phase 1B.
 - Out-of-scope subscription screens and the `subscription/active` deep link (Phase 5 removal).
 - The dev artefacts already tracked (`app/(driver)/extractor.py`, `app/(driver)/output.txt`, `assets/icon_BAK.png`). They contain no secrets; removal is left to the Phase 5 cleanup.
@@ -91,3 +91,39 @@ The tests caught one bug in my first draft (a cold start wiped the same user's p
 3. Approve a staging Supabase project and a schema-only dump (policies, triggers, functions) for Phase 1B.
 4. Should sign-out set a driver `offline` server-side, and should push tokens be per-device rows deleted on logout? This depends on the schema.
 5. Approve a separate lint-cleanup task (49 pre-existing errors).
+
+## 6. CTO follow-up — COD-only checkout
+
+V1 accepts **Cash on Delivery only**. Changes on the same branch, still not merged.
+
+### Files changed
+| File | Change |
+|---|---|
+| `src/checkout/orderPayload.ts` (new) | `COD_PAYMENT_METHOD = 'cash'` (the value existing rows already use), `assertSupportedPaymentMethod()`, `buildOrderInsert()`. The builder rejects anything except `'cash'`, including `'card'`, other casings, empty strings, `null` and non-strings. Its output has the same fields checkout wrote before. It contains no paid, `payment_status` or transaction field. |
+| `app/(app)/checkout.tsx` | Removed the "Credit/Debit Card" option and the payment-method state. Payment is now a fixed, non-interactive "Cash on Delivery" row with the note "Pay in cash when your order is delivered. Card payment is not available yet." The order insert is built by `buildOrderInsert(... COD_PAYMENT_METHOD)`. If the builder rejects, the user sees an error and nothing is inserted. A missing user is now rejected instead of inserting `user_id: undefined`. |
+| `__tests__/orderPayload.test.ts` (new) | COD default; `'card'`, `'CARD'`, `'Cash'`, `'online'`, `'wallet'`, `''`, `null`, numbers and objects are all rejected; the payload carries no paid/payment-status/transaction field; existing fields are preserved. |
+| `__tests__/checkoutScreen.test.tsx` (new) | Renders the real checkout screen with a mocked Supabase client. Checks that only Cash on Delivery is offered and no card text appears. Checks that placing an order inserts `payment_method: 'cash'` with no paid field. |
+| `__tests__/authSession.test.ts` | Imports moved to the top (lint `import/first`); no behaviour change. |
+| `package.json` / `package-lock.json` | Dev dependency `@testing-library/react-native` 14.1.0, installed via `npx expo install` (needed for the screen test). |
+
+No migration, no backend change, no payment integration or simulated payment success. No existing records are changed or deleted. Legacy orders that already have `payment_method = 'card'` still display as "Card Payment" in the driver screen, which is unchanged.
+
+### "Paid" status
+- No client code sets a paid flag, `payment_status`, or a paid timestamp. The new tests assert this for checkout.
+- The `status: 'confirmed'` that checkout still writes is the existing **order-lifecycle** value. It is not a payment state, and I left it unchanged to keep compatibility with the current driver queries.
+- There is no cashier-confirmation flow in the app yet. When Phase 2 adds it (support phone confirmation, then cashier confirmation), it must not change payment state. A COD order becomes paid only when collected cash is recorded and reconciled.
+- Recommendation for Phase 2: the initial status should become something like `pending_confirmation`, so that "confirmed" is not confused with "paid".
+
+### Other client paths (item 6)
+- **In the app:** `app/(app)/checkout.tsx` is the only code path that inserts orders or sets `payment_method`. The other writers are the driver screens, `locationService`, admin `orders.tsx` and `adminStore`. They update only `status`, `driver_id`, timestamps and location columns, never payment fields. `website/index.html` calls a subscription endpoint, not order creation.
+- **Outside the app: still possible.** Any signed-in user holds the public anon key and their own JWT. They can call the Supabase REST API directly, e.g. `POST /rest/v1/orders` with `payment_method: 'card'`, or `PATCH` their own order's `payment_method` or `status`, unless the database prevents it. Whether RLS, a CHECK constraint or column privileges prevent this is **unverified**.
+- **Server-side enforcement is a separate, required piece of work (Phase 1B/2), blocked on backend access.** It should include: a constraint or enum allowing only `'cash'` for new orders, without rewriting existing rows; no direct client `INSERT`/`UPDATE` on `orders`; and order creation through a trusted RPC that sets `payment_method` and the initial status server-side.
+
+### Commands run and results
+| Command | Result |
+|---|---|
+| `npx expo install -- --save-dev @testing-library/react-native` | installed 14.1.0 |
+| `npm test` | **exit 0 — 6 suites, 41 tests passed** (27 from Phase 1A + 14 new) |
+| Mutation check: temporarily changed checkout to pass `'card'`, ran `npx jest __tests__/checkoutScreen.test.tsx`, then restored the file | the submit test **failed as intended** (no order inserted); the file was restored and all tests pass again |
+| `npm run typecheck` | **exit 0, 0 errors** |
+| `npm run lint` | exit 1 — 102 problems (49 errors, 53 warnings), the same pre-existing errors as before this follow-up; `npx eslint __tests__ src/checkout "app/(app)/checkout.tsx"` exits 0 with no problems |

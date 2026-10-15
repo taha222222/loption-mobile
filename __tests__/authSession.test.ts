@@ -1,4 +1,10 @@
 // Auth lifecycle and sign-out cleanup, against a mocked Supabase client.
+import { useAuthStore } from '../src/stores/authStore';
+import { useCartStore } from '../src/stores/cartStore';
+import { useUserStore } from '../src/stores/userStore';
+import { useCollaboratorStore } from '../src/stores/collaboratorStore';
+import { locationService } from '../src/services/locationService';
+
 type Row = Record<string, any> | null;
 
 const mockState: {
@@ -55,12 +61,6 @@ jest.mock('../src/services/locationService', () => ({
 function sessionFor(email: string) {
   return { access_token: 't', user: { id: `id-${email}`, email } };
 }
-
-import { useAuthStore } from '../src/stores/authStore';
-import { useCartStore } from '../src/stores/cartStore';
-import { useUserStore } from '../src/stores/userStore';
-import { useCollaboratorStore } from '../src/stores/collaboratorStore';
-import { locationService } from '../src/services/locationService';
 
 const meal = { id: 'meal-1', name: 'Bowl', price: 69, calories: 450, protein: 35 };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));

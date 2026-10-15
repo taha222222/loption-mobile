@@ -17,12 +17,10 @@ import { useCartStore } from '../../src/stores/cartStore';
 import { useAuthStore } from '../../src/stores/authStore';
 import { supabase } from '../../src/lib/supabase';
 import { notificationService } from '../../src/services/notificationService';
-
-type PaymentMethod = 'cash' | 'card';
+import { buildOrderInsert, COD_PAYMENT_METHOD } from '../../src/checkout/orderPayload';
 
 export default function CheckoutScreen() {
   const [address, setAddress] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [loading, setLoading] = useState(false);
   const { items, getTotalPrice, clearCart } = useCartStore();
   const { user } = useAuthStore();
@@ -48,21 +46,34 @@ export default function CheckoutScreen() {
 
     setLoading(true);
 
+    if (!user) {
+      Alert.alert('Error', 'Please sign in again to place your order');
+      setLoading(false);
+      return;
+    }
+
     const orderNumber = generateOrderNumber();
+
+    // V1 is Cash on Delivery only; buildOrderInsert rejects any other method.
+    let orderInsert: ReturnType<typeof buildOrderInsert>;
+    try {
+      orderInsert = buildOrderInsert({
+        userId: user.id,
+        orderNumber,
+        subtotal,
+        deliveryFee,
+        deliveryAddress: address,
+        paymentMethod: COD_PAYMENT_METHOD,
+      });
+    } catch (error: any) {
+      Alert.alert('Error', error?.message ?? 'This payment method is not available');
+      setLoading(false);
+      return;
+    }
 
     const { data: order, error: orderError } = await supabase
       .from('orders')
-      .insert({
-        user_id: user?.id,
-        order_number: orderNumber,
-        status: 'confirmed',
-        subtotal: subtotal,
-        delivery_fee: deliveryFee,
-        total: total,
-        payment_method: paymentMethod,
-        delivery_address: address,
-        created_at: new Date().toISOString(),
-      })
+      .insert(orderInsert)
       .select()
       .single();
 
@@ -165,55 +176,19 @@ export default function CheckoutScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Payment Method</Text>
-          <TouchableOpacity
-            style={[
-              styles.paymentOption,
-              paymentMethod === 'cash' && styles.paymentOptionSelected,
-            ]}
-            onPress={() => setPaymentMethod('cash')}
+          <View
+            style={[styles.paymentOption, styles.paymentOptionSelected]}
+            testID="payment-method-cod"
           >
-            <Ionicons
-              name="cash-outline"
-              size={24}
-              color={paymentMethod === 'cash' ? theme.colors.gold : theme.colors.textLight}
-            />
-            <Text
-              style={[
-                styles.paymentText,
-                paymentMethod === 'cash' && styles.paymentTextSelected,
-              ]}
-            >
+            <Ionicons name="cash-outline" size={24} color={theme.colors.gold} />
+            <Text style={[styles.paymentText, styles.paymentTextSelected]}>
               Cash on Delivery
             </Text>
-            {paymentMethod === 'cash' && (
-              <Ionicons name="checkmark-circle" size={24} color={theme.colors.gold} />
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.paymentOption,
-              paymentMethod === 'card' && styles.paymentOptionSelected,
-            ]}
-            onPress={() => setPaymentMethod('card')}
-          >
-            <Ionicons
-              name="card-outline"
-              size={24}
-              color={paymentMethod === 'card' ? theme.colors.gold : theme.colors.textLight}
-            />
-            <Text
-              style={[
-                styles.paymentText,
-                paymentMethod === 'card' && styles.paymentTextSelected,
-              ]}
-            >
-              Credit/Debit Card
-            </Text>
-            {paymentMethod === 'card' && (
-              <Ionicons name="checkmark-circle" size={24} color={theme.colors.gold} />
-            )}
-          </TouchableOpacity>
+            <Ionicons name="checkmark-circle" size={24} color={theme.colors.gold} />
+          </View>
+          <Text style={styles.paymentNote}>
+            Pay in cash when your order is delivered. Card payment is not available yet.
+          </Text>
         </View>
 
         <View style={styles.section}>
@@ -333,6 +308,11 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: theme.typography.sizes.md,
     color: theme.colors.textDark,
+  },
+  paymentNote: {
+    fontSize: 13,
+    color: theme.colors.textLight,
+    marginTop: theme.spacing.xs,
   },
   paymentTextSelected: {
     color: theme.colors.gold,
