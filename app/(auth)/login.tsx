@@ -68,13 +68,14 @@ export default function LoginScreen() {
       Alert.alert('Login Failed', error.message);
     } else {
       const { user, role } = useAuthStore.getState();
-      if (user) {
+      if (user && role) {
         const token = await notificationService.registerForPushNotificationsAsync();
         if (token) {
-          await notificationService.savePushToken(user.id, token, role || 'customer');
+          await notificationService.savePushToken(user.id, token, role);
         }
       }
-      router.replace('/(app)');
+      // The root layout routes to the correct home for the resolved role.
+      router.replace('/');
     }
   };
 

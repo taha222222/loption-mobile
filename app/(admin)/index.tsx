@@ -121,7 +121,11 @@ export default function AdminOverview() {
           text: 'Sign Out', 
           style: 'destructive',
           onPress: async () => {
-            await signOut();
+            const { error } = await signOut();
+            if (error) {
+              Alert.alert('Sign out failed', 'Check your connection and try again.');
+              return;
+            }
             router.replace('/(auth)/login');
           }
         },

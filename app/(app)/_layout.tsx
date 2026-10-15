@@ -1,8 +1,17 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../src/theme';
+import { RouteGate } from '../../src/components/navigation/RouteGate';
 
 export default function AppLayout() {
+  return (
+    <RouteGate group="(app)">
+      <AppTabs />
+    </RouteGate>
+  );
+}
+
+function AppTabs() {
   return (
     <Tabs
       screenOptions={{

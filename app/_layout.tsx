@@ -1,137 +1,43 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { Stack, router, useSegments } from 'expo-router';
 import { Linking, Alert } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';  // <-- ADD THIS LINE
+import { StatusBar } from 'expo-status-bar';
 import { useAuthStore } from '../src/stores/authStore';
 import { useUserStore } from '../src/stores/userStore';
 import { useSubscriptionStore } from '../src/stores/subscriptionStore';
+import { useRouteDecision } from '../src/navigation/useRouteDecision';
 import '../src/i18n';
 import { notificationService } from '../src/services/notificationService';
 
+// Performs the redirects decided by the routing policy. Group layouts render
+// <RouteGate>, so screens never mount before this has settled.
 function useProtectedRoute() {
   const segments = useSegments();
-  const { session, isLoading, role } = useAuthStore();
-  const { profile, loadProfile } = useUserStore();
-  const isChecking = useRef(false);
+  const group = segments[0] as string | undefined;
+  const decision = useRouteDecision(group);
 
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  const role = useAuthStore((s) => s.role);
+  const roleStatus = useAuthStore((s) => s.roleStatus);
+  const loadedUserId = useUserStore((s) => s.loadedUserId);
+  const loadProfile = useUserStore((s) => s.loadProfile);
+
+  // Customers need their nutrition profile to decide onboarding vs. app.
   useEffect(() => {
-    const checkAuth = async () => {
-      if (isLoading || isChecking.current) {
-        console.log('Auth check skipped - loading or already checking');
-        return;
-      }
-      isChecking.current = true;
+    if (userId && roleStatus === 'resolved' && role === 'customer' && loadedUserId !== userId) {
+      loadProfile(userId);
+    }
+  }, [userId, role, roleStatus, loadedUserId, loadProfile]);
 
-      const inAuthGroup = segments[0] === '(auth)';
-      const inOnboarding = segments[0] === 'onboarding';
-      const inCustomerApp = segments[0] === '(app)';
-      const inDriverApp = segments[0] === '(driver)';
-      const inAdminApp = segments[0] === '(admin)';
-      const inCollaboratorApp = segments[0] === '(collaborator)';
-
-      console.log('🔐 Route check:', { 
-        segments, 
-        hasSession: !!session, 
-        role,
-        inAuthGroup,
-        inOnboarding,
-        inCustomerApp,
-        inDriverApp,
-        inAdminApp,
-        inCollaboratorApp
-      });
-
-      // No session - redirect to login
-      if (!session && !inAuthGroup && !inOnboarding) {
-        console.log('🚫 No session, redirecting to login');
-        router.replace('/(auth)/login');
-        isChecking.current = false;
-        return;
-      }
-
-      // Has session - handle role-based routing
-      if (session) {
-        // ADMIN ROUTING
-        if (role === 'admin') {
-          console.log('👑 Admin role confirmed - routing to admin dashboard');
-          if (!inAdminApp) {
-            console.log('➡️ Redirecting admin to /(admin)');
-            router.replace('/(admin)');
-          } else {
-            console.log('✅ Admin already in admin app');
-          }
-          isChecking.current = false;
-          return;
-        }
-
-        // COLLABORATOR ROUTING
-        if (role === 'collaborator') {
-          console.log('🏪 Collaborator role confirmed - routing to collaborator dashboard');
-          if (!inCollaboratorApp) {
-            console.log('➡️ Redirecting collaborator to /(collaborator)');
-            router.replace('/(collaborator)');
-          } else {
-            console.log('✅ Collaborator already in collaborator app');
-          }
-          isChecking.current = false;
-          return;
-        }
-
-        // DRIVER ROUTING - Skip onboarding completely
-        if (role === 'driver') {
-          console.log('🚗 Driver role confirmed - routing to driver app');
-          if (!inDriverApp) {
-            console.log('➡️ Redirecting driver to /(driver)');
-            router.replace('/(driver)');
-          } else {
-            console.log('✅ Driver already in driver app');
-          }
-          isChecking.current = false;
-          return;
-        }
-
-        // CUSTOMER ROUTING - Check onboarding
-        if (role === 'customer') {
-          console.log('👤 Customer role - checking onboarding status');
-          
-          // Load profile if not loaded
-          if (!profile) {
-            console.log('📥 Loading customer profile');
-            await loadProfile(session.user.id);
-          }
-          
-          const currentProfile = useUserStore.getState().profile;
-          const hasCompletedOnboarding = currentProfile?.weight && 
-                                         currentProfile?.height && 
-                                         currentProfile?.age;
-          
-          console.log('📋 Onboarding status:', { hasCompletedOnboarding, profile: currentProfile });
-          
-          if (!hasCompletedOnboarding && !inOnboarding) {
-            console.log('➡️ Redirecting to onboarding');
-            router.replace('/onboarding');
-          } else if (hasCompletedOnboarding && inOnboarding) {
-            console.log('➡️ Onboarding complete, redirecting to customer app');
-            router.replace('/(app)');
-          } else if (hasCompletedOnboarding && !inCustomerApp && !inOnboarding) {
-            console.log('➡️ Redirecting to customer app');
-            router.replace('/(app)');
-          }
-        }
-      }
-      
-      isChecking.current = false;
-    };
-
-    checkAuth();
-  }, [session, isLoading, segments, profile, role]);
-
-  return null;
+  const redirectTo = decision.kind === 'redirect' ? decision.href : null;
+  useEffect(() => {
+    if (redirectTo) router.replace(redirectTo as any);
+  }, [redirectTo, group]);
 }
 
 export default function RootLayout() {
-  const { loadSession } = useAuthStore();
+  const initializeAuth = useAuthStore((s) => s.initialize);
   const { fetchSubscription } = useSubscriptionStore();
 
   // Setup notification listeners
@@ -172,9 +78,7 @@ export default function RootLayout() {
     return () => subscription.remove();
   }, []);
 
-  useEffect(() => {
-    loadSession();
-  }, []);
+  useEffect(() => initializeAuth(), [initializeAuth]);
 
   useProtectedRoute();
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,6 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../../src/theme';
-import { AdminAuthModal } from '../../src/components/admin/AdminAuthModal';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useUserStore } from '../../src/stores/userStore';
 import { useSubscriptionStore } from '../../src/stores/subscriptionStore';
@@ -20,10 +19,9 @@ import { useSubscriptionStore } from '../../src/stores/subscriptionStore';
 const { width } = Dimensions.get('window');
 
 export default function ProfileScreen() {
-  const { user, signOut, role } = useAuthStore();
+  const { user, signOut } = useAuthStore();
   const { profile } = useUserStore();
   const { subscription, fetchSubscription } = useSubscriptionStore();
-  const [showAdminModal, setShowAdminModal] = useState(false);
 
   // Mock data - will be replaced with real data from Supabase
   const streakDays = 7;
@@ -70,7 +68,6 @@ export default function ProfileScreen() {
   };
 
   const hasActiveSubscription = subscription?.status === 'active';
-  const isAdmin = role === 'admin';
 
   const handleSignOut = () => {
     Alert.alert(
@@ -82,7 +79,11 @@ export default function ProfileScreen() {
           text: 'Sign Out', 
           style: 'destructive',
           onPress: async () => {
-            await signOut();
+            const { error } = await signOut();
+            if (error) {
+              Alert.alert('Sign out failed', 'Check your connection and try again.');
+              return;
+            }
             router.replace('/(auth)/login');
           }
         },
@@ -270,28 +271,6 @@ export default function ProfileScreen() {
         </ScrollView>
       </View>
 
-      {/* Admin Dashboard - Only visible to admin users */}
-      {isAdmin && (
-        <TouchableOpacity 
-          style={styles.adminCard}
-          onPress={() => setShowAdminModal(true)}
-        >
-          <LinearGradient
-            colors={['#1e293b', '#0f172a']}
-            style={styles.adminGradient}
-          >
-            <View style={styles.adminIcon}>
-              <Ionicons name="shield-checkmark" size={28} color="#D4A757" />
-            </View>
-            <View style={styles.adminContent}>
-              <Text style={styles.adminTitle}>Admin Dashboard</Text>
-              <Text style={styles.adminSubtitle}>Manage orders, drivers, meals</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#D4A757" />
-          </LinearGradient>
-        </TouchableOpacity>
-      )}
-
       {/* Settings Section */}
       <View style={styles.settingsContainer}>
         <Text style={styles.settingsLabel}>SETTINGS</Text>
@@ -305,12 +284,6 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Admin Auth Modal */}
-      <AdminAuthModal
-        visible={showAdminModal}
-        onClose={() => setShowAdminModal(false)}
-        onSuccess={() => router.push('./(admin)')}
-      />
     </ScrollView>
   );
 }
@@ -687,40 +660,6 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.bold,
     color: theme.colors.accent,
     marginTop: theme.spacing.sm,
-  },
-  adminCard: {
-    marginHorizontal: theme.spacing.xl,
-    marginBottom: theme.spacing.lg,
-    borderRadius: theme.spacing.lg,
-    overflow: 'hidden',
-  },
-  adminGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: theme.spacing.lg,
-    gap: theme.spacing.md,
-  },
-  adminIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(212,167,87,0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  adminContent: {
-    flex: 1,
-  },
-  adminTitle: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.bold,
-    color: '#D4A757',
-    letterSpacing: 1,
-  },
-  adminSubtitle: {
-    fontSize: theme.typography.sizes.xs,
-    color: '#9CA3AF',
-    marginTop: 2,
   },
   settingsContainer: {
     paddingHorizontal: theme.spacing.xl,

@@ -40,15 +40,36 @@ yarn-error.*
 /ios
 /android
 
-# Local secrets
+# Local secrets (only .env.example, with placeholders, is committed)
 .env
 .env.*
+*.env
 !.env.example
+secrets/
+*.secret
+*.secrets
+service-account*.json
+google-services.json
+GoogleService-Info.plist
+*.keystore
+supabase/.temp/
+supabase/.branches/
 
-# Local backups and potentially sensitive notes
+# Local backups, database dumps and potentially sensitive notes
 *.bak
+*.backup
+*.orig
+*.swp
+*~
+*.dump
+*.sql.gz
 s.txt
 sb.txt
+notes.txt
+*.notes.md
+
+# Test coverage
+coverage/
 
 # Local Expo files
 .expo/

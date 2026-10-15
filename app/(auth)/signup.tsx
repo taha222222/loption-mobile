@@ -74,7 +74,7 @@ export default function SignupScreen() {
     setLoading(true);
     
     // Pass user data including name and phone
-    const { error } = await signUp(email, password, 'customer', {
+    const { error } = await signUp(email, password, {
       full_name: fullName,
       phone: phoneNumber,
     });

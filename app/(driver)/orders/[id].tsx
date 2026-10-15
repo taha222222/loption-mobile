@@ -43,7 +43,8 @@ export default function DriverOrderDetails() {
 
   useEffect(() => {
     fetchOrderDetails();
-    subscribeToOrderUpdates();
+    // Return the unsubscribe so the channel is removed on unmount / id change.
+    return subscribeToOrderUpdates();
   }, [id]);
 
   const fetchOrderDetails = async () => {
@@ -112,7 +113,9 @@ export default function DriverOrderDetails() {
       )
       .subscribe();
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   };
 
   const updateOrderStatus = async (newStatus: string) => {

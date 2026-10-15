@@ -56,11 +56,6 @@ interface AdminState {
   meals: Meal[];
   isLoading: boolean;
   
-  // Admin verification
-  isAdminAuthenticated: boolean;
-  verifyAdminAuth: (securityPhrase: string) => Promise<boolean>;
-  setAdminAuth: (value: boolean) => void;
-  
   // Data fetching
   fetchStats: () => Promise<void>;
   fetchPendingDrivers: () => Promise<void>;
@@ -85,46 +80,6 @@ export const useAdminStore = create<AdminState>((set, get) => ({
   orders: [],
   meals: [],
   isLoading: false,
-  isAdminAuthenticated: false,
-
-  verifyAdminAuth: async (securityPhrase: string) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) return false;
-    
-    try {
-      // ✅ Fixed: Use maybeSingle() instead of single()
-      const { data: admin, error } = await supabase
-        .from('user_profiles')
-        .select('is_admin')
-        .eq('user_id', session.user.id)
-        .eq('is_admin', true)
-        .maybeSingle();  // ✅ Changed from .single() to .maybeSingle()
-      
-      if (error) {
-        console.log('Admin verification error:', error);
-        return false;
-      }
-      
-      if (admin) {
-        // Log successful admin access
-        await supabase.from('admin_logs').insert({
-          admin_id: session.user.id,
-          action: 'admin_login',
-          details: { success: true, timestamp: new Date().toISOString() }
-        });
-        return true;
-      }
-      
-      return false;
-    } catch (err) {
-      console.error('Admin verification failed:', err);
-      return false;
-    }
-  },
-
-  setAdminAuth: (value: boolean) => {
-    set({ isAdminAuthenticated: value });
-  },
 
   fetchStats: async () => {
     set({ isLoading: true });

@@ -21,7 +21,9 @@ import { BlurView } from 'expo-blur';
 import { theme } from '../src/theme';
 import { Button } from '../src/components/ui/Button';
 import { useAuthStore } from '../src/stores/authStore';
+import { useUserStore } from '../src/stores/userStore';
 import { supabase } from '../src/lib/supabase';
+import { RouteGate } from '../src/components/navigation/RouteGate';
 import { OnboardingData } from '../src/types/onboarding';
 
 const { width, height } = Dimensions.get('window');
@@ -33,7 +35,15 @@ type Program = 'meals_only' | 'coaching' | 'transformation';
 
 const STEPS = ['Welcome', 'Gender', 'Goal', 'Body', 'Activity', 'Program'];
 
-export default function OnboardingScreen() {
+export default function OnboardingRoute() {
+  return (
+    <RouteGate group="onboarding">
+      <OnboardingScreen />
+    </RouteGate>
+  );
+}
+
+function OnboardingScreen() {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showSubscriptionPrompt, setShowSubscriptionPrompt] = useState(false);
@@ -87,6 +97,13 @@ export default function OnboardingScreen() {
       pathname: './app/(webview)',
       params: { url }
     });
+  };
+
+  // Refresh the cached profile so the route guard sees onboarding as complete;
+  // the root layout then redirects to the customer app.
+  const finishOnboarding = async () => {
+    if (user) await useUserStore.getState().loadProfile(user.id);
+    router.replace('/(app)');
   };
 
   const handleComplete = async () => {
@@ -356,7 +373,7 @@ export default function OnboardingScreen() {
             <Ionicons name="arrow-forward" size={20} color="#0F1115" />
           </LinearGradient>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.skipButton} onPress={() => router.replace('/(app)')}>
+        <TouchableOpacity style={styles.skipButton} onPress={finishOnboarding}>
           <Text style={styles.skipButtonText}>Maybe later</Text>
         </TouchableOpacity>
       </LinearGradient>

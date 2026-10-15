@@ -15,10 +15,16 @@ export interface UserProfile {
   updated_at: string;
 }
 
+export type ProfileStatus = 'unloaded' | 'loading' | 'loaded' | 'error';
+
 interface UserState {
   profile: UserProfile | null;
   isLoading: boolean;
+  // Which auth user the current profile/profileStatus refer to.
+  loadedUserId: string | null;
+  profileStatus: ProfileStatus;
   loadProfile: (userId: string) => Promise<void>;
+  reset: () => void;
   createProfile: (userId: string, data: Partial<UserProfile>) => Promise<void>;
   updateProfile: (userId: string, data: Partial<UserProfile>) => Promise<void>;
   calculateBMR: () => number;
@@ -32,31 +38,32 @@ interface UserState {
 export const useUserStore = create<UserState>((set, get) => ({
   profile: null,
   isLoading: false,
+  loadedUserId: null,
+  profileStatus: 'unloaded',
 
   loadProfile: async (userId: string) => {
-    console.log('loadProfile called for userId:', userId);
-    set({ isLoading: true });
+    set({ isLoading: true, loadedUserId: userId, profileStatus: 'loading' });
     
     const { data, error } = await supabase
       .from('user_profiles')
       .select('*')
       .eq('user_id', userId)
       .maybeSingle();
+
+    // Ignore results for a user who is no longer the active one (sign-out or account switch).
+    if (get().loadedUserId !== userId) return;
     
     if (error) {
       console.error('Error loading profile:', error);
-      set({ profile: null, isLoading: false });
+      set({ profile: null, isLoading: false, profileStatus: 'error' });
       return;
     }
     
-    console.log('Profile loaded:', data);
-    
-    if (data) {
-      set({ profile: data as UserProfile });
-    } else {
-      set({ profile: null });
-    }
-    set({ isLoading: false });
+    set({ profile: (data as UserProfile) ?? null, isLoading: false, profileStatus: 'loaded' });
+  },
+
+  reset: () => {
+    set({ profile: null, isLoading: false, loadedUserId: null, profileStatus: 'unloaded' });
   },
 
   createProfile: async (userId: string, data: Partial<UserProfile>) => {

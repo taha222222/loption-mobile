@@ -45,7 +45,8 @@ export default function CollaboratorOrderDetail() {
 
   useEffect(() => {
     fetchOrderDetail();
-    subscribeToOrderUpdates();
+    // Return the unsubscribe so the channel is removed on unmount / id change.
+    return subscribeToOrderUpdates();
   }, [id]);
 
   const fetchOrderDetail = async () => {
@@ -102,7 +103,9 @@ export default function CollaboratorOrderDetail() {
       )
       .subscribe();
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   };
 
   const handleAccept = async () => {
