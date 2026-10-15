@@ -127,3 +127,12 @@ No migration, no backend change, no payment integration or simulated payment suc
 | Mutation check: temporarily changed checkout to pass `'card'`, ran `npx jest __tests__/checkoutScreen.test.tsx`, then restored the file | the submit test **failed as intended** (no order inserted); the file was restored and all tests pass again |
 | `npm run typecheck` | **exit 0, 0 errors** |
 | `npm run lint` | exit 1 — 102 problems (49 errors, 53 warnings), the same pre-existing errors as before this follow-up; `npx eslint __tests__ src/checkout "app/(app)/checkout.tsx"` exits 0 with no problems |
+
+### Correction — payment-field assertions
+The original "no paid field" checks only ran one key regex (`/paid|payment_status|transaction/i`). A mutation test showed they missed `payment_state`, `paymentStatus` and `settled`. In the checkout screen test those mutations passed entirely. Both tests now check:
+1. **an exact allowlist of the keys written to `orders`**, so any added key fails;
+2. direct `not.toHaveProperty(...)` checks for common paid/status/transaction field names;
+3. a broader case-insensitive key regex, `/paid|pay(ment)?[_-]?(status|state)|transaction|settle/i`;
+4. `payment_method === 'cash'`.
+
+Mutation results after the fix: adding `is_paid`, `payment_state`, `paymentStatus`, `settled` or `transaction_id` to the payload fails both test files, and writing `payment_method: 'card'` fails the checkout test (`Expected "cash", Received "card"`). The source was restored after each run. `npm test`: 6 suites, 41 tests passed. `npm run typecheck`: exit 0.

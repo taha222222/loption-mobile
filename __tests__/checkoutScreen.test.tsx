@@ -58,8 +58,27 @@ describe('Checkout (COD only)', () => {
     const order = mockInserts.orders[0];
     expect(order.payment_method).toBe('cash');
     expect(order.user_id).toBe('user-1');
+
+    // The insert sent to Supabase has exactly these keys: no paid flag,
+    // payment status or transaction field can be added without failing here.
+    expect(Object.keys(order).sort()).toEqual(
+      [
+        'created_at',
+        'delivery_address',
+        'delivery_fee',
+        'order_number',
+        'payment_method',
+        'status',
+        'subtotal',
+        'total',
+        'user_id',
+      ].sort()
+    );
+    for (const field of ['paid', 'is_paid', 'paid_at', 'payment_status', 'paymentStatus', 'payment_state', 'transaction_id']) {
+      expect(order).not.toHaveProperty(field);
+    }
     for (const key of Object.keys(order)) {
-      expect(key).not.toMatch(/paid|payment_status|transaction/i);
+      expect(key).not.toMatch(/paid|pay(ment)?[_-]?(status|state)|transaction|settle/i);
     }
     expect(Alert.alert).toHaveBeenCalledWith('Order Placed!', expect.any(String), expect.any(Array));
   });
