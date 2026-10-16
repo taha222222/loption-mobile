@@ -1,0 +1,5091 @@
+{
+  "column_level_acls": null,
+  "columns": [
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "admin_logs",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "admin_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 2,
+      "table": "admin_logs",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "action",
+      "default": null,
+      "nullable": "NO",
+      "pos": 3,
+      "table": "admin_logs",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "details",
+      "default": null,
+      "nullable": "YES",
+      "pos": 4,
+      "table": "admin_logs",
+      "type": "jsonb",
+      "udt": "jsonb"
+    },
+    {
+      "column": "ip_address",
+      "default": null,
+      "nullable": "YES",
+      "pos": 5,
+      "table": "admin_logs",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 6,
+      "table": "admin_logs",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "id",
+      "default": null,
+      "nullable": "NO",
+      "pos": 1,
+      "table": "admins",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "email",
+      "default": null,
+      "nullable": "NO",
+      "pos": 2,
+      "table": "admins",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "security_phrase_hash",
+      "default": null,
+      "nullable": "YES",
+      "pos": 3,
+      "table": "admins",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "last_login_ip",
+      "default": null,
+      "nullable": "YES",
+      "pos": 4,
+      "table": "admins",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "last_login_at",
+      "default": null,
+      "nullable": "YES",
+      "pos": 5,
+      "table": "admins",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "is_active",
+      "default": "true",
+      "nullable": "YES",
+      "pos": 6,
+      "table": "admins",
+      "type": "boolean",
+      "udt": "bool"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 7,
+      "table": "admins",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "updated_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 8,
+      "table": "admins",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "bank_accounts",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "name",
+      "default": null,
+      "nullable": "NO",
+      "pos": 2,
+      "table": "bank_accounts",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "account_number",
+      "default": null,
+      "nullable": "NO",
+      "pos": 3,
+      "table": "bank_accounts",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "bank_name",
+      "default": null,
+      "nullable": "NO",
+      "pos": 4,
+      "table": "bank_accounts",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "purpose",
+      "default": null,
+      "nullable": "NO",
+      "pos": 5,
+      "table": "bank_accounts",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "is_active",
+      "default": "true",
+      "nullable": "YES",
+      "pos": 6,
+      "table": "bank_accounts",
+      "type": "boolean",
+      "udt": "bool"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 7,
+      "table": "bank_accounts",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "cash_collections",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "driver_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 2,
+      "table": "cash_collections",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "order_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 3,
+      "table": "cash_collections",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "amount",
+      "default": null,
+      "nullable": "NO",
+      "pos": 4,
+      "table": "cash_collections",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "collected_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 5,
+      "table": "cash_collections",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "collaborator_analytics",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "collaborator_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 2,
+      "table": "collaborator_analytics",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "date",
+      "default": null,
+      "nullable": "NO",
+      "pos": 3,
+      "table": "collaborator_analytics",
+      "type": "date",
+      "udt": "date"
+    },
+    {
+      "column": "total_orders",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 4,
+      "table": "collaborator_analytics",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "completed_orders",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 5,
+      "table": "collaborator_analytics",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "cancelled_orders",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 6,
+      "table": "collaborator_analytics",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "total_revenue",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 7,
+      "table": "collaborator_analytics",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "collaborator_revenue",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 8,
+      "table": "collaborator_analytics",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "loption_revenue",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 9,
+      "table": "collaborator_analytics",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "avg_prep_time",
+      "default": null,
+      "nullable": "YES",
+      "pos": 10,
+      "table": "collaborator_analytics",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "acceptance_rate",
+      "default": null,
+      "nullable": "YES",
+      "pos": 11,
+      "table": "collaborator_analytics",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "collaborator_orders",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "order_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 2,
+      "table": "collaborator_orders",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "collaborator_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 3,
+      "table": "collaborator_orders",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "preparation_status",
+      "default": "'pending'::text",
+      "nullable": "YES",
+      "pos": 4,
+      "table": "collaborator_orders",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "preparation_notes",
+      "default": null,
+      "nullable": "YES",
+      "pos": 5,
+      "table": "collaborator_orders",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "estimated_prep_time",
+      "default": null,
+      "nullable": "YES",
+      "pos": 6,
+      "table": "collaborator_orders",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "actual_prep_time",
+      "default": null,
+      "nullable": "YES",
+      "pos": 7,
+      "table": "collaborator_orders",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "order_total",
+      "default": null,
+      "nullable": "NO",
+      "pos": 8,
+      "table": "collaborator_orders",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "collaborator_share",
+      "default": null,
+      "nullable": "NO",
+      "pos": 9,
+      "table": "collaborator_orders",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "loption_share",
+      "default": null,
+      "nullable": "NO",
+      "pos": 10,
+      "table": "collaborator_orders",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "accepted_at",
+      "default": null,
+      "nullable": "YES",
+      "pos": 11,
+      "table": "collaborator_orders",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "preparing_at",
+      "default": null,
+      "nullable": "YES",
+      "pos": 12,
+      "table": "collaborator_orders",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "ready_at",
+      "default": null,
+      "nullable": "YES",
+      "pos": 13,
+      "table": "collaborator_orders",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "rejected_at",
+      "default": null,
+      "nullable": "YES",
+      "pos": 14,
+      "table": "collaborator_orders",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "rejection_reason",
+      "default": null,
+      "nullable": "YES",
+      "pos": 15,
+      "table": "collaborator_orders",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 16,
+      "table": "collaborator_orders",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "collaborator_payouts",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "collaborator_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 2,
+      "table": "collaborator_payouts",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "period_start",
+      "default": null,
+      "nullable": "NO",
+      "pos": 3,
+      "table": "collaborator_payouts",
+      "type": "date",
+      "udt": "date"
+    },
+    {
+      "column": "period_end",
+      "default": null,
+      "nullable": "NO",
+      "pos": 4,
+      "table": "collaborator_payouts",
+      "type": "date",
+      "udt": "date"
+    },
+    {
+      "column": "total_orders",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 5,
+      "table": "collaborator_payouts",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "total_revenue",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 6,
+      "table": "collaborator_payouts",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "collaborator_share",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 7,
+      "table": "collaborator_payouts",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "loption_share",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 8,
+      "table": "collaborator_payouts",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "status",
+      "default": "'pending'::text",
+      "nullable": "YES",
+      "pos": 9,
+      "table": "collaborator_payouts",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "payout_method",
+      "default": null,
+      "nullable": "YES",
+      "pos": 10,
+      "table": "collaborator_payouts",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "payout_amount",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 11,
+      "table": "collaborator_payouts",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "payout_date",
+      "default": null,
+      "nullable": "YES",
+      "pos": 12,
+      "table": "collaborator_payouts",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "transaction_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 13,
+      "table": "collaborator_payouts",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "notes",
+      "default": null,
+      "nullable": "YES",
+      "pos": 14,
+      "table": "collaborator_payouts",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 15,
+      "table": "collaborator_payouts",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "processed_at",
+      "default": null,
+      "nullable": "YES",
+      "pos": 16,
+      "table": "collaborator_payouts",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "processed_by",
+      "default": null,
+      "nullable": "YES",
+      "pos": 17,
+      "table": "collaborator_payouts",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "collaborators",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "user_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 2,
+      "table": "collaborators",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "branch_name",
+      "default": null,
+      "nullable": "NO",
+      "pos": 3,
+      "table": "collaborators",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "branch_address",
+      "default": null,
+      "nullable": "NO",
+      "pos": 4,
+      "table": "collaborators",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "branch_phone",
+      "default": null,
+      "nullable": "YES",
+      "pos": 5,
+      "table": "collaborators",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "branch_email",
+      "default": null,
+      "nullable": "NO",
+      "pos": 6,
+      "table": "collaborators",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "branch_logo",
+      "default": null,
+      "nullable": "YES",
+      "pos": 7,
+      "table": "collaborators",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "branch_cover",
+      "default": null,
+      "nullable": "YES",
+      "pos": 8,
+      "table": "collaborators",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "revenue_share_percent",
+      "default": "50.0",
+      "nullable": "YES",
+      "pos": 9,
+      "table": "collaborators",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "minimum_payout_threshold",
+      "default": "500",
+      "nullable": "YES",
+      "pos": 10,
+      "table": "collaborators",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "payout_frequency",
+      "default": "'weekly'::text",
+      "nullable": "YES",
+      "pos": 11,
+      "table": "collaborators",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "status",
+      "default": "'pending'::text",
+      "nullable": "YES",
+      "pos": 12,
+      "table": "collaborators",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "is_active",
+      "default": "false",
+      "nullable": "YES",
+      "pos": 13,
+      "table": "collaborators",
+      "type": "boolean",
+      "udt": "bool"
+    },
+    {
+      "column": "contract_signed_at",
+      "default": null,
+      "nullable": "YES",
+      "pos": 14,
+      "table": "collaborators",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "contract_expires_at",
+      "default": null,
+      "nullable": "YES",
+      "pos": 15,
+      "table": "collaborators",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "created_by",
+      "default": null,
+      "nullable": "YES",
+      "pos": 16,
+      "table": "collaborators",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 17,
+      "table": "collaborators",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "updated_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 18,
+      "table": "collaborators",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "id",
+      "default": "uuid_generate_v4()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "daily_closings",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "date",
+      "default": "CURRENT_DATE",
+      "nullable": "NO",
+      "pos": 2,
+      "table": "daily_closings",
+      "type": "date",
+      "udt": "date"
+    },
+    {
+      "column": "starting_capital",
+      "default": "0",
+      "nullable": "NO",
+      "pos": 3,
+      "table": "daily_closings",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "total_sales",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 4,
+      "table": "daily_closings",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "total_profit",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 5,
+      "table": "daily_closings",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "ending_stock_value",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 6,
+      "table": "daily_closings",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "notes",
+      "default": null,
+      "nullable": "YES",
+      "pos": 7,
+      "table": "daily_closings",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 8,
+      "table": "daily_closings",
+      "type": "timestamp with time zone",
+      "udt": "timestamptz"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "driver_payouts",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "driver_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 2,
+      "table": "driver_payouts",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "week_start",
+      "default": null,
+      "nullable": "NO",
+      "pos": 3,
+      "table": "driver_payouts",
+      "type": "date",
+      "udt": "date"
+    },
+    {
+      "column": "week_end",
+      "default": null,
+      "nullable": "NO",
+      "pos": 4,
+      "table": "driver_payouts",
+      "type": "date",
+      "udt": "date"
+    },
+    {
+      "column": "total_deliveries",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 5,
+      "table": "driver_payouts",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "total_delivery_fees",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 6,
+      "table": "driver_payouts",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "commission_rate",
+      "default": "0.15",
+      "nullable": "YES",
+      "pos": 7,
+      "table": "driver_payouts",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "commission_amount",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 8,
+      "table": "driver_payouts",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "status",
+      "default": "'pending'::text",
+      "nullable": "YES",
+      "pos": 9,
+      "table": "driver_payouts",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "paid_at",
+      "default": null,
+      "nullable": "YES",
+      "pos": 10,
+      "table": "driver_payouts",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 11,
+      "table": "driver_payouts",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "driver_push_tokens",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "user_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 2,
+      "table": "driver_push_tokens",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "push_token",
+      "default": null,
+      "nullable": "NO",
+      "pos": 3,
+      "table": "driver_push_tokens",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "device_type",
+      "default": null,
+      "nullable": "YES",
+      "pos": 4,
+      "table": "driver_push_tokens",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "is_active",
+      "default": "true",
+      "nullable": "YES",
+      "pos": 5,
+      "table": "driver_push_tokens",
+      "type": "boolean",
+      "udt": "bool"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 6,
+      "table": "driver_push_tokens",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "updated_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 7,
+      "table": "driver_push_tokens",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "driver_weekly_earnings",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "driver_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 2,
+      "table": "driver_weekly_earnings",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "week_start",
+      "default": null,
+      "nullable": "NO",
+      "pos": 3,
+      "table": "driver_weekly_earnings",
+      "type": "date",
+      "udt": "date"
+    },
+    {
+      "column": "week_end",
+      "default": null,
+      "nullable": "NO",
+      "pos": 4,
+      "table": "driver_weekly_earnings",
+      "type": "date",
+      "udt": "date"
+    },
+    {
+      "column": "total_deliveries",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 5,
+      "table": "driver_weekly_earnings",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "total_delivery_fees",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 6,
+      "table": "driver_weekly_earnings",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "commission_rate",
+      "default": "15",
+      "nullable": "YES",
+      "pos": 7,
+      "table": "driver_weekly_earnings",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "commission_amount",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 8,
+      "table": "driver_weekly_earnings",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "payout_status",
+      "default": "'pending'::text",
+      "nullable": "YES",
+      "pos": 9,
+      "table": "driver_weekly_earnings",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "payout_date",
+      "default": null,
+      "nullable": "YES",
+      "pos": 10,
+      "table": "driver_weekly_earnings",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 11,
+      "table": "driver_weekly_earnings",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "updated_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 12,
+      "table": "driver_weekly_earnings",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "id",
+      "default": null,
+      "nullable": "NO",
+      "pos": 1,
+      "table": "drivers",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "email",
+      "default": null,
+      "nullable": "NO",
+      "pos": 2,
+      "table": "drivers",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "first_name",
+      "default": null,
+      "nullable": "YES",
+      "pos": 3,
+      "table": "drivers",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "last_name",
+      "default": null,
+      "nullable": "YES",
+      "pos": 4,
+      "table": "drivers",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "phone",
+      "default": null,
+      "nullable": "YES",
+      "pos": 5,
+      "table": "drivers",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "national_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 6,
+      "table": "drivers",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "status",
+      "default": "'offline'::text",
+      "nullable": "YES",
+      "pos": 7,
+      "table": "drivers",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "current_latitude",
+      "default": null,
+      "nullable": "YES",
+      "pos": 8,
+      "table": "drivers",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "current_longitude",
+      "default": null,
+      "nullable": "YES",
+      "pos": 9,
+      "table": "drivers",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "last_location_update",
+      "default": null,
+      "nullable": "YES",
+      "pos": 10,
+      "table": "drivers",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 11,
+      "table": "drivers",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "updated_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 12,
+      "table": "drivers",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "commission_rate",
+      "default": "0.15",
+      "nullable": "YES",
+      "pos": 13,
+      "table": "drivers",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "total_earned",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 14,
+      "table": "drivers",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "weekly_earnings",
+      "default": "'[]'::jsonb",
+      "nullable": "YES",
+      "pos": 15,
+      "table": "drivers",
+      "type": "jsonb",
+      "udt": "jsonb"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "financial_transactions",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "order_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 2,
+      "table": "financial_transactions",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "customer_paid",
+      "default": null,
+      "nullable": "NO",
+      "pos": 3,
+      "table": "financial_transactions",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "platform_service_fee",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 4,
+      "table": "financial_transactions",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "order_revenue",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 5,
+      "table": "financial_transactions",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "partner_share",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 6,
+      "table": "financial_transactions",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "loption_share",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 7,
+      "table": "financial_transactions",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "driver_commission",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 8,
+      "table": "financial_transactions",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "status",
+      "default": "'pending'::text",
+      "nullable": "YES",
+      "pos": 9,
+      "table": "financial_transactions",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "payment_gateway",
+      "default": null,
+      "nullable": "YES",
+      "pos": 10,
+      "table": "financial_transactions",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "gateway_transaction_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 11,
+      "table": "financial_transactions",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 12,
+      "table": "financial_transactions",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "settled_at",
+      "default": null,
+      "nullable": "YES",
+      "pos": 13,
+      "table": "financial_transactions",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "kiosks",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "name",
+      "default": null,
+      "nullable": "NO",
+      "pos": 2,
+      "table": "kiosks",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "location",
+      "default": null,
+      "nullable": "YES",
+      "pos": 3,
+      "table": "kiosks",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "status",
+      "default": "'active'::text",
+      "nullable": "YES",
+      "pos": 4,
+      "table": "kiosks",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "last_seen",
+      "default": null,
+      "nullable": "YES",
+      "pos": 5,
+      "table": "kiosks",
+      "type": "timestamp with time zone",
+      "udt": "timestamptz"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 6,
+      "table": "kiosks",
+      "type": "timestamp with time zone",
+      "udt": "timestamptz"
+    },
+    {
+      "column": "updated_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 7,
+      "table": "kiosks",
+      "type": "timestamp with time zone",
+      "udt": "timestamptz"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "meals",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "name",
+      "default": null,
+      "nullable": "NO",
+      "pos": 2,
+      "table": "meals",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "price",
+      "default": null,
+      "nullable": "NO",
+      "pos": 3,
+      "table": "meals",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "calories",
+      "default": null,
+      "nullable": "NO",
+      "pos": 4,
+      "table": "meals",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "protein",
+      "default": null,
+      "nullable": "NO",
+      "pos": 5,
+      "table": "meals",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "carbs",
+      "default": null,
+      "nullable": "YES",
+      "pos": 6,
+      "table": "meals",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "fat",
+      "default": null,
+      "nullable": "YES",
+      "pos": 7,
+      "table": "meals",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "image_url",
+      "default": null,
+      "nullable": "YES",
+      "pos": 8,
+      "table": "meals",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "category",
+      "default": null,
+      "nullable": "YES",
+      "pos": 9,
+      "table": "meals",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "popular",
+      "default": "false",
+      "nullable": "YES",
+      "pos": 10,
+      "table": "meals",
+      "type": "boolean",
+      "udt": "bool"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 11,
+      "table": "meals",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "available",
+      "default": "true",
+      "nullable": "YES",
+      "pos": 12,
+      "table": "meals",
+      "type": "boolean",
+      "udt": "bool"
+    },
+    {
+      "column": "updated_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 13,
+      "table": "meals",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "order_items",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "order_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 2,
+      "table": "order_items",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "meal_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 3,
+      "table": "order_items",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "meal_name",
+      "default": null,
+      "nullable": "NO",
+      "pos": 4,
+      "table": "order_items",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "quantity",
+      "default": "1",
+      "nullable": "NO",
+      "pos": 5,
+      "table": "order_items",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "price",
+      "default": null,
+      "nullable": "NO",
+      "pos": 6,
+      "table": "order_items",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "notes",
+      "default": null,
+      "nullable": "YES",
+      "pos": 7,
+      "table": "order_items",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 8,
+      "table": "order_items",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "order_status_updates",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "order_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 2,
+      "table": "order_status_updates",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "status",
+      "default": null,
+      "nullable": "NO",
+      "pos": 3,
+      "table": "order_status_updates",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "message",
+      "default": null,
+      "nullable": "YES",
+      "pos": 4,
+      "table": "order_status_updates",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 5,
+      "table": "order_status_updates",
+      "type": "timestamp with time zone",
+      "udt": "timestamptz"
+    },
+    {
+      "column": "id",
+      "default": "uuid_generate_v4()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "orders",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "order_number",
+      "default": null,
+      "nullable": "NO",
+      "pos": 2,
+      "table": "orders",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "items",
+      "default": null,
+      "nullable": "YES",
+      "pos": 3,
+      "table": "orders",
+      "type": "jsonb",
+      "udt": "jsonb"
+    },
+    {
+      "column": "total",
+      "default": null,
+      "nullable": "NO",
+      "pos": 4,
+      "table": "orders",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "status",
+      "default": "'new'::text",
+      "nullable": "YES",
+      "pos": 5,
+      "table": "orders",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "language",
+      "default": "'EN'::text",
+      "nullable": "YES",
+      "pos": 6,
+      "table": "orders",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "timestamp",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 7,
+      "table": "orders",
+      "type": "timestamp with time zone",
+      "udt": "timestamptz"
+    },
+    {
+      "column": "table_number",
+      "default": null,
+      "nullable": "YES",
+      "pos": 8,
+      "table": "orders",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "customer_name",
+      "default": null,
+      "nullable": "YES",
+      "pos": 9,
+      "table": "orders",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "kiosk_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 10,
+      "table": "orders",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 11,
+      "table": "orders",
+      "type": "timestamp with time zone",
+      "udt": "timestamptz"
+    },
+    {
+      "column": "updated_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 12,
+      "table": "orders",
+      "type": "timestamp with time zone",
+      "udt": "timestamptz"
+    },
+    {
+      "column": "tracking_token",
+      "default": null,
+      "nullable": "YES",
+      "pos": 13,
+      "table": "orders",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "tracking_expires_at",
+      "default": null,
+      "nullable": "YES",
+      "pos": 14,
+      "table": "orders",
+      "type": "timestamp with time zone",
+      "udt": "timestamptz"
+    },
+    {
+      "column": "notified_at",
+      "default": null,
+      "nullable": "YES",
+      "pos": 15,
+      "table": "orders",
+      "type": "timestamp with time zone",
+      "udt": "timestamptz"
+    },
+    {
+      "column": "driver_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 16,
+      "table": "orders",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "accepted_at",
+      "default": null,
+      "nullable": "YES",
+      "pos": 17,
+      "table": "orders",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "picked_up_at",
+      "default": null,
+      "nullable": "YES",
+      "pos": 18,
+      "table": "orders",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "delivered_at",
+      "default": null,
+      "nullable": "YES",
+      "pos": 19,
+      "table": "orders",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "delivery_fee",
+      "default": "10",
+      "nullable": "YES",
+      "pos": 20,
+      "table": "orders",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "collaborator_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 21,
+      "table": "orders",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "collaborator_share",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 22,
+      "table": "orders",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "loption_share",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 23,
+      "table": "orders",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "driver_latitude",
+      "default": null,
+      "nullable": "YES",
+      "pos": 24,
+      "table": "orders",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "driver_longitude",
+      "default": null,
+      "nullable": "YES",
+      "pos": 25,
+      "table": "orders",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "last_location_update",
+      "default": null,
+      "nullable": "YES",
+      "pos": 26,
+      "table": "orders",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "delivery_address",
+      "default": null,
+      "nullable": "YES",
+      "pos": 27,
+      "table": "orders",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "payment_method",
+      "default": null,
+      "nullable": "YES",
+      "pos": 28,
+      "table": "orders",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "subtotal",
+      "default": null,
+      "nullable": "YES",
+      "pos": 29,
+      "table": "orders",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "platform_service_fee",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 30,
+      "table": "orders",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "partner_share",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 31,
+      "table": "orders",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "driver_commission",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 32,
+      "table": "orders",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "financial_status",
+      "default": "'pending'::text",
+      "nullable": "YES",
+      "pos": 33,
+      "table": "orders",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "driver_commission_paid",
+      "default": "false",
+      "nullable": "YES",
+      "pos": 34,
+      "table": "orders",
+      "type": "boolean",
+      "udt": "bool"
+    },
+    {
+      "column": "driver_commission_paid_at",
+      "default": null,
+      "nullable": "YES",
+      "pos": 35,
+      "table": "orders",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "order_revenue",
+      "default": "0",
+      "nullable": "YES",
+      "pos": 36,
+      "table": "orders",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "user_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 37,
+      "table": "orders",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "platform_settings",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "service_fee_per_order",
+      "default": "15",
+      "nullable": "YES",
+      "pos": 2,
+      "table": "platform_settings",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "driver_commission_percent",
+      "default": "15",
+      "nullable": "YES",
+      "pos": 3,
+      "table": "platform_settings",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "partner_revenue_share",
+      "default": "50",
+      "nullable": "YES",
+      "pos": 4,
+      "table": "platform_settings",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "min_payout_amount",
+      "default": "100",
+      "nullable": "YES",
+      "pos": 5,
+      "table": "platform_settings",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "payout_schedule",
+      "default": "'weekly'::text",
+      "nullable": "YES",
+      "pos": 6,
+      "table": "platform_settings",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "payout_day",
+      "default": "1",
+      "nullable": "YES",
+      "pos": 7,
+      "table": "platform_settings",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 8,
+      "table": "platform_settings",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "updated_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 9,
+      "table": "platform_settings",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "id",
+      "default": "uuid_generate_v4()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "products",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "name_en",
+      "default": null,
+      "nullable": "NO",
+      "pos": 2,
+      "table": "products",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "name_fr",
+      "default": null,
+      "nullable": "NO",
+      "pos": 3,
+      "table": "products",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "name_ar",
+      "default": null,
+      "nullable": "NO",
+      "pos": 4,
+      "table": "products",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "description_en",
+      "default": null,
+      "nullable": "YES",
+      "pos": 5,
+      "table": "products",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "description_fr",
+      "default": null,
+      "nullable": "YES",
+      "pos": 6,
+      "table": "products",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "description_ar",
+      "default": null,
+      "nullable": "YES",
+      "pos": 7,
+      "table": "products",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "price",
+      "default": null,
+      "nullable": "NO",
+      "pos": 8,
+      "table": "products",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "category",
+      "default": null,
+      "nullable": "NO",
+      "pos": 9,
+      "table": "products",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "emoji",
+      "default": null,
+      "nullable": "YES",
+      "pos": 10,
+      "table": "products",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "stock",
+      "default": "50",
+      "nullable": "NO",
+      "pos": 11,
+      "table": "products",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "is_active",
+      "default": "true",
+      "nullable": "YES",
+      "pos": 12,
+      "table": "products",
+      "type": "boolean",
+      "udt": "bool"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 13,
+      "table": "products",
+      "type": "timestamp with time zone",
+      "udt": "timestamptz"
+    },
+    {
+      "column": "updated_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 14,
+      "table": "products",
+      "type": "timestamp with time zone",
+      "udt": "timestamptz"
+    },
+    {
+      "column": "brand",
+      "default": "'loption'::text",
+      "nullable": "YES",
+      "pos": 15,
+      "table": "products",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "image_url",
+      "default": null,
+      "nullable": "YES",
+      "pos": 16,
+      "table": "products",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "stock_movements",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "product_id",
+      "default": null,
+      "nullable": "NO",
+      "pos": 2,
+      "table": "stock_movements",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "quantity_change",
+      "default": null,
+      "nullable": "NO",
+      "pos": 3,
+      "table": "stock_movements",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "reason",
+      "default": null,
+      "nullable": "NO",
+      "pos": 4,
+      "table": "stock_movements",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "order_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 5,
+      "table": "stock_movements",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "created_by",
+      "default": null,
+      "nullable": "YES",
+      "pos": 6,
+      "table": "stock_movements",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 7,
+      "table": "stock_movements",
+      "type": "timestamp with time zone",
+      "udt": "timestamptz"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "user_profiles",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "user_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 2,
+      "table": "user_profiles",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "gender",
+      "default": null,
+      "nullable": "YES",
+      "pos": 3,
+      "table": "user_profiles",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "goal",
+      "default": null,
+      "nullable": "YES",
+      "pos": 4,
+      "table": "user_profiles",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "height",
+      "default": null,
+      "nullable": "YES",
+      "pos": 5,
+      "table": "user_profiles",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "weight",
+      "default": null,
+      "nullable": "YES",
+      "pos": 6,
+      "table": "user_profiles",
+      "type": "numeric",
+      "udt": "numeric"
+    },
+    {
+      "column": "age",
+      "default": null,
+      "nullable": "YES",
+      "pos": 7,
+      "table": "user_profiles",
+      "type": "integer",
+      "udt": "int4"
+    },
+    {
+      "column": "activity_level",
+      "default": null,
+      "nullable": "YES",
+      "pos": 8,
+      "table": "user_profiles",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "program",
+      "default": null,
+      "nullable": "YES",
+      "pos": 9,
+      "table": "user_profiles",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 10,
+      "table": "user_profiles",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "updated_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 11,
+      "table": "user_profiles",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "is_admin",
+      "default": "false",
+      "nullable": "YES",
+      "pos": 12,
+      "table": "user_profiles",
+      "type": "boolean",
+      "udt": "bool"
+    },
+    {
+      "column": "phone",
+      "default": null,
+      "nullable": "YES",
+      "pos": 13,
+      "table": "user_profiles",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "full_name",
+      "default": null,
+      "nullable": "YES",
+      "pos": 14,
+      "table": "user_profiles",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "role",
+      "default": "'customer'::text",
+      "nullable": "YES",
+      "pos": 15,
+      "table": "user_profiles",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO",
+      "pos": 1,
+      "table": "user_push_tokens",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "user_id",
+      "default": null,
+      "nullable": "YES",
+      "pos": 2,
+      "table": "user_push_tokens",
+      "type": "uuid",
+      "udt": "uuid"
+    },
+    {
+      "column": "push_token",
+      "default": null,
+      "nullable": "NO",
+      "pos": 3,
+      "table": "user_push_tokens",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "device_type",
+      "default": null,
+      "nullable": "YES",
+      "pos": 4,
+      "table": "user_push_tokens",
+      "type": "text",
+      "udt": "text"
+    },
+    {
+      "column": "is_active",
+      "default": "true",
+      "nullable": "YES",
+      "pos": 5,
+      "table": "user_push_tokens",
+      "type": "boolean",
+      "udt": "bool"
+    },
+    {
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 6,
+      "table": "user_push_tokens",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    },
+    {
+      "column": "updated_at",
+      "default": "now()",
+      "nullable": "YES",
+      "pos": 7,
+      "table": "user_push_tokens",
+      "type": "timestamp without time zone",
+      "udt": "timestamp"
+    }
+  ],
+  "constraints": [
+    {
+      "definition": "FOREIGN KEY (admin_id) REFERENCES admins(id)",
+      "name": "admin_logs_admin_id_fkey",
+      "table": "admin_logs",
+      "type": "f"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "admin_logs_pkey",
+      "table": "admin_logs",
+      "type": "p"
+    },
+    {
+      "definition": "UNIQUE (email)",
+      "name": "admins_email_key",
+      "table": "admins",
+      "type": "u"
+    },
+    {
+      "definition": "FOREIGN KEY (id) REFERENCES auth.users(id)",
+      "name": "admins_id_fkey",
+      "table": "admins",
+      "type": "f"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "admins_pkey",
+      "table": "admins",
+      "type": "p"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "bank_accounts_pkey",
+      "table": "bank_accounts",
+      "type": "p"
+    },
+    {
+      "definition": "FOREIGN KEY (driver_id) REFERENCES drivers(id)",
+      "name": "cash_collections_driver_id_fkey",
+      "table": "cash_collections",
+      "type": "f"
+    },
+    {
+      "definition": "FOREIGN KEY (order_id) REFERENCES orders(id)",
+      "name": "cash_collections_order_id_fkey",
+      "table": "cash_collections",
+      "type": "f"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "cash_collections_pkey",
+      "table": "cash_collections",
+      "type": "p"
+    },
+    {
+      "definition": "UNIQUE (collaborator_id, date)",
+      "name": "collaborator_analytics_collaborator_id_date_key",
+      "table": "collaborator_analytics",
+      "type": "u"
+    },
+    {
+      "definition": "FOREIGN KEY (collaborator_id) REFERENCES collaborators(id) ON DELETE CASCADE",
+      "name": "collaborator_analytics_collaborator_id_fkey",
+      "table": "collaborator_analytics",
+      "type": "f"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "collaborator_analytics_pkey",
+      "table": "collaborator_analytics",
+      "type": "p"
+    },
+    {
+      "definition": "FOREIGN KEY (collaborator_id) REFERENCES collaborators(id) ON DELETE CASCADE",
+      "name": "collaborator_orders_collaborator_id_fkey",
+      "table": "collaborator_orders",
+      "type": "f"
+    },
+    {
+      "definition": "FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE",
+      "name": "collaborator_orders_order_id_fkey",
+      "table": "collaborator_orders",
+      "type": "f"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "collaborator_orders_pkey",
+      "table": "collaborator_orders",
+      "type": "p"
+    },
+    {
+      "definition": "FOREIGN KEY (collaborator_id) REFERENCES collaborators(id) ON DELETE CASCADE",
+      "name": "collaborator_payouts_collaborator_id_fkey",
+      "table": "collaborator_payouts",
+      "type": "f"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "collaborator_payouts_pkey",
+      "table": "collaborator_payouts",
+      "type": "p"
+    },
+    {
+      "definition": "FOREIGN KEY (processed_by) REFERENCES auth.users(id)",
+      "name": "collaborator_payouts_processed_by_fkey",
+      "table": "collaborator_payouts",
+      "type": "f"
+    },
+    {
+      "definition": "UNIQUE (branch_email)",
+      "name": "collaborators_branch_email_key",
+      "table": "collaborators",
+      "type": "u"
+    },
+    {
+      "definition": "FOREIGN KEY (created_by) REFERENCES auth.users(id)",
+      "name": "collaborators_created_by_fkey",
+      "table": "collaborators",
+      "type": "f"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "collaborators_pkey",
+      "table": "collaborators",
+      "type": "p"
+    },
+    {
+      "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id)",
+      "name": "collaborators_user_id_fkey",
+      "table": "collaborators",
+      "type": "f"
+    },
+    {
+      "definition": "UNIQUE (user_id)",
+      "name": "collaborators_user_id_key",
+      "table": "collaborators",
+      "type": "u"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "daily_closings_pkey",
+      "table": "daily_closings",
+      "type": "p"
+    },
+    {
+      "definition": "FOREIGN KEY (driver_id) REFERENCES drivers(id)",
+      "name": "driver_payouts_driver_id_fkey",
+      "table": "driver_payouts",
+      "type": "f"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "driver_payouts_pkey",
+      "table": "driver_payouts",
+      "type": "p"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "driver_push_tokens_pkey",
+      "table": "driver_push_tokens",
+      "type": "p"
+    },
+    {
+      "definition": "UNIQUE (push_token)",
+      "name": "driver_push_tokens_push_token_key",
+      "table": "driver_push_tokens",
+      "type": "u"
+    },
+    {
+      "definition": "FOREIGN KEY (user_id) REFERENCES drivers(id) ON DELETE CASCADE",
+      "name": "driver_push_tokens_user_id_fkey",
+      "table": "driver_push_tokens",
+      "type": "f"
+    },
+    {
+      "definition": "FOREIGN KEY (driver_id) REFERENCES drivers(id)",
+      "name": "driver_weekly_earnings_driver_id_fkey",
+      "table": "driver_weekly_earnings",
+      "type": "f"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "driver_weekly_earnings_pkey",
+      "table": "driver_weekly_earnings",
+      "type": "p"
+    },
+    {
+      "definition": "FOREIGN KEY (id) REFERENCES auth.users(id)",
+      "name": "drivers_id_fkey",
+      "table": "drivers",
+      "type": "f"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "drivers_pkey",
+      "table": "drivers",
+      "type": "p"
+    },
+    {
+      "definition": "FOREIGN KEY (order_id) REFERENCES orders(id)",
+      "name": "financial_transactions_order_id_fkey",
+      "table": "financial_transactions",
+      "type": "f"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "financial_transactions_pkey",
+      "table": "financial_transactions",
+      "type": "p"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "kiosks_pkey",
+      "table": "kiosks",
+      "type": "p"
+    },
+    {
+      "definition": "CHECK ((status = ANY (ARRAY['active'::text, 'inactive'::text, 'maintenance'::text])))",
+      "name": "kiosks_status_check",
+      "table": "kiosks",
+      "type": "c"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "meals_pkey",
+      "table": "meals",
+      "type": "p"
+    },
+    {
+      "definition": "FOREIGN KEY (meal_id) REFERENCES meals(id)",
+      "name": "order_items_meal_id_fkey",
+      "table": "order_items",
+      "type": "f"
+    },
+    {
+      "definition": "FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE",
+      "name": "order_items_order_id_fkey",
+      "table": "order_items",
+      "type": "f"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "order_items_pkey",
+      "table": "order_items",
+      "type": "p"
+    },
+    {
+      "definition": "FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE",
+      "name": "order_status_updates_order_id_fkey",
+      "table": "order_status_updates",
+      "type": "f"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "order_status_updates_pkey",
+      "table": "order_status_updates",
+      "type": "p"
+    },
+    {
+      "definition": "FOREIGN KEY (driver_id) REFERENCES drivers(id)",
+      "name": "fk_orders_driver_id",
+      "table": "orders",
+      "type": "f"
+    },
+    {
+      "definition": "FOREIGN KEY (collaborator_id) REFERENCES collaborators(id)",
+      "name": "orders_collaborator_id_fkey",
+      "table": "orders",
+      "type": "f"
+    },
+    {
+      "definition": "FOREIGN KEY (driver_id) REFERENCES drivers(id)",
+      "name": "orders_driver_id_fkey",
+      "table": "orders",
+      "type": "f"
+    },
+    {
+      "definition": "FOREIGN KEY (kiosk_id) REFERENCES kiosks(id)",
+      "name": "orders_kiosk_id_fkey",
+      "table": "orders",
+      "type": "f"
+    },
+    {
+      "definition": "UNIQUE (order_number)",
+      "name": "orders_order_number_key",
+      "table": "orders",
+      "type": "u"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "orders_pkey",
+      "table": "orders",
+      "type": "p"
+    },
+    {
+      "definition": "CHECK ((status = ANY (ARRAY['new'::text, 'confirmed'::text, 'waiting_payment'::text, 'in_preparation'::text, 'prepared'::text, 'ready_to_serve'::text, 'served'::text, 'paid'::text])))",
+      "name": "orders_status_check",
+      "table": "orders",
+      "type": "c"
+    },
+    {
+      "definition": "UNIQUE (tracking_token)",
+      "name": "orders_tracking_token_key",
+      "table": "orders",
+      "type": "u"
+    },
+    {
+      "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id)",
+      "name": "orders_user_id_fkey",
+      "table": "orders",
+      "type": "f"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "platform_settings_pkey",
+      "table": "platform_settings",
+      "type": "p"
+    },
+    {
+      "definition": "CHECK ((brand = ANY (ARRAY['ola-amigos'::text, 'loption'::text])))",
+      "name": "products_brand_check",
+      "table": "products",
+      "type": "c"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "products_pkey",
+      "table": "products",
+      "type": "p"
+    },
+    {
+      "definition": "FOREIGN KEY (created_by) REFERENCES auth.users(id)",
+      "name": "stock_movements_created_by_fkey",
+      "table": "stock_movements",
+      "type": "f"
+    },
+    {
+      "definition": "FOREIGN KEY (order_id) REFERENCES orders(id)",
+      "name": "stock_movements_order_id_fkey",
+      "table": "stock_movements",
+      "type": "f"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "stock_movements_pkey",
+      "table": "stock_movements",
+      "type": "p"
+    },
+    {
+      "definition": "FOREIGN KEY (product_id) REFERENCES products(id)",
+      "name": "stock_movements_product_id_fkey",
+      "table": "stock_movements",
+      "type": "f"
+    },
+    {
+      "definition": "CHECK ((reason = ANY (ARRAY['order'::text, 'restock'::text, 'damage'::text, 'correction'::text, 'return'::text])))",
+      "name": "stock_movements_reason_check",
+      "table": "stock_movements",
+      "type": "c"
+    },
+    {
+      "definition": "UNIQUE (user_id)",
+      "name": "unique_user_profile_user_id",
+      "table": "user_profiles",
+      "type": "u"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "user_profiles_pkey",
+      "table": "user_profiles",
+      "type": "p"
+    },
+    {
+      "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id)",
+      "name": "user_profiles_user_id_fkey",
+      "table": "user_profiles",
+      "type": "f"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "user_push_tokens_pkey",
+      "table": "user_push_tokens",
+      "type": "p"
+    },
+    {
+      "definition": "UNIQUE (push_token)",
+      "name": "user_push_tokens_push_token_key",
+      "table": "user_push_tokens",
+      "type": "u"
+    },
+    {
+      "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+      "name": "user_push_tokens_user_id_fkey",
+      "table": "user_push_tokens",
+      "type": "f"
+    }
+  ],
+  "default_privileges": [
+    {
+      "acl": "{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "object_type": "r",
+      "role": "postgres",
+      "schema": "public"
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "object_type": "f",
+      "role": "postgres",
+      "schema": "public"
+    },
+    {
+      "acl": "{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}",
+      "object_type": "S",
+      "role": "postgres",
+      "schema": "public"
+    },
+    {
+      "acl": "{postgres=rwU/supabase_admin,anon=rwU/supabase_admin,authenticated=rwU/supabase_admin,service_role=rwU/supabase_admin}",
+      "object_type": "S",
+      "role": "supabase_admin",
+      "schema": "public"
+    },
+    {
+      "acl": "{postgres=arwdDxtm/supabase_admin,anon=arwdDxtm/supabase_admin,authenticated=arwdDxtm/supabase_admin,service_role=arwdDxtm/supabase_admin}",
+      "object_type": "r",
+      "role": "supabase_admin",
+      "schema": "public"
+    },
+    {
+      "acl": "{postgres=X/supabase_admin,anon=X/supabase_admin,authenticated=X/supabase_admin,service_role=X/supabase_admin}",
+      "object_type": "f",
+      "role": "supabase_admin",
+      "schema": "public"
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "object_type": "r",
+      "role": "postgres",
+      "schema": "storage"
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "object_type": "f",
+      "role": "postgres",
+      "schema": "storage"
+    },
+    {
+      "acl": "{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}",
+      "object_type": "S",
+      "role": "postgres",
+      "schema": "storage"
+    },
+    {
+      "acl": "{postgres=arwdDxtm/supabase_auth_admin,dashboard_user=arwdDxtm/supabase_auth_admin}",
+      "object_type": "r",
+      "role": "supabase_auth_admin",
+      "schema": "auth"
+    },
+    {
+      "acl": "{postgres=rwU/supabase_auth_admin,dashboard_user=rwU/supabase_auth_admin}",
+      "object_type": "S",
+      "role": "supabase_auth_admin",
+      "schema": "auth"
+    },
+    {
+      "acl": "{postgres=X/supabase_auth_admin,dashboard_user=X/supabase_auth_admin}",
+      "object_type": "f",
+      "role": "supabase_auth_admin",
+      "schema": "auth"
+    },
+    {
+      "acl": "{postgres=rwU/supabase_admin,dashboard_user=rwU/supabase_admin}",
+      "object_type": "S",
+      "role": "supabase_admin",
+      "schema": "realtime"
+    },
+    {
+      "acl": "{postgres=X/supabase_admin,dashboard_user=X/supabase_admin}",
+      "object_type": "f",
+      "role": "supabase_admin",
+      "schema": "realtime"
+    },
+    {
+      "acl": "{postgres=rwU/supabase_admin,anon=rwU/supabase_admin,authenticated=rwU/supabase_admin,service_role=rwU/supabase_admin}",
+      "object_type": "S",
+      "role": "supabase_admin",
+      "schema": "graphql_public"
+    },
+    {
+      "acl": "{postgres=arwdDxtm/supabase_admin,anon=arwdDxtm/supabase_admin,authenticated=arwdDxtm/supabase_admin,service_role=arwdDxtm/supabase_admin}",
+      "object_type": "r",
+      "role": "supabase_admin",
+      "schema": "graphql_public"
+    },
+    {
+      "acl": "{postgres=X/supabase_admin,anon=X/supabase_admin,authenticated=X/supabase_admin,service_role=X/supabase_admin}",
+      "object_type": "f",
+      "role": "supabase_admin",
+      "schema": "graphql_public"
+    },
+    {
+      "acl": "{postgres=a*r*w*d*D*x*t*m*/supabase_admin}",
+      "object_type": "r",
+      "role": "supabase_admin",
+      "schema": "extensions"
+    },
+    {
+      "acl": "{postgres=X*/supabase_admin}",
+      "object_type": "f",
+      "role": "supabase_admin",
+      "schema": "extensions"
+    },
+    {
+      "acl": "{postgres=r*w*U*/supabase_admin}",
+      "object_type": "S",
+      "role": "supabase_admin",
+      "schema": "extensions"
+    },
+    {
+      "acl": "{postgres=arwdDxtm/supabase_admin,anon=arwdDxtm/supabase_admin,authenticated=arwdDxtm/supabase_admin,service_role=arwdDxtm/supabase_admin}",
+      "object_type": "r",
+      "role": "supabase_admin",
+      "schema": "graphql"
+    },
+    {
+      "acl": "{postgres=X/supabase_admin,anon=X/supabase_admin,authenticated=X/supabase_admin,service_role=X/supabase_admin}",
+      "object_type": "f",
+      "role": "supabase_admin",
+      "schema": "graphql"
+    },
+    {
+      "acl": "{postgres=rwU/supabase_admin,anon=rwU/supabase_admin,authenticated=rwU/supabase_admin,service_role=rwU/supabase_admin}",
+      "object_type": "S",
+      "role": "supabase_admin",
+      "schema": "graphql"
+    },
+    {
+      "acl": "{postgres=a*r*wdDxtm/supabase_admin,dashboard_user=arwdDxtm/supabase_admin}",
+      "object_type": "r",
+      "role": "supabase_admin",
+      "schema": "realtime"
+    }
+  ],
+  "effective_table_privileges": [
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "admin_logs",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "admin_logs",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "admins",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "admins",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "bank_accounts",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "bank_accounts",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "cash_collections",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "cash_collections",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "collaborator_analytics",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "collaborator_analytics",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "collaborator_orders",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "collaborator_orders",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "collaborator_payouts",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "collaborator_payouts",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "collaborators",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "collaborators",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "daily_closings",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "daily_closings",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "driver_payouts",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "driver_payouts",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "driver_push_tokens",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "driver_push_tokens",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "driver_weekly_earnings",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "driver_weekly_earnings",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "drivers",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "drivers",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "financial_transactions",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "financial_transactions",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "kiosks",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "kiosks",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "meals",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "meals",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "order_items",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "order_items",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "order_status_updates",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "order_status_updates",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "orders",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "orders",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "platform_settings",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "platform_settings",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "products",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "products",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "stock_movements",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "stock_movements",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "user_profiles",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "user_profiles",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "public",
+      "select": true,
+      "table": "user_push_tokens",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "public",
+      "select": true,
+      "table": "user_push_tokens",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "storage",
+      "select": true,
+      "table": "buckets",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "storage",
+      "select": true,
+      "table": "buckets",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "storage",
+      "select": true,
+      "table": "buckets_analytics",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "storage",
+      "select": true,
+      "table": "buckets_analytics",
+      "update": true
+    },
+    {
+      "delete": false,
+      "insert": false,
+      "role": "anon",
+      "schema": "storage",
+      "select": true,
+      "table": "buckets_vectors",
+      "update": false
+    },
+    {
+      "delete": false,
+      "insert": false,
+      "role": "authenticated",
+      "schema": "storage",
+      "select": true,
+      "table": "buckets_vectors",
+      "update": false
+    },
+    {
+      "delete": false,
+      "insert": false,
+      "role": "anon",
+      "schema": "storage",
+      "select": false,
+      "table": "migrations",
+      "update": false
+    },
+    {
+      "delete": false,
+      "insert": false,
+      "role": "authenticated",
+      "schema": "storage",
+      "select": false,
+      "table": "migrations",
+      "update": false
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "anon",
+      "schema": "storage",
+      "select": true,
+      "table": "objects",
+      "update": true
+    },
+    {
+      "delete": true,
+      "insert": true,
+      "role": "authenticated",
+      "schema": "storage",
+      "select": true,
+      "table": "objects",
+      "update": true
+    },
+    {
+      "delete": false,
+      "insert": false,
+      "role": "anon",
+      "schema": "storage",
+      "select": true,
+      "table": "s3_multipart_uploads",
+      "update": false
+    },
+    {
+      "delete": false,
+      "insert": false,
+      "role": "authenticated",
+      "schema": "storage",
+      "select": true,
+      "table": "s3_multipart_uploads",
+      "update": false
+    },
+    {
+      "delete": false,
+      "insert": false,
+      "role": "anon",
+      "schema": "storage",
+      "select": true,
+      "table": "s3_multipart_uploads_parts",
+      "update": false
+    },
+    {
+      "delete": false,
+      "insert": false,
+      "role": "authenticated",
+      "schema": "storage",
+      "select": true,
+      "table": "s3_multipart_uploads_parts",
+      "update": false
+    },
+    {
+      "delete": false,
+      "insert": false,
+      "role": "anon",
+      "schema": "storage",
+      "select": true,
+      "table": "vector_indexes",
+      "update": false
+    },
+    {
+      "delete": false,
+      "insert": false,
+      "role": "authenticated",
+      "schema": "storage",
+      "select": true,
+      "table": "vector_indexes",
+      "update": false
+    }
+  ],
+  "enums": null,
+  "extensions": [
+    {
+      "name": "plpgsql",
+      "version": "1.0"
+    },
+    {
+      "name": "pg_stat_statements",
+      "version": "1.11"
+    },
+    {
+      "name": "uuid-ossp",
+      "version": "1.1"
+    },
+    {
+      "name": "pgcrypto",
+      "version": "1.3"
+    },
+    {
+      "name": "supabase_vault",
+      "version": "0.3.1"
+    }
+  ],
+  "functions": [
+    {
+      "anon_can_execute": true,
+      "args": "",
+      "authenticated_can_execute": true,
+      "config": null,
+      "definition": "CREATE OR REPLACE FUNCTION public.calculate_collaborator_revenue_split()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\r\nDECLARE\r\n  share_percent DECIMAL;\r\nBEGIN\r\n  SELECT revenue_share_percent INTO share_percent\r\n  FROM collaborators\r\n  WHERE id = NEW.collaborator_id;\r\n  \r\n  NEW.collaborator_share := NEW.order_total * (share_percent / 100);\r\n  NEW.loption_share := NEW.order_total - NEW.collaborator_share;\r\n  \r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
+      "name": "calculate_collaborator_revenue_split",
+      "schema": "public",
+      "security_definer": false
+    },
+    {
+      "anon_can_execute": true,
+      "args": "",
+      "authenticated_can_execute": true,
+      "config": null,
+      "definition": "CREATE OR REPLACE FUNCTION public.calculate_driver_weekly_earnings()\n RETURNS void\n LANGUAGE plpgsql\nAS $function$\r\nDECLARE\r\n  driver_record RECORD;\r\n  v_week_start DATE;\r\n  v_week_end DATE;\r\nBEGIN\r\n  -- Get current week (Monday to Sunday)\r\n  v_week_start := date_trunc('week', CURRENT_DATE)::DATE;\r\n  v_week_end := v_week_start + interval '6 days';\r\n  \r\n  FOR driver_record IN \r\n    SELECT \r\n      d.id as driver_id,\r\n      COUNT(o.id) as total_deliveries,\r\n      SUM(o.delivery_fee) as total_delivery_fees,\r\n      SUM(o.delivery_fee) * 0.15 as commission_amount\r\n    FROM drivers d\r\n    JOIN orders o ON o.driver_id = d.id\r\n    WHERE o.status = 'delivered'\r\n      AND o.delivered_at >= v_week_start\r\n      AND o.delivered_at <= v_week_end\r\n      AND (o.driver_commission_paid IS NULL OR o.driver_commission_paid = false)\r\n    GROUP BY d.id\r\n  LOOP\r\n    -- Insert or update weekly earnings\r\n    INSERT INTO driver_weekly_earnings (\r\n      driver_id, week_start, week_end,\r\n      total_deliveries, total_delivery_fees, commission_rate, commission_amount,\r\n      payout_status\r\n    ) VALUES (\r\n      driver_record.driver_id, v_week_start, v_week_end,\r\n      driver_record.total_deliveries, driver_record.total_delivery_fees, 15, driver_record.commission_amount,\r\n      'pending'\r\n    )\r\n    ON CONFLICT (driver_id, week_start) DO UPDATE SET\r\n      total_deliveries = EXCLUDED.total_deliveries,\r\n      total_delivery_fees = EXCLUDED.total_delivery_fees,\r\n      commission_amount = EXCLUDED.commission_amount,\r\n      updated_at = NOW();\r\n  END LOOP;\r\nEND;\r\n$function$\n",
+      "name": "calculate_driver_weekly_earnings",
+      "schema": "public",
+      "security_definer": false
+    },
+    {
+      "anon_can_execute": true,
+      "args": "p_order_number text, p_kiosk_id uuid, p_items jsonb, p_total numeric, p_language text, p_tracking_token text",
+      "authenticated_can_execute": true,
+      "config": null,
+      "definition": "CREATE OR REPLACE FUNCTION public.create_order_transaction(p_order_number text, p_kiosk_id uuid, p_items jsonb, p_total numeric, p_language text, p_tracking_token text DEFAULT NULL::text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\nAS $function$\r\nDECLARE\r\n  v_order_id UUID;\r\n  v_item JSONB;\r\n  v_product_id UUID;\r\n  v_quantity INTEGER;\r\n  v_product_name TEXT;\r\n  v_unit_price DECIMAL;\r\nBEGIN\r\n  INSERT INTO orders (\r\n    order_number, kiosk_id, total, language, status,\r\n    timestamp, items, tracking_token, tracking_expires_at, created_at\r\n  ) VALUES (\r\n    p_order_number, p_kiosk_id, p_total, p_language, 'new',\r\n    NOW(), p_items, p_tracking_token, NOW() + INTERVAL '24 hours', NOW()\r\n  ) RETURNING id INTO v_order_id;\r\n\r\n  FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP\r\n    v_product_id := (v_item->>'product_id')::UUID;\r\n    v_quantity := (v_item->>'quantity')::INTEGER;\r\n    \r\n    SELECT name_en, price INTO v_product_name, v_unit_price\r\n    FROM products WHERE id = v_product_id FOR UPDATE;\r\n    \r\n    IF NOT FOUND THEN RAISE EXCEPTION 'Product % not found', v_product_id; END IF;\r\n    \r\n    UPDATE products SET stock = stock - v_quantity, updated_at = NOW()\r\n    WHERE id = v_product_id AND stock >= v_quantity;\r\n    \r\n    IF NOT FOUND THEN RAISE EXCEPTION 'Insufficient stock for product %', v_product_id; END IF;\r\n    \r\n    INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity)\r\n    VALUES (v_order_id, v_product_id, v_product_name, v_unit_price, v_quantity);\r\n    \r\n    INSERT INTO stock_movements (product_id, quantity_change, reason, order_id)\r\n    VALUES (v_product_id, -v_quantity, 'order', v_order_id);\r\n  END LOOP;\r\n\r\n  UPDATE kiosks SET last_seen = NOW() WHERE id = p_kiosk_id;\r\n\r\n  RETURN jsonb_build_object('success', true, 'order_id', v_order_id);\r\nEND;\r\n$function$\n",
+      "name": "create_order_transaction",
+      "schema": "public",
+      "security_definer": true
+    },
+    {
+      "anon_can_execute": true,
+      "args": "",
+      "authenticated_can_execute": true,
+      "config": [
+        "search_path=pg_catalog"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.rls_auto_enable()\n RETURNS event_trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  cmd record;\nBEGIN\n  FOR cmd IN\n    SELECT *\n    FROM pg_event_trigger_ddl_commands()\n    WHERE command_tag IN ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')\n      AND object_type IN ('table','partitioned table')\n  LOOP\n     IF cmd.schema_name IS NOT NULL AND cmd.schema_name IN ('public') AND cmd.schema_name NOT IN ('pg_catalog','information_schema') AND cmd.schema_name NOT LIKE 'pg_toast%' AND cmd.schema_name NOT LIKE 'pg_temp%' THEN\n      BEGIN\n        EXECUTE format('alter table if exists %s enable row level security', cmd.object_identity);\n        RAISE LOG 'rls_auto_enable: enabled RLS on %', cmd.object_identity;\n      EXCEPTION\n        WHEN OTHERS THEN\n          RAISE LOG 'rls_auto_enable: failed to enable RLS on %', cmd.object_identity;\n      END;\n     ELSE\n        RAISE LOG 'rls_auto_enable: skip % (either system schema or not in enforced list: %.)', cmd.object_identity, cmd.schema_name;\n     END IF;\n  END LOOP;\nEND;\n$function$\n",
+      "name": "rls_auto_enable",
+      "schema": "public",
+      "security_definer": true
+    },
+    {
+      "anon_can_execute": true,
+      "args": "",
+      "authenticated_can_execute": true,
+      "config": null,
+      "definition": "CREATE OR REPLACE FUNCTION public.update_collaborator_analytics()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\r\nBEGIN\r\n  INSERT INTO collaborator_analytics (collaborator_id, date, total_orders, completed_orders, total_revenue, collaborator_revenue, loption_revenue)\r\n  VALUES (\r\n    NEW.collaborator_id,\r\n    CURRENT_DATE,\r\n    1,\r\n    CASE WHEN NEW.preparation_status = 'ready' THEN 1 ELSE 0 END,\r\n    NEW.order_total,\r\n    NEW.collaborator_share,\r\n    NEW.loption_share\r\n  )\r\n  ON CONFLICT (collaborator_id, date) DO UPDATE SET\r\n    total_orders = collaborator_analytics.total_orders + 1,\r\n    completed_orders = collaborator_analytics.completed_orders + \r\n      CASE WHEN NEW.preparation_status = 'ready' THEN 1 ELSE 0 END,\r\n    total_revenue = collaborator_analytics.total_revenue + NEW.order_total,\r\n    collaborator_revenue = collaborator_analytics.collaborator_revenue + NEW.collaborator_share,\r\n    loption_revenue = collaborator_analytics.loption_revenue + NEW.loption_share;\r\n  \r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
+      "name": "update_collaborator_analytics",
+      "schema": "public",
+      "security_definer": false
+    },
+    {
+      "anon_can_execute": true,
+      "args": "",
+      "authenticated_can_execute": true,
+      "config": [
+        "search_path=pg_catalog"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION storage.enforce_bucket_lifecycle_service_role()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  IF current_user::text IS DISTINCT FROM TG_ARGV[0]\n     AND (\n       OLD.lifecycle_configuration IS DISTINCT FROM NEW.lifecycle_configuration\n       OR OLD.lifecycle_configuration_generation IS DISTINCT FROM NEW.lifecycle_configuration_generation\n     ) THEN\n    -- AFTER runs only after caller RLS has accepted the proposed row. The API\n    -- recognizes this specific error after rolling back its permission probe;\n    -- direct non-service writes still fail and cannot persist the change.\n    RAISE EXCEPTION 'bucket control columns may only be changed by the configured storage service role'\n      USING ERRCODE = 'PST01',\n            SCHEMA = TG_TABLE_SCHEMA,\n            TABLE = TG_TABLE_NAME,\n            CONSTRAINT = TG_NAME;\n  END IF;\n\n  RETURN NULL;\nEND;\n$function$\n",
+      "name": "enforce_bucket_lifecycle_service_role",
+      "schema": "storage",
+      "security_definer": false
+    },
+    {
+      "anon_can_execute": true,
+      "args": "",
+      "authenticated_can_execute": true,
+      "config": null,
+      "definition": "CREATE OR REPLACE FUNCTION storage.enforce_bucket_name_length()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nbegin\n    if length(new.name) > 100 then\n        raise exception 'bucket name \"%\" is too long (% characters). Max is 100.', new.name, length(new.name);\n    end if;\n    return new;\nend;\n$function$\n",
+      "name": "enforce_bucket_name_length",
+      "schema": "storage",
+      "security_definer": false
+    },
+    {
+      "anon_can_execute": true,
+      "args": "",
+      "authenticated_can_execute": true,
+      "config": [
+        "search_path=pg_catalog"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION storage.protect_bucket_control_columns()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  configuration_changed boolean;\nBEGIN\n  IF TG_OP = 'INSERT' THEN\n    IF NEW.lifecycle_configuration IS NOT NULL\n       OR NEW.lifecycle_configuration_generation IS NOT NULL THEN\n      IF NOT pg_has_role(current_user, TG_ARGV[0], 'MEMBER') THEN\n        RAISE EXCEPTION 'only members of the configured storage service role may insert lifecycle policy state'\n          USING ERRCODE = '42501',\n                HINT = format(\n                  'Insert with both lifecycle columns NULL and configure lifecycle through the Storage API afterward, or insert as a member of %I.',\n                  TG_ARGV[0]\n                );\n      END IF;\n    END IF;\n\n    RETURN NEW;\n  END IF;\n\n  configuration_changed =\n    OLD.lifecycle_configuration IS DISTINCT FROM NEW.lifecycle_configuration\n    OR OLD.lifecycle_configuration_generation IS DISTINCT FROM NEW.lifecycle_configuration_generation;\n\n  IF NOT configuration_changed THEN\n    RETURN NEW;\n  END IF;\n\n  IF NEW.type IS DISTINCT FROM 'STANDARD' THEN\n    RAISE EXCEPTION 'bucket versioning and lifecycle controls require a Standard bucket'\n      USING ERRCODE = '0A000';\n  END IF;\n\n  IF NEW.lifecycle_configuration IS NULL\n     AND NEW.lifecycle_configuration_generation IS NULL THEN\n    RETURN NEW;\n  END IF;\n\n  IF NEW.lifecycle_configuration IS NULL\n     OR NEW.lifecycle_configuration_generation IS NULL\n     OR OLD.lifecycle_configuration IS NOT DISTINCT FROM NEW.lifecycle_configuration\n     OR OLD.lifecycle_configuration_generation IS NOT DISTINCT FROM NEW.lifecycle_configuration_generation THEN\n    RAISE EXCEPTION 'a changed lifecycle policy requires a new non-null generation'\n      USING ERRCODE = '22023';\n  END IF;\n\n  RETURN NEW;\nEND;\n$function$\n",
+      "name": "protect_bucket_control_columns",
+      "schema": "storage",
+      "security_definer": false
+    },
+    {
+      "anon_can_execute": true,
+      "args": "",
+      "authenticated_can_execute": true,
+      "config": null,
+      "definition": "CREATE OR REPLACE FUNCTION storage.protect_delete()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    -- Check if storage.allow_delete_query is set to 'true'\n    IF COALESCE(current_setting('storage.allow_delete_query', true), 'false') != 'true' THEN\n        RAISE EXCEPTION 'Direct deletion from storage tables is not allowed. Use the Storage API instead.'\n            USING HINT = 'This prevents accidental data loss from orphaned objects.',\n                  ERRCODE = '42501';\n    END IF;\n    RETURN NULL;\nEND;\n$function$\n",
+      "name": "protect_delete",
+      "schema": "storage",
+      "security_definer": false
+    },
+    {
+      "anon_can_execute": true,
+      "args": "",
+      "authenticated_can_execute": true,
+      "config": null,
+      "definition": "CREATE OR REPLACE FUNCTION storage.update_updated_at_column()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    NEW.updated_at = now();\n    RETURN NEW; \nEND;\n$function$\n",
+      "name": "update_updated_at_column",
+      "schema": "storage",
+      "security_definer": false
+    }
+  ],
+  "generated_at": "2026-10-15T19:40:30.381404+00:00",
+  "indexes": [
+    {
+      "definition": "CREATE UNIQUE INDEX admin_logs_pkey ON public.admin_logs USING btree (id)",
+      "name": "admin_logs_pkey",
+      "table": "admin_logs"
+    },
+    {
+      "definition": "CREATE INDEX idx_admin_logs_admin_id ON public.admin_logs USING btree (admin_id)",
+      "name": "idx_admin_logs_admin_id",
+      "table": "admin_logs"
+    },
+    {
+      "definition": "CREATE INDEX idx_admin_logs_created_at ON public.admin_logs USING btree (created_at)",
+      "name": "idx_admin_logs_created_at",
+      "table": "admin_logs"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX admins_email_key ON public.admins USING btree (email)",
+      "name": "admins_email_key",
+      "table": "admins"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX admins_pkey ON public.admins USING btree (id)",
+      "name": "admins_pkey",
+      "table": "admins"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX bank_accounts_pkey ON public.bank_accounts USING btree (id)",
+      "name": "bank_accounts_pkey",
+      "table": "bank_accounts"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX cash_collections_pkey ON public.cash_collections USING btree (id)",
+      "name": "cash_collections_pkey",
+      "table": "cash_collections"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX collaborator_analytics_collaborator_id_date_key ON public.collaborator_analytics USING btree (collaborator_id, date)",
+      "name": "collaborator_analytics_collaborator_id_date_key",
+      "table": "collaborator_analytics"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX collaborator_analytics_pkey ON public.collaborator_analytics USING btree (id)",
+      "name": "collaborator_analytics_pkey",
+      "table": "collaborator_analytics"
+    },
+    {
+      "definition": "CREATE INDEX idx_collaborator_analytics_collaborator_id ON public.collaborator_analytics USING btree (collaborator_id)",
+      "name": "idx_collaborator_analytics_collaborator_id",
+      "table": "collaborator_analytics"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX collaborator_orders_pkey ON public.collaborator_orders USING btree (id)",
+      "name": "collaborator_orders_pkey",
+      "table": "collaborator_orders"
+    },
+    {
+      "definition": "CREATE INDEX idx_collaborator_orders_collaborator_id ON public.collaborator_orders USING btree (collaborator_id)",
+      "name": "idx_collaborator_orders_collaborator_id",
+      "table": "collaborator_orders"
+    },
+    {
+      "definition": "CREATE INDEX idx_collaborator_orders_order_id ON public.collaborator_orders USING btree (order_id)",
+      "name": "idx_collaborator_orders_order_id",
+      "table": "collaborator_orders"
+    },
+    {
+      "definition": "CREATE INDEX idx_collaborator_orders_preparation_status ON public.collaborator_orders USING btree (preparation_status)",
+      "name": "idx_collaborator_orders_preparation_status",
+      "table": "collaborator_orders"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX collaborator_payouts_pkey ON public.collaborator_payouts USING btree (id)",
+      "name": "collaborator_payouts_pkey",
+      "table": "collaborator_payouts"
+    },
+    {
+      "definition": "CREATE INDEX idx_collaborator_payouts_collaborator_id ON public.collaborator_payouts USING btree (collaborator_id)",
+      "name": "idx_collaborator_payouts_collaborator_id",
+      "table": "collaborator_payouts"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX collaborators_branch_email_key ON public.collaborators USING btree (branch_email)",
+      "name": "collaborators_branch_email_key",
+      "table": "collaborators"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX collaborators_pkey ON public.collaborators USING btree (id)",
+      "name": "collaborators_pkey",
+      "table": "collaborators"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX collaborators_user_id_key ON public.collaborators USING btree (user_id)",
+      "name": "collaborators_user_id_key",
+      "table": "collaborators"
+    },
+    {
+      "definition": "CREATE INDEX idx_collaborators_status ON public.collaborators USING btree (status)",
+      "name": "idx_collaborators_status",
+      "table": "collaborators"
+    },
+    {
+      "definition": "CREATE INDEX idx_collaborators_user_id ON public.collaborators USING btree (user_id)",
+      "name": "idx_collaborators_user_id",
+      "table": "collaborators"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX daily_closings_pkey ON public.daily_closings USING btree (id)",
+      "name": "daily_closings_pkey",
+      "table": "daily_closings"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX driver_payouts_pkey ON public.driver_payouts USING btree (id)",
+      "name": "driver_payouts_pkey",
+      "table": "driver_payouts"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX driver_push_tokens_pkey ON public.driver_push_tokens USING btree (id)",
+      "name": "driver_push_tokens_pkey",
+      "table": "driver_push_tokens"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX driver_push_tokens_push_token_key ON public.driver_push_tokens USING btree (push_token)",
+      "name": "driver_push_tokens_push_token_key",
+      "table": "driver_push_tokens"
+    },
+    {
+      "definition": "CREATE INDEX idx_driver_push_tokens_user_id ON public.driver_push_tokens USING btree (user_id)",
+      "name": "idx_driver_push_tokens_user_id",
+      "table": "driver_push_tokens"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX driver_weekly_earnings_pkey ON public.driver_weekly_earnings USING btree (id)",
+      "name": "driver_weekly_earnings_pkey",
+      "table": "driver_weekly_earnings"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX drivers_pkey ON public.drivers USING btree (id)",
+      "name": "drivers_pkey",
+      "table": "drivers"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX financial_transactions_pkey ON public.financial_transactions USING btree (id)",
+      "name": "financial_transactions_pkey",
+      "table": "financial_transactions"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX kiosks_pkey ON public.kiosks USING btree (id)",
+      "name": "kiosks_pkey",
+      "table": "kiosks"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX meals_pkey ON public.meals USING btree (id)",
+      "name": "meals_pkey",
+      "table": "meals"
+    },
+    {
+      "definition": "CREATE INDEX idx_order_items_meal_id ON public.order_items USING btree (meal_id)",
+      "name": "idx_order_items_meal_id",
+      "table": "order_items"
+    },
+    {
+      "definition": "CREATE INDEX idx_order_items_order_id ON public.order_items USING btree (order_id)",
+      "name": "idx_order_items_order_id",
+      "table": "order_items"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX order_items_pkey ON public.order_items USING btree (id)",
+      "name": "order_items_pkey",
+      "table": "order_items"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX order_status_updates_pkey ON public.order_status_updates USING btree (id)",
+      "name": "order_status_updates_pkey",
+      "table": "order_status_updates"
+    },
+    {
+      "definition": "CREATE INDEX idx_orders_collaborator_id ON public.orders USING btree (collaborator_id)",
+      "name": "idx_orders_collaborator_id",
+      "table": "orders"
+    },
+    {
+      "definition": "CREATE INDEX idx_orders_driver_id ON public.orders USING btree (driver_id)",
+      "name": "idx_orders_driver_id",
+      "table": "orders"
+    },
+    {
+      "definition": "CREATE INDEX idx_orders_status ON public.orders USING btree (status)",
+      "name": "idx_orders_status",
+      "table": "orders"
+    },
+    {
+      "definition": "CREATE INDEX idx_orders_tracking_token ON public.orders USING btree (tracking_token)",
+      "name": "idx_orders_tracking_token",
+      "table": "orders"
+    },
+    {
+      "definition": "CREATE INDEX idx_orders_user_id ON public.orders USING btree (user_id)",
+      "name": "idx_orders_user_id",
+      "table": "orders"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX orders_order_number_key ON public.orders USING btree (order_number)",
+      "name": "orders_order_number_key",
+      "table": "orders"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX orders_pkey ON public.orders USING btree (id)",
+      "name": "orders_pkey",
+      "table": "orders"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX orders_tracking_token_key ON public.orders USING btree (tracking_token)",
+      "name": "orders_tracking_token_key",
+      "table": "orders"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX platform_settings_pkey ON public.platform_settings USING btree (id)",
+      "name": "platform_settings_pkey",
+      "table": "platform_settings"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX products_pkey ON public.products USING btree (id)",
+      "name": "products_pkey",
+      "table": "products"
+    },
+    {
+      "definition": "CREATE INDEX idx_stock_movements_product_id ON public.stock_movements USING btree (product_id)",
+      "name": "idx_stock_movements_product_id",
+      "table": "stock_movements"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX stock_movements_pkey ON public.stock_movements USING btree (id)",
+      "name": "stock_movements_pkey",
+      "table": "stock_movements"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX unique_user_profile_user_id ON public.user_profiles USING btree (user_id)",
+      "name": "unique_user_profile_user_id",
+      "table": "user_profiles"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX user_profiles_pkey ON public.user_profiles USING btree (id)",
+      "name": "user_profiles_pkey",
+      "table": "user_profiles"
+    },
+    {
+      "definition": "CREATE INDEX idx_user_push_tokens_user_id ON public.user_push_tokens USING btree (user_id)",
+      "name": "idx_user_push_tokens_user_id",
+      "table": "user_push_tokens"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX user_push_tokens_pkey ON public.user_push_tokens USING btree (id)",
+      "name": "user_push_tokens_pkey",
+      "table": "user_push_tokens"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX user_push_tokens_push_token_key ON public.user_push_tokens USING btree (push_token)",
+      "name": "user_push_tokens_push_token_key",
+      "table": "user_push_tokens"
+    }
+  ],
+  "policies": [
+    {
+      "command": "ALL",
+      "name": "admin_full_access_collaborator_analytics",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "collaborator_analytics",
+      "using": "(auth.uid() IN ( SELECT user_profiles.user_id\n   FROM user_profiles\n  WHERE (user_profiles.is_admin = true)))",
+      "with_check": null
+    },
+    {
+      "command": "ALL",
+      "name": "admin_full_access_collaborator_orders",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "collaborator_orders",
+      "using": "(auth.uid() IN ( SELECT user_profiles.user_id\n   FROM user_profiles\n  WHERE (user_profiles.is_admin = true)))",
+      "with_check": null
+    },
+    {
+      "command": "UPDATE",
+      "name": "collaborators_update_own_orders",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "collaborator_orders",
+      "using": "(collaborator_id IN ( SELECT collaborators.id\n   FROM collaborators\n  WHERE (collaborators.user_id = auth.uid())))",
+      "with_check": null
+    },
+    {
+      "command": "SELECT",
+      "name": "collaborators_view_own_orders",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "collaborator_orders",
+      "using": "(collaborator_id IN ( SELECT collaborators.id\n   FROM collaborators\n  WHERE (collaborators.user_id = auth.uid())))",
+      "with_check": null
+    },
+    {
+      "command": "ALL",
+      "name": "admin_full_access_collaborator_payouts",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "collaborator_payouts",
+      "using": "(auth.uid() IN ( SELECT user_profiles.user_id\n   FROM user_profiles\n  WHERE (user_profiles.is_admin = true)))",
+      "with_check": null
+    },
+    {
+      "command": "ALL",
+      "name": "admin_full_access_collaborators",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "collaborators",
+      "using": "(auth.uid() IN ( SELECT user_profiles.user_id\n   FROM user_profiles\n  WHERE (user_profiles.is_admin = true)))",
+      "with_check": null
+    },
+    {
+      "command": "SELECT",
+      "name": "collaborators_view_own",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "collaborators",
+      "using": "(auth.uid() = user_id)",
+      "with_check": null
+    },
+    {
+      "command": "ALL",
+      "name": "Allow all on daily_closings",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "daily_closings",
+      "using": "true",
+      "with_check": null
+    },
+    {
+      "command": "ALL",
+      "name": "ceo_all_closings",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "daily_closings",
+      "using": "((auth.jwt() ->> 'role'::text) = 'ceo'::text)",
+      "with_check": null
+    },
+    {
+      "command": "INSERT",
+      "name": "Drivers can insert own push tokens",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "driver_push_tokens",
+      "using": null,
+      "with_check": "(auth.uid() = user_id)"
+    },
+    {
+      "command": "SELECT",
+      "name": "Drivers can view own push tokens",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "driver_push_tokens",
+      "using": "(auth.uid() = user_id)",
+      "with_check": null
+    },
+    {
+      "command": "INSERT",
+      "name": "Users can insert own driver record",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "drivers",
+      "using": null,
+      "with_check": "(auth.uid() = id)"
+    },
+    {
+      "command": "UPDATE",
+      "name": "Users can update own driver record",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "drivers",
+      "using": "(auth.uid() = id)",
+      "with_check": null
+    },
+    {
+      "command": "SELECT",
+      "name": "Users can view own driver record",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "drivers",
+      "using": "(auth.uid() = id)",
+      "with_check": null
+    },
+    {
+      "command": "ALL",
+      "name": "ceo_all_kiosks",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "kiosks",
+      "using": "((auth.jwt() ->> 'role'::text) = 'ceo'::text)",
+      "with_check": null
+    },
+    {
+      "command": "SELECT",
+      "name": "public_read_active_kiosks",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "kiosks",
+      "using": "(status = 'active'::text)",
+      "with_check": null
+    },
+    {
+      "command": "SELECT",
+      "name": "Anyone can view meals",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "meals",
+      "using": "true",
+      "with_check": null
+    },
+    {
+      "command": "DELETE",
+      "name": "Enable delete for admins",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "meals",
+      "using": "(auth.uid() IN ( SELECT user_profiles.user_id\n   FROM user_profiles\n  WHERE (user_profiles.is_admin = true)))",
+      "with_check": null
+    },
+    {
+      "command": "INSERT",
+      "name": "Enable insert for admins",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "meals",
+      "using": null,
+      "with_check": "(auth.uid() IN ( SELECT user_profiles.user_id\n   FROM user_profiles\n  WHERE (user_profiles.is_admin = true)))"
+    },
+    {
+      "command": "SELECT",
+      "name": "Enable read access for all users",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "meals",
+      "using": "true",
+      "with_check": null
+    },
+    {
+      "command": "UPDATE",
+      "name": "Enable update for admins",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "meals",
+      "using": "(auth.uid() IN ( SELECT user_profiles.user_id\n   FROM user_profiles\n  WHERE (user_profiles.is_admin = true)))",
+      "with_check": null
+    },
+    {
+      "command": "ALL",
+      "name": "Admins full access order_items",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "order_items",
+      "using": "(auth.uid() IN ( SELECT user_profiles.user_id\n   FROM user_profiles\n  WHERE (user_profiles.is_admin = true)))",
+      "with_check": null
+    },
+    {
+      "command": "ALL",
+      "name": "Service role full access order_items",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "order_items",
+      "using": "(auth.role() = 'service_role'::text)",
+      "with_check": null
+    },
+    {
+      "command": "INSERT",
+      "name": "Users can insert their own order items",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "order_items",
+      "using": null,
+      "with_check": "(EXISTS ( SELECT 1\n   FROM orders\n  WHERE ((orders.id = order_items.order_id) AND (orders.user_id = auth.uid()))))"
+    },
+    {
+      "command": "SELECT",
+      "name": "Users can view their own order items",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "order_items",
+      "using": "(EXISTS ( SELECT 1\n   FROM orders\n  WHERE ((orders.id = order_items.order_id) AND (orders.user_id = auth.uid()))))",
+      "with_check": null
+    },
+    {
+      "command": "SELECT",
+      "name": "public_read_status",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "order_status_updates",
+      "using": "true",
+      "with_check": null
+    },
+    {
+      "command": "INSERT",
+      "name": "staff_insert_status",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "order_status_updates",
+      "using": null,
+      "with_check": "true"
+    },
+    {
+      "command": "ALL",
+      "name": "Admins can view all orders",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "orders",
+      "using": "(auth.uid() IN ( SELECT user_profiles.user_id\n   FROM user_profiles\n  WHERE (user_profiles.is_admin = true)))",
+      "with_check": null
+    },
+    {
+      "command": "INSERT",
+      "name": "Allow public insert orders",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "orders",
+      "using": null,
+      "with_check": "true"
+    },
+    {
+      "command": "UPDATE",
+      "name": "Allow public update orders",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "orders",
+      "using": "true",
+      "with_check": null
+    },
+    {
+      "command": "SELECT",
+      "name": "Drivers can view assigned orders",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "orders",
+      "using": "(driver_id = auth.uid())",
+      "with_check": null
+    },
+    {
+      "command": "ALL",
+      "name": "Service role full access",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "orders",
+      "using": "(auth.role() = 'service_role'::text)",
+      "with_check": null
+    },
+    {
+      "command": "UPDATE",
+      "name": "Staff can update order status",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "orders",
+      "using": "(auth.role() = ANY (ARRAY['kitchen'::text, 'cashier'::text, 'ceo'::text]))",
+      "with_check": null
+    },
+    {
+      "command": "INSERT",
+      "name": "Users can insert orders",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "orders",
+      "using": null,
+      "with_check": "(auth.uid() = user_id)"
+    },
+    {
+      "command": "INSERT",
+      "name": "Users can insert their own orders",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "orders",
+      "using": null,
+      "with_check": "(auth.uid() = user_id)"
+    },
+    {
+      "command": "UPDATE",
+      "name": "Users can update their own orders",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "orders",
+      "using": "(auth.uid() = user_id)",
+      "with_check": null
+    },
+    {
+      "command": "SELECT",
+      "name": "Users can view their own orders",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "orders",
+      "using": "(auth.uid() = user_id)",
+      "with_check": null
+    },
+    {
+      "command": "UPDATE",
+      "name": "cashier_update_orders",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "orders",
+      "using": "((auth.jwt() ->> 'role'::text) = ANY (ARRAY['cashier'::text, 'ceo'::text]))",
+      "with_check": "(status = ANY (ARRAY['ready_to_serve'::text, 'paid'::text]))"
+    },
+    {
+      "command": "UPDATE",
+      "name": "kitchen_update_orders",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "orders",
+      "using": "((auth.jwt() ->> 'role'::text) = ANY (ARRAY['kitchen'::text, 'ceo'::text]))",
+      "with_check": "(status = ANY (ARRAY['confirmed'::text, 'in_preparation'::text, 'prepared'::text]))"
+    },
+    {
+      "command": "INSERT",
+      "name": "public_create_orders",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "orders",
+      "using": null,
+      "with_check": "true"
+    },
+    {
+      "command": "SELECT",
+      "name": "staff_read_orders",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "orders",
+      "using": "((auth.jwt() ->> 'role'::text) = ANY (ARRAY['kitchen'::text, 'cashier'::text, 'ceo'::text]))",
+      "with_check": null
+    },
+    {
+      "command": "SELECT",
+      "name": "Allow public read products",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "products",
+      "using": "true",
+      "with_check": null
+    },
+    {
+      "command": "DELETE",
+      "name": "CEO can delete",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "products",
+      "using": "(auth.role() = 'ceo'::text)",
+      "with_check": null
+    },
+    {
+      "command": "UPDATE",
+      "name": "Staff can update stock",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "products",
+      "using": "(auth.role() = 'ceo'::text)",
+      "with_check": null
+    },
+    {
+      "command": "ALL",
+      "name": "ceo_manage_products",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "products",
+      "using": "((auth.role() = 'authenticated'::text) AND ((auth.jwt() ->> 'role'::text) = 'ceo'::text))",
+      "with_check": "((auth.role() = 'authenticated'::text) AND ((auth.jwt() ->> 'role'::text) = 'ceo'::text))"
+    },
+    {
+      "command": "UPDATE",
+      "name": "kitchen_update_stock",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "products",
+      "using": "((auth.jwt() ->> 'role'::text) = ANY (ARRAY['kitchen'::text, 'ceo'::text]))",
+      "with_check": "true"
+    },
+    {
+      "command": "SELECT",
+      "name": "public_read_active_products",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "products",
+      "using": "(is_active = true)",
+      "with_check": null
+    },
+    {
+      "command": "SELECT",
+      "name": "staff_read_all_products",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "products",
+      "using": "(auth.role() = 'authenticated'::text)",
+      "with_check": null
+    },
+    {
+      "command": "INSERT",
+      "name": "ceo_insert_stock_movements",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "stock_movements",
+      "using": null,
+      "with_check": "((auth.jwt() ->> 'role'::text) = 'ceo'::text)"
+    },
+    {
+      "command": "SELECT",
+      "name": "staff_read_stock_movements",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "stock_movements",
+      "using": "((auth.jwt() ->> 'role'::text) = ANY (ARRAY['kitchen'::text, 'ceo'::text]))",
+      "with_check": null
+    },
+    {
+      "command": "ALL",
+      "name": "Service role has full access",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "user_profiles",
+      "using": "(auth.role() = 'service_role'::text)",
+      "with_check": null
+    },
+    {
+      "command": "INSERT",
+      "name": "Users can insert their own profile",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "user_profiles",
+      "using": null,
+      "with_check": "(auth.uid() = user_id)"
+    },
+    {
+      "command": "UPDATE",
+      "name": "Users can update their own profile",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "user_profiles",
+      "using": "(auth.uid() = user_id)",
+      "with_check": null
+    },
+    {
+      "command": "SELECT",
+      "name": "Users can view their own profile",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "user_profiles",
+      "using": "(auth.uid() = user_id)",
+      "with_check": null
+    },
+    {
+      "command": "INSERT",
+      "name": "Users can insert own push tokens",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "user_push_tokens",
+      "using": null,
+      "with_check": "(auth.uid() = user_id)"
+    },
+    {
+      "command": "SELECT",
+      "name": "Users can view own push tokens",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "public",
+      "table": "user_push_tokens",
+      "using": "(auth.uid() = user_id)",
+      "with_check": null
+    },
+    {
+      "command": "INSERT",
+      "name": "Authenticated users can upload",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "storage",
+      "table": "objects",
+      "using": null,
+      "with_check": "((bucket_id = 'meal-images'::text) AND (auth.role() = 'authenticated'::text))"
+    },
+    {
+      "command": "SELECT",
+      "name": "Public Access",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "storage",
+      "table": "objects",
+      "using": "(bucket_id = 'meal-images'::text)",
+      "with_check": null
+    },
+    {
+      "command": "DELETE",
+      "name": "Users can delete own uploads",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "storage",
+      "table": "objects",
+      "using": "((bucket_id = 'meal-images'::text) AND (auth.uid() = owner))",
+      "with_check": null
+    },
+    {
+      "command": "UPDATE",
+      "name": "Users can update own uploads",
+      "permissive": "PERMISSIVE",
+      "roles": [
+        "public"
+      ],
+      "schema": "storage",
+      "table": "objects",
+      "using": "((bucket_id = 'meal-images'::text) AND (auth.uid() = owner))",
+      "with_check": null
+    }
+  ],
+  "realtime_publication": null,
+  "roles": [
+    {
+      "bypass_rls": false,
+      "role": "authenticated",
+      "superuser": false
+    },
+    {
+      "bypass_rls": false,
+      "role": "anon",
+      "superuser": false
+    },
+    {
+      "bypass_rls": true,
+      "role": "service_role",
+      "superuser": false
+    },
+    {
+      "bypass_rls": false,
+      "role": "authenticator",
+      "superuser": false
+    }
+  ],
+  "server_version": "17.6",
+  "storage_buckets": [
+    {
+      "allowed_mime_types": null,
+      "avif_autodetection": false,
+      "created_at": "2026-04-12T12:24:41.743332+00:00",
+      "file_size_limit": null,
+      "id": "src",
+      "lifecycle_configuration": null,
+      "lifecycle_configuration_generation": null,
+      "name": "src",
+      "public": false,
+      "type": "STANDARD",
+      "updated_at": "2026-04-12T12:24:41.743332+00:00",
+      "versioning_status": "DISABLED"
+    },
+    {
+      "allowed_mime_types": null,
+      "avif_autodetection": false,
+      "created_at": "2026-05-14T14:49:27.129688+00:00",
+      "file_size_limit": null,
+      "id": "meal-images",
+      "lifecycle_configuration": null,
+      "lifecycle_configuration_generation": null,
+      "name": "meal-images",
+      "public": true,
+      "type": "STANDARD",
+      "updated_at": "2026-05-14T14:49:27.129688+00:00",
+      "versioning_status": "DISABLED"
+    }
+  ],
+  "tables": [
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "admin_logs"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "admins"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "bank_accounts"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "cash_collections"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "collaborator_analytics"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "collaborator_orders"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "collaborator_payouts"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "collaborators"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "daily_closings"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "driver_payouts"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "driver_push_tokens"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "driver_weekly_earnings"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "drivers"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "financial_transactions"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "kiosks"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "meals"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "order_items"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "order_status_updates"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "orders"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "platform_settings"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "products"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "stock_movements"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "user_profiles"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "public",
+      "table": "user_push_tokens"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "storage",
+      "table": "buckets"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "storage",
+      "table": "buckets_analytics"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "storage",
+      "table": "buckets_vectors"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "storage",
+      "table": "migrations"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "storage",
+      "table": "objects"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "storage",
+      "table": "s3_multipart_uploads"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "storage",
+      "table": "s3_multipart_uploads_parts"
+    },
+    {
+      "kind": "r",
+      "rls_enabled": true,
+      "rls_forced": false,
+      "schema": "storage",
+      "table": "vector_indexes"
+    }
+  ],
+  "triggers": [
+    {
+      "definition": "CREATE TRIGGER trigger_calculate_revenue_split BEFORE INSERT ON public.collaborator_orders FOR EACH ROW EXECUTE FUNCTION calculate_collaborator_revenue_split()",
+      "enabled": "O",
+      "name": "trigger_calculate_revenue_split",
+      "schema": "public",
+      "table": "collaborator_orders"
+    },
+    {
+      "definition": "CREATE TRIGGER trigger_update_analytics AFTER INSERT OR UPDATE OF preparation_status ON public.collaborator_orders FOR EACH ROW EXECUTE FUNCTION update_collaborator_analytics()",
+      "enabled": "O",
+      "name": "trigger_update_analytics",
+      "schema": "public",
+      "table": "collaborator_orders"
+    },
+    {
+      "definition": "CREATE TRIGGER enforce_bucket_name_length_trigger BEFORE INSERT OR UPDATE OF name ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.enforce_bucket_name_length()",
+      "enabled": "O",
+      "name": "enforce_bucket_name_length_trigger",
+      "schema": "storage",
+      "table": "buckets"
+    },
+    {
+      "definition": "CREATE TRIGGER protect_bucket_control_insert BEFORE INSERT ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.protect_bucket_control_columns('service_role')",
+      "enabled": "O",
+      "name": "protect_bucket_control_insert",
+      "schema": "storage",
+      "table": "buckets"
+    },
+    {
+      "definition": "CREATE TRIGGER protect_bucket_control_update BEFORE UPDATE OF lifecycle_configuration, lifecycle_configuration_generation ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.protect_bucket_control_columns()",
+      "enabled": "O",
+      "name": "protect_bucket_control_update",
+      "schema": "storage",
+      "table": "buckets"
+    },
+    {
+      "definition": "CREATE TRIGGER protect_bucket_control_update_role AFTER UPDATE OF lifecycle_configuration, lifecycle_configuration_generation ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.enforce_bucket_lifecycle_service_role('service_role')",
+      "enabled": "O",
+      "name": "protect_bucket_control_update_role",
+      "schema": "storage",
+      "table": "buckets"
+    },
+    {
+      "definition": "CREATE TRIGGER protect_buckets_delete BEFORE DELETE ON storage.buckets FOR EACH STATEMENT EXECUTE FUNCTION storage.protect_delete()",
+      "enabled": "O",
+      "name": "protect_buckets_delete",
+      "schema": "storage",
+      "table": "buckets"
+    },
+    {
+      "definition": "CREATE TRIGGER protect_objects_delete BEFORE DELETE ON storage.objects FOR EACH STATEMENT EXECUTE FUNCTION storage.protect_delete()",
+      "enabled": "O",
+      "name": "protect_objects_delete",
+      "schema": "storage",
+      "table": "objects"
+    },
+    {
+      "definition": "CREATE TRIGGER update_objects_updated_at BEFORE UPDATE ON storage.objects FOR EACH ROW EXECUTE FUNCTION storage.update_updated_at_column()",
+      "enabled": "O",
+      "name": "update_objects_updated_at",
+      "schema": "storage",
+      "table": "objects"
+    }
+  ],
+  "views": null
+}
