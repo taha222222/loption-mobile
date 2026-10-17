@@ -7,12 +7,14 @@
 -- anyone (including anonymous callers) can create and rewrite orders with
 -- any price, payment method and status; any customer can make themselves
 -- an administrator; anonymous callers can read, change and delete
--- daily_closings; drivers can approve themselves.
+-- daily_closings; drivers can approve themselves; partners can rewrite
+-- their revenue shares.
 --
 -- Do NOT use this as a routine undo. Use the forward-recovery procedure in
 -- docs/v1/PHASE1C_DATABASE_SECURITY_PLAN.md (section "Recovery") first.
--- Only if staging is unusable AND the CTO approves: run this file in ONE
--- transaction, then re-apply the containment migration as soon as possible.
+-- Only if staging is unusable AND the CTO approves: run the STORAGE
+-- rollback first, then this file, each in ONE transaction, then re-apply
+-- the containment migrations as soon as possible.
 --
 -- Data: no existing order, profile, payment, kiosk or closing row is
 -- changed. It DROPS the new tables kitchens, staff_roles and
@@ -27,6 +29,15 @@
 -- =====================================================================
 
 set lock_timeout = '10s';
+
+do $order$
+begin
+  if exists (select 1 from pg_policies where schemaname = 'storage'
+              and policyname in ('staff_admin_insert_meal_images', 'staff_admin_update_meal_images', 'staff_admin_delete_meal_images')) then
+    raise exception 'run supabase/rollback/20261016171000_phase1c_storage_meal_images.down.sql first (storage policies depend on has_staff_role)';
+  end if;
+end
+$order$;
 
 -- 1. Driver availability: remove the invariant, restore legacy values.
 drop trigger if exists trg_enforce_driver_availability on public.drivers;
@@ -53,7 +64,6 @@ drop policy if exists "staff_admin_all_collaborators" on public."collaborators";
 drop policy if exists "staff_admin_all_collaborator_orders" on public."collaborator_orders";
 drop policy if exists "staff_admin_all_collaborator_payouts" on public."collaborator_payouts";
 drop policy if exists "staff_admin_all_collaborator_analytics" on public."collaborator_analytics";
-drop policy if exists "staff_admin_read_profiles" on public."user_profiles";
 drop policy if exists "order_owner_read_status" on public."order_status_updates";
 drop policy if exists "staff_admin_read_status" on public."order_status_updates";
 drop policy if exists "drivers_self_update_profile_location" on public."drivers";
@@ -105,6 +115,11 @@ create policy "admin_full_access_collaborator_analytics" on public."collaborator
   using ((auth.uid() IN ( SELECT user_profiles.user_id
    FROM user_profiles
   WHERE (user_profiles.is_admin = true))));
+drop policy if exists "collaborators_update_own_orders" on public."collaborator_orders";
+create policy "collaborators_update_own_orders" on public."collaborator_orders" as permissive for update to public
+  using ((collaborator_id IN ( SELECT collaborators.id
+   FROM collaborators
+  WHERE (collaborators.user_id = auth.uid()))));
 drop policy if exists "Allow public insert orders" on public."orders";
 create policy "Allow public insert orders" on public."orders" as permissive for insert to public
   with check (true);
@@ -220,6 +235,7 @@ grant execute on function public.update_collaborator_analytics() to public, anon
 alter function public.update_collaborator_analytics() reset all;
 
 -- 7. New functions and tables.
+drop function if exists public.containment_violations();
 drop function if exists public.set_driver_availability(boolean);
 drop function if exists public.enforce_driver_availability();
 drop function if exists public.assign_staff_role(uuid, text, uuid);
