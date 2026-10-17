@@ -55,3 +55,10 @@ select conname, pg_get_constraintdef(oid) from pg_constraint
 select coalesce(defaclnamespace::regnamespace::text, '(global)'), defaclobjtype, defaclacl::text
   from pg_default_acl where defaclrole = 'postgres'::regrole
  order by 1, 2;
+
+\echo '## policies (storage): table | name | command | roles | using | with check'
+select tablename, policyname, cmd, array_to_string(roles, ','),
+       coalesce(regexp_replace(qual, '\s+', ' ', 'g'), '-'),
+       coalesce(regexp_replace(with_check, '\s+', ' ', 'g'), '-')
+  from pg_policies where schemaname = 'storage'
+ order by tablename, policyname;

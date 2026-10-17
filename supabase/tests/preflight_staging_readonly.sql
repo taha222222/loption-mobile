@@ -5,8 +5,8 @@
 --
 -- Purpose: prove (or disprove) that live staging still matches the
 -- 2026-10-15 evidence the migration was built and tested against, and
--- answer the open evidence gaps (U3-U6, U9). Every row should say
--- ok = true before the migration is approved for staging. Share the
+-- fail on unsafe or unexplained platform states (U3-U6, U9). Every
+-- required row must say ok = true before the migration may be applied. Share the
 -- result (one JSON cell) with the CTO / reviewers.
 -- =====================================================================
 with
@@ -69,6 +69,54 @@ expected_policies(t, n) as (values
   ('user_push_tokens','Users can view own push tokens')),
 live_policies as (
   select tablename as t, policyname as n from pg_policies where schemaname = 'public'),
+cfg as (
+  select
+    array['anon','authenticated','authenticator','dashboard_user','pgbouncer','postgres',
+          'service_role','supabase_admin','supabase_auth_admin','supabase_etl_admin',
+          'supabase_privileged_role','supabase_read_only_user','supabase_replication_admin',
+          'supabase_storage_admin','supabase_functions_admin','supabase_realtime_admin',
+          'cli_login_postgres','pgsodium_keyholder','pgsodium_keyiduser','pgsodium_keymaker']::text[] as allowed_roles,
+    array['supabase_admin']::text[] as allowed_superusers,
+    array['postgres','service_role','supabase_admin','supabase_etl_admin','supabase_read_only_user']::text[] as allowed_bypassrls,
+    array['anon<-authenticator','anon<-postgres','authenticated<-authenticator',
+          'authenticated<-postgres','authenticator<-postgres','authenticator<-supabase_storage_admin',
+          'service_role<-authenticator','service_role<-postgres',
+          'supabase_privileged_role<-postgres','supabase_privileged_role<-supabase_etl_admin',
+          'postgres<-cli_login_postgres']::text[] as allowed_members,
+    array['anon','authenticated','service_role','authenticator','postgres','supabase_admin',
+          'supabase_auth_admin','supabase_storage_admin','supabase_privileged_role',
+          'supabase_functions_admin','supabase_realtime_admin']::text[] as privileged_groups,
+    array['extensions.grant_pg_cron_access()','extensions.grant_pg_graphql_access()',
+          'extensions.grant_pg_net_access()','extensions.set_graphql_placeholder()',
+          'extensions.pgrst_ddl_watch()','extensions.pgrst_drop_watch()','public.rls_auto_enable()']::text[] as allowed_evt_functions),
+memberships as (
+  select g.rolname::text as grp, m.rolname::text as member
+    from pg_auth_members a join pg_roles g on g.oid = a.roleid join pg_roles m on m.oid = a.member),
+auth_hook_candidates as (
+  select p.oid::regprocedure::text as fn
+    from pg_proc p cross join lateral aclexplode(p.proacl) a
+   where to_regrole('supabase_auth_admin') is not null and p.proacl is not null
+     and a.privilege_type = 'EXECUTE' and a.grantee = to_regrole('supabase_auth_admin')
+     and p.pronamespace::regnamespace::text not in ('auth','pg_catalog','information_schema')),
+schema_create as (
+  select n.nspname::text as nsp, x.grantee
+    from pg_namespace n
+    cross join lateral (select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end as grantee
+                          from aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
+                         where a.privilege_type = 'CREATE') x
+   where n.nspname in ('public','extensions','graphql_public','auth','storage','realtime','vault')
+     and x.grantee in ('PUBLIC','anon','authenticated','authenticator')),
+table_grantees as (
+  select distinct case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end as grantee
+    from pg_class c cross join lateral aclexplode(c.relacl) a
+   where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p') and c.relacl is not null),
+bucket_list as (
+  select b->>'id' || ':' || case when (b->>'public')::boolean then 'public' else 'private' end as x
+    from jsonb_array_elements(
+           case when to_regclass('storage.buckets') is null then '[]'::jsonb
+                else (xpath('/row/j/text()', query_to_xml(
+                        'select coalesce(jsonb_agg(jsonb_build_object(''id'', id, ''public'', public)), ''[]'')::text as j from storage.buckets',
+                        false, true, '')))[1]::text::jsonb end) b),   -- tableforest=true: <row><j>..</j></row>
 checks(check_name, ok, detail) as (
   select 'server_version', current_setting('server_version_num')::int >= 150000,
          current_setting('server_version')
@@ -118,26 +166,118 @@ checks(check_name, ok, detail) as (
   select 'migration_role_is_postgres_non_superuser',
          current_user = 'postgres' and not (select rolsuper from pg_roles where rolname = current_user),
          current_user
-  -- ---- information only (ok = true by definition; read the detail) ----
+  -- =================== platform drift (U3-U6): REQUIRED ===================
+  -- Same allowlists as public.containment_violations() in the migration.
   union all
-  select 'info: event triggers (U4)', true,
-         coalesce((select string_agg(evtname || ':' || evtevent || ':' || evtenabled::text || ':' || evtfoid::regproc::text, '; ')
-                     from pg_event_trigger), 'none')
+  select 'U3_no_unexpected_roles',
+         not exists (select 1 from pg_roles r, cfg where r.rolname !~ '^pg_' and r.rolname <> all (cfg.allowed_roles)),
+         coalesce((select string_agg(r.rolname, ', ') from pg_roles r, cfg
+                    where r.rolname !~ '^pg_' and r.rolname <> all (cfg.allowed_roles)), 'none')
   union all
-  select 'info: authenticator config (U5)', true,
+  select 'U3_no_unexpected_superuser_or_bypassrls',
+         not exists (select 1 from pg_roles r, cfg
+                      where (r.rolsuper and r.rolname <> all (cfg.allowed_superusers))
+                         or (r.rolbypassrls and r.rolname <> all (cfg.allowed_bypassrls))),
+         coalesce((select string_agg(r.rolname || case when r.rolsuper then ' SUPERUSER' else '' end
+                                     || case when r.rolbypassrls then ' BYPASSRLS' else '' end, ', ')
+                     from pg_roles r, cfg
+                    where (r.rolsuper and r.rolname <> all (cfg.allowed_superusers))
+                       or (r.rolbypassrls and r.rolname <> all (cfg.allowed_bypassrls))), 'none')
+  union all
+  select 'U3_client_roles_have_no_elevated_attributes',
+         not exists (select 1 from pg_roles r where r.rolname in ('anon','authenticated')
+                       and (r.rolsuper or r.rolbypassrls or r.rolcreaterole or r.rolcreatedb or r.rolcanlogin)),
+         (select string_agg(rolname || ' super=' || rolsuper || ' bypassrls=' || rolbypassrls || ' login=' || rolcanlogin, '; ')
+            from pg_roles where rolname in ('anon','authenticated'))
+  union all
+  select 'U3_no_unexpected_role_memberships',
+         not exists (select 1 from memberships m, cfg
+                      where (m.grp = any (cfg.privileged_groups) or m.member in ('anon','authenticated','service_role'))
+                        and (m.grp || '<-' || m.member) <> all (cfg.allowed_members)),
+         coalesce((select string_agg(m.grp || '<-' || m.member, ', ') from memberships m, cfg
+                    where (m.grp = any (cfg.privileged_groups) or m.member in ('anon','authenticated','service_role'))
+                      and (m.grp || '<-' || m.member) <> all (cfg.allowed_members)), 'none')
+  union all
+  select 'U3_no_auth_hook_functions',
+         not exists (select 1 from auth_hook_candidates),
+         coalesce((select string_agg(fn, ', ') from auth_hook_candidates), 'none')
+         || ' (also confirm in Dashboard: Authentication > Hooks shows no enabled hook)'
+  union all
+  select 'U4_no_unexpected_event_triggers',
+         not exists (select 1 from pg_event_trigger e, cfg
+                      where (select n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' from pg_proc p join pg_namespace n on n.oid = p.pronamespace where p.oid = e.evtfoid) <> all (cfg.allowed_evt_functions)),
+         coalesce((select string_agg(e.evtname || ':' || e.evtevent || ':' || e.evtenabled::text || ':'
+                                     || (select n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' from pg_proc p join pg_namespace n on n.oid = p.pronamespace where p.oid = e.evtfoid), '; ') from pg_event_trigger e), 'none')
+  union all
+  select 'U5_authenticator_nosuperuser_nobypassrls_noinherit',
+         exists (select 1 from pg_roles where rolname = 'authenticator'
+                  and not rolsuper and not rolbypassrls and not rolinherit),
+         coalesce((select 'super=' || rolsuper || ' bypassrls=' || rolbypassrls || ' inherit=' || rolinherit
+                     from pg_roles where rolname = 'authenticator'), 'authenticator missing')
+  union all
+  select 'U5_authenticator_preloads_safeupdate',
+         coalesce((select array_to_string(rolconfig, ';') from pg_roles where rolname = 'authenticator'), '')
+           ~ 'session_preload_libraries=[^;]*safeupdate',
          coalesce((select array_to_string(rolconfig, '; ') from pg_roles where rolname = 'authenticator'), 'none')
   union all
-  select 'info: public schema ACL (U6)', true,
-         (select coalesce(nspacl::text, 'default') from pg_namespace where nspname = 'public')
+  select 'U6_no_client_or_public_create_on_schemas',
+         not exists (select 1 from schema_create),
+         coalesce((select string_agg(nsp || ':' || grantee, ', ') from schema_create), 'none')
+         || ' | public ACL: ' || (select coalesce(nspacl::text, 'default') from pg_namespace where nspname = 'public')
+  -- =================== public tables: REQUIRED ===================
   union all
-  select 'info: custom staff roles (U3)', true,
-         coalesce((select string_agg(rolname, ',') from pg_roles where rolname in ('ceo','kitchen','cashier')), 'none')
+  select 'public_tables_owned_by_postgres',
+         not exists (select 1 from pg_class c where c.relnamespace = 'public'::regnamespace
+                       and c.relkind in ('r','p') and c.relowner <> 'postgres'::regrole),
+         coalesce((select string_agg(c.relname || '=' || c.relowner::regrole::text, ', ') from pg_class c
+                    where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p')
+                      and c.relowner <> 'postgres'::regrole), 'all postgres')
+  union all
+  select 'public_tables_rls_enabled',
+         not exists (select 1 from pg_class c where c.relnamespace = 'public'::regnamespace
+                       and c.relkind in ('r','p') and not c.relrowsecurity),
+         coalesce((select string_agg(c.relname, ', ') from pg_class c where c.relnamespace = 'public'::regnamespace
+                     and c.relkind in ('r','p') and not c.relrowsecurity), 'all enabled')
+  union all
+  select 'public_table_grantees_expected',
+         not exists (select 1 from table_grantees where grantee not in ('postgres','anon','authenticated','service_role')),
+         coalesce((select string_agg(distinct grantee, ', ') from table_grantees), 'none')
+  union all
+  select 'public_no_column_level_grants',
+         not exists (select 1 from pg_attribute a join pg_class c on c.oid = a.attrelid
+                      where c.relnamespace = 'public'::regnamespace and a.attnum > 0 and a.attacl is not null),
+         coalesce((select string_agg(c.relname || '.' || a.attname, ', ') from pg_attribute a join pg_class c on c.oid = a.attrelid
+                    where c.relnamespace = 'public'::regnamespace and a.attnum > 0 and a.attacl is not null), 'none')
+  -- =================== storage: REQUIRED ===================
+  union all
+  select 'storage_objects_policies_match_evidence',
+         to_regclass('storage.objects') is not null
+         and md5(coalesce((select string_agg(tablename || '|' || policyname || '|' || cmd || '|' ||
+                 array_to_string(roles, ',') || '|' || coalesce(qual, '') || '|' || coalesce(with_check, ''),
+                 E'\n' order by tablename collate "C", policyname collate "C")
+            from pg_policies where schemaname = 'storage'), '')) = '8aa1ab5db6b161453a493c3c5274dd84',
+         coalesce((select string_agg(tablename || '.' || policyname || ':' || cmd, '; ')
+                     from pg_policies where schemaname = 'storage'), 'none')
+  union all
+  select 'storage_buckets_match_evidence',
+         to_regclass('storage.buckets') is not null
+         and (select coalesce(string_agg(x, ',' order by x), '') from bucket_list) = 'meal-images:public,src:private',
+         coalesce((select string_agg(x, ',' order by x) from bucket_list), 'storage.buckets missing')
+  union all
+  select 'storage_policies_manageable_by_migration_role',
+         to_regclass('storage.objects') is not null
+         and (pg_has_role(current_user, (select relowner from pg_class where oid = to_regclass('storage.objects')), 'USAGE')
+              or coalesce(current_setting('supautils.policy_grants', true), '') ~ 'storage\.objects'),
+         'owner=' || coalesce((select relowner::regrole::text from pg_class where oid = to_regclass('storage.objects')), 'n/a')
+         || ' supautils.policy_grants covers storage.objects='
+         || (coalesce(current_setting('supautils.policy_grants', true), '') ~ 'storage\.objects')::text
+  -- ---- information only (ok = true by definition; read the detail) ----
   union all
   select 'info: realtime publication', true,
          coalesce((select string_agg(schemaname || '.' || tablename, ',') from pg_publication_tables
                     where pubname = 'supabase_realtime'), 'none')
   union all
-  select 'info: orders by origin / payment method (U8)', true,
+  select 'info: orders by origin / payment method / status (U8)', true,
          (select string_agg(k || '=' || n, ', ') from (
             select (case when kiosk_id is not null then 'kiosk' when user_id is not null then 'app' else 'other' end)
                    || ':' || coalesce(payment_method, '<null>') || ':' || coalesce(status, '<null>') as k, count(*) n

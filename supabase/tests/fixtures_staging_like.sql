@@ -19,7 +19,8 @@ insert into auth.users (id) values
   ('00000000-0000-0000-0000-0000000000d2'),  -- driver, legacy status 'pending'
   ('00000000-0000-0000-0000-0000000000d3'),  -- driver, legacy status 'online' (self-set)
   ('00000000-0000-0000-0000-0000000000d4'),  -- driver, legacy status 'rejected'
-  ('00000000-0000-0000-0000-0000000000f1');  -- future cashier
+  ('00000000-0000-0000-0000-0000000000f1'),  -- future cashier
+  ('00000000-0000-0000-0000-0000000000b1');  -- legacy partner (collaborators.user_id)
 
 set role postgres;
 
@@ -64,5 +65,14 @@ insert into public.order_status_updates (order_id, status, message) values
 insert into public.stock_movements (product_id, quantity_change, reason, order_id) values
   ('00000000-0000-0000-0000-00000000cc01', -1, 'order', '00000000-0000-0000-0000-00000000f001');
 insert into public.daily_closings (date, starting_capital, total_sales) values ('2026-10-01', 100, 30);
+
+-- Legacy partner model (retired): one partner linked to a user, one
+-- partner order whose revenue split is computed by the existing trigger.
+insert into public.collaborators (id, user_id, branch_name, branch_address, branch_email, revenue_share_percent, status, is_active)
+values ('00000000-0000-0000-0000-0000000c0b01', '00000000-0000-0000-0000-0000000000b1',
+        'Legacy branch', 'x', 'partner@test.invalid', 50, 'active', true);
+insert into public.collaborator_orders (id, order_id, collaborator_id, order_total, collaborator_share, loption_share)
+values ('00000000-0000-0000-0000-0000000c0b02', '00000000-0000-0000-0000-00000000a001',
+        '00000000-0000-0000-0000-0000000c0b01', 75, 0, 0);
 
 reset role;

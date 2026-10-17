@@ -484,6 +484,82 @@ do $$ declare r_on text; r_rev text; r_again text; v text; begin
     format('online %s revoke %s again %s status=%s', r_on, r_rev, r_again, v));
 end $$;
 
+-- ======================= partner model retired =======================
+do $$ declare r1 text; r2 text; co record; begin
+  -- b1 is linked to collaborators row c0b01 (legacy partner)
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000b1');
+  r1 := tests.attempt($q$update public.collaborator_orders set collaborator_share = 75, loption_share = 0, preparation_status = 'ready'
+                         where id = '00000000-0000-0000-0000-0000000c0b02'$q$);
+  r2 := tests.attempt($q$delete from public.collaborator_orders where id = '00000000-0000-0000-0000-0000000c0b02'$q$);
+  perform tests.reset();
+  select * into co from public.collaborator_orders where id = '00000000-0000-0000-0000-0000000c0b02';
+  perform tests.rec('T18a', 'partner', 'retired partner cannot rewrite or delete own partner order (shares, status); row preserved',
+    co.id is not null and co.collaborator_share = 37.5 and co.loption_share = 37.5 and co.preparation_status = 'pending'
+    and not exists (select 1 from pg_policies where tablename = 'collaborator_orders' and policyname = 'collaborators_update_own_orders'),
+    format('update %s delete %s share=%s/%s status=%s', r1, r2, co.collaborator_share, co.loption_share, co.preparation_status));
+end $$;
+
+do $$ declare n int; begin
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000b1');
+  n := tests.visible($q$select 1 from public.collaborator_orders where id = '00000000-0000-0000-0000-0000000c0b02'$q$);
+  perform tests.reset();
+  perform tests.rec('T18b', 'positive', 'partner history stays readable by its partner (read policy kept)', n = 1, 'visible=' || n);
+end $$;
+
+do $$ declare r text; n int := -9; begin
+  -- a partner write policy re-added later must be caught by the containment check
+  create policy p1c_probe_partner_write on public.collaborator_orders for update to authenticated using (true);
+  if to_regprocedure('public.containment_violations()') is not null then
+    execute $q$select count(*) from public.containment_violations()
+               where object = 'collaborator_orders.p1c_probe_partner_write'$q$ into n;
+  end if;
+  drop policy p1c_probe_partner_write on public.collaborator_orders;
+  perform tests.rec('T18c', 'partner', 'a re-added partner write policy is reported by containment_violations()',
+    n = 1, 'violations for probe=' || n);
+end $$;
+
+-- ======================= profile privacy =============================
+do $$ declare adm int; flag int; drv int; own int; begin
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000a1');
+  adm := tests.visible($q$select 1 from public.user_profiles where user_id <> '00000000-0000-0000-0000-0000000000a1'$q$);
+  own := tests.visible($q$select 1 from public.user_profiles where user_id = '00000000-0000-0000-0000-0000000000a1'$q$);
+  perform tests.reset();
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000e1');
+  flag := tests.visible($q$select 1 from public.user_profiles where user_id <> '00000000-0000-0000-0000-0000000000e1'$q$);
+  perform tests.reset();
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000d1');
+  drv := tests.visible($q$select 1 from public.user_profiles where user_id <> '00000000-0000-0000-0000-0000000000d1'$q$);
+  perform tests.reset();
+  perform tests.rec('T19', 'privacy', 'no blanket profile read: admin, flagged account and driver see only their own profile',
+    adm = 0 and flag = 0 and drv = 0 and own = 1
+    and not exists (select 1 from pg_policies where tablename = 'user_profiles' and policyname = 'staff_admin_read_profiles'),
+    format('admin_others=%s admin_own=%s flagged_others=%s driver_others=%s', adm, own, flag, drv));
+end $$;
+
+do $$ declare n int; r text; begin
+  -- driver approval works from public.drivers alone
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000a1');
+  n := tests.visible('select id, email, phone, status from public.drivers');
+  r := tests.attempt($q$insert into public.drivers (id, email, status) values ('00000000-0000-0000-0000-0000000000f1', 'f1@test.invalid', 'offline')$q$);
+  perform tests.reset();
+  perform tests.rec('T10j', 'positive', 'admin reads all driver rows and provisions a driver row (approval needs no profile access)',
+    n = 4 and r = 'ok:1', 'drivers_visible=' || n || ' provision ' || r);
+  delete from public.drivers where id = '00000000-0000-0000-0000-0000000000f1';
+end $$;
+
+do $$ declare n int := -1; a boolean; begin
+  if to_regprocedure('public.containment_violations()') is null then
+    perform tests.rec('T20', 'verify', 'containment_violations() reports no drift/containment problem; clients cannot execute it',
+      false, 'function absent (pre-migration)');
+    return;
+  end if;
+  execute $q$select count(*) from public.containment_violations() where category in ('drift','containment')$q$ into n;
+  a := has_function_privilege('authenticated', 'public.containment_violations()', 'EXECUTE')
+    or has_function_privilege('anon', 'public.containment_violations()', 'EXECUTE');
+  perform tests.rec('T20', 'verify', 'containment_violations() reports no drift/containment problem; clients cannot execute it',
+    n = 0 and not a, 'violations=' || n || ' client_exec=' || a);
+end $$;
+
 -- ======================= audit, grants ===============================
 do $$ declare n_assign int := 0; n_revoke int := 0; r_upd text; r_del text; r_owner text; begin
   if to_regclass('public.security_audit_log') is not null then
