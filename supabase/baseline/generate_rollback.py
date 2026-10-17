@@ -77,10 +77,38 @@ def main() -> int:
 -- !!! meal-images BUCKET (staging policies of 2026-10-15, verbatim).
 -- Run this FIRST (before the core rollback), in ONE transaction, only if
 -- the CTO approves. Prefer forward recovery (plan section "Recovery").
--- No object or bucket row is changed.
+-- No object row is changed. The meal-images bucket limits are restored
+-- EXACTLY to the values recorded by the migration in security_audit_log
+-- (SQL NULL where the recorded old value is JSON null). If the migration
+-- recorded no change (the bucket was already in the approved state),
+-- the bucket is left as it is.
 -- =====================================================================
 
 set lock_timeout = '10s';
+
+do $bucket$
+declare
+  rec jsonb;
+begin
+  if to_regclass('public.security_audit_log') is null then
+    raise exception 'security_audit_log missing: cannot restore the recorded bucket settings (run this before the core rollback)';
+  end if;
+  select l.details into rec
+    from public.security_audit_log l
+   where l.action = 'storage.bucket.limits_set' and l.details ->> 'bucket' = 'meal-images'
+   order by l.id desc limit 1;
+  if rec is null then
+    raise notice 'no recorded bucket change: meal-images settings left unchanged';
+    return;
+  end if;
+  update storage.buckets
+     set file_size_limit = (rec ->> 'old_file_size_limit')::bigint,
+         allowed_mime_types = case when jsonb_typeof(rec -> 'old_allowed_mime_types') = 'array'
+                                   then array(select jsonb_array_elements_text(rec -> 'old_allowed_mime_types'))
+                                   else null end
+   where id = 'meal-images';
+end
+$bucket$;
 """]
     o += [drop_line(k) for k in s_new]
     o.append("")

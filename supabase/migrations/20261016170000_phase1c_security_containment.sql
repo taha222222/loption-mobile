@@ -260,6 +260,18 @@ begin
     return query execute
       $q$select 'storage'::text, 'bucket ' || b.id, 'public bucket other than meal-images'::text
            from storage.buckets b where b.public and b.id <> 'meal-images'$q$;
+    -- CTO-approved meal-images limits (5 MiB; jpeg/png/webp only)
+    return query execute
+      $q$select 'storage'::text, 'bucket meal-images',
+                ('size/MIME limits not as approved (file_size_limit=' || coalesce(b.file_size_limit::text, 'NULL')
+                 || ', allowed_mime_types=' || coalesce(b.allowed_mime_types::text, 'NULL') || ')')::text
+           from storage.buckets b
+          where b.id = 'meal-images'
+            and (b.file_size_limit is distinct from 5242880
+                 or b.allowed_mime_types is distinct from array['image/jpeg','image/png','image/webp']::text[])$q$;
+    return query execute
+      $q$select 'storage'::text, 'bucket meal-images', 'bucket missing'::text
+          where not exists (select 1 from storage.buckets where id = 'meal-images')$q$;
   end if;
 end
 $cv$;
