@@ -1,4 +1,4 @@
-# L'OPTION V1 — Phase 1C (amended, revision 3): Database Security Containment
+# L'OPTION V1 — Phase 1C (amended, revision 4): Database Security Containment
 
 **Status: implementation package for CTO review.**
 - **Not applied** to any remote database. Nothing was sent to Supabase.
@@ -9,6 +9,23 @@
 Branch: `claude/phase-1c-amended-containment`, cut from `main` (`0cb0fe0`). It contains only this package. Review PR: taha222222/loption-mobile#1 (draft).
 
 Revision 2 addresses the CTO review of 2026-10-16 (section 0). Revision 3 adds the CTO-approved storage limits of 2026-10-17 (section 0b). Sections 1–12 describe the package as it now stands.
+
+## Review status
+**Not independently reviewed.**
+- Codex was asked twice on PR #1 (for `14aa6f4` and `f62d0e7`) and has not responded or acknowledged; the integration may not be enabled for the repository.
+- No self-review is offered in its place.
+- Everything below is the author's own work, with local, disposable test evidence only.
+
+## 0c. Revision 4: existing public objects (CTO follow-up of 2026-10-17)
+
+| Request | Implemented as | Evidence (local) |
+|---|---|---|
+| Preserve data; keep the migration non-destructive | No migration changes or deletes objects | "existing objects preserved" |
+| Per-object read-only inventory | `supabase/evidence/meal_images_inventory_readonly.sql`: id, path, type, size, timestamps, ETag, flags, uploader **class** (no user data) | Lists every object; contains no user ids |
+| Content validation plan | `supabase/tools/meal_images_scan.py`: signatures + full decode in a limited process; never renders; records served headers | 19 objects classified exactly as expected |
+| Quarantine, don't delete | `supabase/tools/meal_images_quarantine.py`: private bucket, verified copy + sidecar, gated removal, restore | Copies verified; removal gated; restore works; SVG restore refused |
+| Verify browser safety | `supabase/tests/browser_serving_tests.js` (Chromium 141) plus recorded headers. **The categorical claim is withdrawn.** | Real SVG executes on navigation; no `nosniff`; mislabelled content inert in this Chromium only |
+| Review status | Stated above; the PR stays a draft | — |
 
 ## 0b. Revision 3: CTO storage decisions of 2026-10-17
 
@@ -159,7 +176,29 @@ Historical orders, card orders and kiosk records are untouched (T11, T15).
 ### Limitation: the MIME allowlist does not validate image bytes
 The Storage API compares the **declared** `Content-Type` header with `allowed_mime_types`, and the body length with `file_size_limit`. It does not inspect or decode the bytes.
 
-The harness proves this on every run: an SVG body with a `<script>` element, uploaded by an admin with `Content-Type: image/png`, is **accepted** (`LIMIT … -> 200`). It is then served with `Content-Type: image/png`, so browsers will not run it as SVG. **But the bucket can hold bytes that are not a valid image.**
+The harness proves this on every run: an SVG body with a `<script>` element, uploaded by an admin with `Content-Type: image/png`, is **accepted** (`LIMIT … -> 200`). **The bucket can therefore hold bytes that are not a valid image.**
+
+### Serving behaviour: measured, not assumed
+An earlier draft claimed that a mislabelled SVG served as `image/png` "will not run as SVG". **That categorical claim is withdrawn.** Measured instead by `supabase/tests/browser_serving_tests.js`, which runs in every harness run.
+
+**Setup:**
+- Storage API `v1.79.30` (local).
+- Chromium `141.0.7390.37` (Playwright).
+- Each object tested by direct navigation to its public URL, and embedded as `<img>`.
+
+| Object (as stored) | Served `Content-Type` | `X-Content-Type-Options` | Direct navigation | Inside `<img>` |
+|---|---|---|---|---|
+| Real SVG with `<script>`, declared `image/svg+xml` | `image/svg+xml` | **absent** | **script EXECUTES** | no execution (image decodes) |
+| SVG bytes declared `image/png` | `image/png` | **absent** | no execution in this Chromium | not decoded |
+| HTML declared `text/html` | `text/plain` (the API rewrites it) | **absent** | no execution | not decoded |
+| Valid PNG | `image/png` | **absent** | no execution | decodes |
+
+**What this does and does not show:**
+- **`nosniff` is not returned.** Not sending it is not a proof of safety for mislabelled content.
+- **Only one Chromium build was tested.** Not Safari, Firefox, old browsers, mail clients or download handlers.
+- **Hosted Supabase** serves Storage through a CDN whose headers were not observed. Section 10 includes a read-only header check for staging, which needs approval.
+- **Real SVGs are actively dangerous.** Any SVG already in the bucket runs script when its URL is opened directly, on the Storage origin.
+- **Conclusion:** every existing object that has not been content-validated is treated as **potentially unsafe** until the scan below has classified it. New uploads are limited to `jpeg`/`png`/`webp` by declared type, but their bytes are still unvalidated (see the server-side path below).
 
 Today only admin staff can upload, which limits the exposure. If byte-level verification is required, the proposal is a trusted server-side path (not implemented, CTO decision):
 1. **Admins stop writing `meal-images` directly.** The admin app uploads to a **private** `meal-images-incoming` bucket, again admin staff only, with the same 5 MiB/type limits as an early filter.
@@ -173,11 +212,63 @@ Today only admin staff can upload, which limits the exposure. If byte-level veri
 3. **Admin-staff INSERT/UPDATE on `meal-images` is then removed.** Only the function (service role) writes there; public read stays.
 4. **Tests:** polyglot and mislabelled files rejected; oversize pixel counts rejected; output always decodes and is re-encoded; EXIF removed.
 
-### Existing objects are not re-validated
-- The new limits apply to uploads from now on.
-- Objects already in staging's bucket, uploaded while any signed-in user could write with no limits, **stay served unchanged** (CTO: preserve existing objects).
-- The read-only preflight now reports them as information: counts by declared MIME type and how many exceed 5 MiB (`info: existing meal-images objects …`). In the local run it lists the SVG, HTML, GIF and over-size test objects uploaded before the migration.
-- **Decision needed:** review that inventory on staging, and quarantine or delete anything unexpected, as a separate, approved operation.
+### Existing objects: inventory, content scan and reversible quarantine
+- **No migration deletes or changes any existing object.** Both migrations are non-destructive; tested: "existing objects preserved".
+- The new limits apply to uploads from now on. Objects already in staging's bucket (uploaded while any signed-in user could write anything) stay served until the CTO approves each step below.
+
+**Step 1: per-object inventory (read-only, SQL Editor).**
+- `supabase/evidence/meal_images_inventory_readonly.sql` returns, for every object:
+  - id, path, public URL path;
+  - declared MIME type, size;
+  - created, updated and last-accessed timestamps;
+  - cache control and the backend ETag;
+  - extension;
+  - flags: declared type not approved, over 5 MiB, extension mismatch, non-staff uploader.
+- **No user id, e-mail, name or phone is printed.** The uploader appears only as a class (`none (service role / dashboard)`, `legacy admin profile`, `other signed-in account`).
+- **Hashes:** the ETag is labelled as backend-provided and *not* a verified hash. Verified SHA-256 comes from step 2.
+- The preflight keeps the aggregate counts.
+
+**Step 2: content scan (read-only; staging run needs approval).**
+- `supabase/tools/meal_images_scan.py` downloads each object over its **public** URL, with no credentials, into a fresh directory using index-based file names. Then it:
+  - records SHA-256;
+  - identifies the real format from **file signatures** and a bounded text sniff;
+  - **fully decodes** JPEG/PNG/WebP with Pillow in a separate process limited by CPU time, memory and pixel count. **Nothing is rendered or executed**: SVG, HTML and other content are only read as bytes.
+- It reports every reason an object is suspicious:
+
+  | Reason | Meaning |
+  |---|---|
+  | `fetch_failed` | Object could not be downloaded |
+  | `size_mismatch_inventory` | Downloaded size differs from the inventory |
+  | `over_5_mib` | Larger than 5 MiB |
+  | `declared_type_not_approved` | Declared type is not jpeg/png/webp |
+  | `detected_format_not_approved` | Real format is not jpeg/png/webp |
+  | `type_mismatch` | Declared and real format differ |
+  | `extension_mismatch` | Extension does not match the declared type |
+  | `decode_failure` | Image does not decode |
+  | `pixel_limit_exceeded` | Decompression-bomb guard triggered |
+  | `embedded_markup` | Script or markup bytes inside a decodable image |
+  | `non_staff_uploader` | Provenance: uploaded by a non-staff account |
+
+- **Recommended for staging:** run the fetch, then run `--offline` inside a disposable container with `--network none --read-only --memory 2g`.
+- **Local result:** 19 objects classified exactly as expected. Detected: a truncated PNG, a 900-megapixel bomb, an SVG declared PNG, a valid PNG with an appended script, a JPEG declared PNG, SVG/GIF/HTML/octet-stream, an over-limit file and non-staff uploads.
+
+**Step 3: reversible quarantine (separate, each write step needs explicit CTO approval).**
+- Uses `supabase/tools/meal_images_quarantine.py`. The service key is read from the environment and never printed or stored.
+  1. **`plan`** (read-only): turns the scan report into a manifest of suspicious objects.
+  2. **`copy --confirm-copy`:**
+     - creates the **private** bucket `meal-images-quarantine` (aborts if it exists and is public);
+     - downloads each object with the service key and **requires its SHA-256 to equal the scan**;
+     - stores the bytes as inert `application/octet-stream` plus a JSON metadata sidecar (original path, id, content type, size, SHA-256, detected format, reasons, time);
+     - reads both back and verifies them.
+  3. **`verify`** (read-only): re-checks every copy against the manifest.
+  4. **`remove --approved-by NAME --confirm-remove`:**
+     - acts only on entries with a verified copy;
+     - re-checks that the public object still has the scanned hash;
+     - deletes through the Storage API and confirms the public URL no longer serves the object;
+     - records who approved it and when.
+  5. **`restore --path … --confirm-restore`:** puts the exact bytes back with the original `Content-Type` and verifies SHA-256 over the public URL. Types the bucket no longer allows (e.g. SVG) are refused (415) and stay quarantined.
+- **Tested locally:** 14 of 14 copies verified; the quarantine bucket is private; `remove` without `--confirm-remove` is refused; removal leaves only the 5 objects that passed the scan; a valid PNG is restored byte-identical; an SVG restore is refused by the new limits; the manifest contains no credentials; `containment_violations()` stays at 0.
+- **Nothing has been run against staging.**
 
 ## 7. Expected staging impact
 
@@ -219,6 +310,7 @@ Today only admin staff can upload, which limits the exposure. If byte-level veri
 | D–F, H | 14 guards. 13 abort the migration with nothing applied and fail their preflight check; H7 `safeupdate` is preflight-only. Every revert restores a passing preflight, and the migration then applies. |
 | G | Core rollback: exact BEFORE matrix; legacy driver statuses restored |
 | S | Full preflight including storage passes. BEFORE storage **10 pass / 12 fail** (documented holes: customer and flagged-account writes, no type or size limits). After core only, **4** storage violations are reported (3 write policies + bucket limits). **4 bucket guards** abort with nothing changed. After storage: bucket = public, 5242880, `{image/jpeg,image/png,image/webp}`; existing objects preserved; old values audited as JSON null; **22/22 HTTP checks**; 0 violations; SQL suite **45/45**. Re-apply: no change and no second audit record. Core rollback refuses to run before the storage rollback. Storage rollback restores `file_size_limit IS NULL` and `allowed_mime_types IS NULL`. Full rollback restores the exact BEFORE matrix, including storage policies and bucket settings. The `LIMIT` line records that SVG bytes declared as `image/png` are accepted. |
+| S, existing objects (revision 4) | Per-object inventory lists all objects and contains no user ids. The content scan classifies **every object as expected**, including a decode failure, a pixel bomb, a mislabelled SVG, a valid PNG with an appended script, a JPEG declared PNG, disallowed types, an over-limit file and non-staff uploads; served headers are recorded. Browser test: a real SVG **executes** on navigation; mislabelled SVG, HTML and valid PNG are inert in Chromium 141; nothing executes in `<img>`; **`nosniff` is absent**. Quarantine: copies verified, bucket private, removal refused without its confirm flag, approved local removal leaves only scan-clean objects, PNG restored byte-identical, SVG restore refused (415), no credentials in the manifest, 0 containment violations. |
 
 **Mutation checks** (one fix removed per run, full harness):
 - **Revision 1:** `drivers` UPDATE revoke (postcondition aborts); driver normalisation (CHECK aborts); profile guard (T03b); public-update drop (postcondition); status-read drop (T07b).
@@ -252,7 +344,7 @@ Today only admin staff can upload, which limits the exposure. If byte-level veri
 
 ## 10. Staging deployment checklist (after CTO approval only)
 
-1. **Approval gate:** CTO approves PR #1 after the independent review.
+1. **Approval gate:** CTO approves PR #1. **Codex has not completed an independent review**, so the package is **not independently reviewed**; deciding whether to proceed without one is a CTO call.
 2. **Compatibility gate (mandatory):**
    - The owner runs `supabase/tests/preflight_staging_readonly.sql` in the **staging** SQL Editor and shares the JSON.
    - `all_required_checks_ok` must be `true`.
@@ -272,7 +364,12 @@ Today only admin staff can upload, which limits the exposure. If byte-level veri
    - `supabase/tests/phase1c_matrix.sql` matches the AFTER side of `PHASE1C_POLICY_GRANT_MATRIX.md`.
    - API smoke tests with test accounts: anon `POST /rest/v1/orders` denied; customer `PATCH user_profiles {is_admin:true}` denied; menu works; the admin reads orders.
    - `storage_api_tests.sh check` against staging Storage with test accounts: customer upload denied; admin jpeg/png/webp allowed; SVG, GIF and over-5-MiB rejected; bucket configuration as approved.
-   - Review the preflight's `info: existing meal-images objects` inventory, and decide separately on any pre-existing non-image or oversize objects.
+   - Existing `meal-images` objects are **separate gates, each needing explicit CTO approval.** None is part of the deployment:
+     1. **Inventory (read-only, SQL Editor):** run `supabase/evidence/meal_images_inventory_readonly.sql` and store the JSON outside the repo.
+     2. **Content scan (GET requests on public URLs only):** run `meal_images_scan.py --inventory … --base-url https://<project-ref>.supabase.co/storage/v1 --download-dir <fresh dir> --report …`, ideally the fetch followed by an `--offline` scan in a container with `--network none`. Review every suspicious object, and the **served headers** (`Content-Type`, `nosniff`, `Content-Disposition`, CSP) of the hosted CDN.
+     3. **Quarantine copy (write: creates a private bucket and copies):** `copy --confirm-copy`, then `verify`. Nothing is removed at this point.
+     4. **Removal from the public bucket (write):** only with written approval naming the objects, run `remove --approved-by <name> --confirm-remove`. Keep the manifest.
+     5. **Restore, if needed:** `restore --path … --confirm-restore`.
 8. **After deployment:**
    - Approve legitimate drivers.
    - Ship the client changes (availability RPC, admin approval RPCs, routing from `staff_roles`).
@@ -285,7 +382,13 @@ Today only admin staff can upload, which limits the exposure. If byte-level veri
 3. **No hosted API, Realtime or hosted Storage test has been run**; the local equivalents passed.
 4. **Allowlists come from the Supabase 17.6 image** plus documented hosted roles. Hosted-only roles or triggers will fail the preflight until explained. This is intentional fail-closed behaviour, but it may need one review round.
 5. **The `meal-images` MIME allowlist checks the declared type, not the bytes.** A mislabelled or non-image body is accepted if declared as jpeg/png/webp. Mitigated by admin-only uploads; byte-level validation needs the server-side re-encoding path in section 6 (CTO decision).
-5b. **Objects already in staging's `meal-images` are not re-validated** and stay public. Review the preflight inventory before or after deployment (decision needed).
+5b. **Objects already in staging's `meal-images` are unvalidated and stay public until quarantined.** Treat them as **potentially unsafe**: a real SVG there **executes script on direct navigation** (measured).
+5c. **Browser safety is measured, not proven.**
+   - No `X-Content-Type-Options: nosniff` header is sent by the local Storage API.
+   - Only Chromium 141 was tested.
+   - The hosted CDN's headers are unobserved until the approved staging scan records them.
+   - **Possible mitigation (not implemented, decision needed):** serve user-visible images from a separate origin, or a CDN rule that adds `nosniff` and `Content-Disposition`/CSP for the storage path; plus the server-side re-encoding path above.
+5d. **Decoding untrusted images carries parser risk.** The scan isolates the decoder (separate process, CPU, memory and pixel limits, no rendering); the recommended staging run is offline in a disposable container.
 6. Policies not recreated here still target role `public` (M4). None of them allows writes beyond the allowlist.
 7. `authenticated` keeps RLS-protected grants on push-token, `cash_collections`, `driver_*` and `collaborator_*` tables.
 8. The mobile app still routes on `user_profiles.is_admin` and writes `drivers.status` directly; client changes are required (section 7).
@@ -300,5 +403,8 @@ Today only admin staff can upload, which limits the exposure. If byte-level veri
 | `supabase/migrations/` | `20261016170000_phase1c_security_containment.sql`, `20261016171000_phase1c_storage_meal_images.sql` |
 | `supabase/rollback/` | Generated down scripts (storage first, then core) |
 | `supabase/tests/` | `run_phase1c.sh` (A–H, S); `phase1c_security_tests.sql` (45 tests); `storage_api_tests.sh` (22 HTTP checks + the recorded MIME limitation); `preflight_staging_readonly.sql`; `phase1c_matrix.sql` + `render_matrix_md.py`; fixtures and test-only auth bootstrap |
+| `supabase/evidence/meal_images_inventory_readonly.sql` | Read-only per-object inventory of `meal-images` (no user data) |
+| `supabase/tools/meal_images_scan.py`, `meal_images_quarantine.py` | Content scan (signatures, full decode, served headers) and reversible quarantine (copy / verify / gated remove / restore) |
+| `supabase/tests/browser_serving_tests.js` | Chromium check of served headers and script execution |
 | `docs/v1/PHASE1C_POLICY_GRANT_MATRIX.md` | Generated before/after matrix, including storage |
-| `docs/v1/PHASE1C_TEST_RUN_2026-10-17_rev3.txt` | Exact, unedited harness output of the run reported in section 8 |
+| `docs/v1/PHASE1C_TEST_RUN_2026-10-17_rev4.txt` | Exact, unedited harness output of the run reported in section 8 |

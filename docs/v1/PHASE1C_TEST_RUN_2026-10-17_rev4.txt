@@ -1,0 +1,192 @@
+# supabase/tests/run_phase1c.sh — run 2026-10-17, revision 4 (local disposable containers only; nothing remote)
+
+Images: supabase/postgres:17.6.1.178 (supabase/postgres@sha256:c282d393ae56fd165b7ada2ddbac55e582a601b86f3840aa2bbc112e43d3a570)
+        ghcr.io/supabase/storage-api:v1.79.30 (ghcr.io/supabase/storage-api@sha256:bdd393f6f4d341bcf35d6ed1c0f45e2b8b07802f4491141bbf4a4fcc9f6c6eee)
+
+=== A. baseline round-trip, preflight, BEFORE tests
+  PostgreSQL 17.6 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 15.2.0, 64-bit
+  pass: baseline matches the staging evidence in every compared section (scope: supabase/evidence/README.md)
+      identical  tables (24 items)
+      identical  columns (278 items)
+      identical  constraints (66 items)
+      identical  indexes (52 items)
+      identical  policies (56 items)
+      identical  functions (5 items)
+      identical  triggers (2 items)
+      identical  effective_table_privileges (48 items)
+      identical  column_level_acls (0 items)
+      identical  enums (0 items)
+      identical  views (0 items)
+      identical  realtime_publication (0 items)
+      identical  extensions (5 items)
+      info       default_privileges differ (image configuration, not baseline)
+    RESULT: baseline reproduces the evidence
+  pass: read-only preflight: all required non-storage checks ok on the reproduced schema
+  pass: baseline refuses to run on a database that already has the schema
+  BEFORE (vulnerable staging reproduction): 11 pass / 34 fail  <- failures here document C1-C4/H2-H4
+
+=== B. AFTER: baseline + fixtures + core containment migration
+  pass: core migration applied (single transaction)
+  AFTER: 45 pass / 0 fail
+  pass: every SQL security test passes
+  pass: preflight reports the migration as already applied
+  pass: storage migration refuses to run where storage.objects is absent (fails closed)
+
+=== C. RE-APPLY core migration (repeatability)
+  pass: second apply succeeded
+  pass: second apply changed nothing (matrix identical, audit rows 4 = 4)
+  RE-APPLY tests: 45 pass / 0 fail
+
+=== D-F, H. data, policy and platform-drift guards (one database, injected one at a time)
+  pass: guard D_second_admin: migration aborted (admin seed guard), nothing applied; preflight 'exactly_one_legitimate_admin_profile' fails
+  pass: guard E_driver_status: migration aborted (unexpected drivers.status values), nothing applied; preflight 'drivers_status_values_known' fails
+  pass: guard F_rogue_policy: migration aborted (unreviewed policies), nothing applied; preflight 'public_policy_set_matches_evidence' fails
+  pass: guard H1_custom_role: migration aborted (unexpected database role), nothing applied; preflight 'U3_no_unexpected_roles' fails
+  pass: guard H2_membership: migration aborted (unexpected membership), nothing applied; preflight 'U3_no_unexpected_role_memberships' fails
+  pass: guard H3_bypassrls: migration aborted (unexpected BYPASSRLS role), nothing applied; preflight 'U3_no_unexpected_superuser_or_bypassrls' fails
+  pass: guard H4_auth_hook: migration aborted (possible Auth hook), nothing applied; preflight 'U3_no_auth_hook_functions' fails
+  pass: guard H5_event_trigger: migration aborted (unexpected event trigger), nothing applied; preflight 'U4_no_unexpected_event_triggers' fails
+  pass: guard H6_authenticator: migration aborted (authenticator must be), nothing applied; preflight 'U5_authenticator_nosuperuser_nobypassrls_noinherit' fails
+  pass: guard H7_safeupdate: preflight-only check 'U5_authenticator_preloads_safeupdate' fails (not verified by the migration)
+  pass: guard H8_schema_create: migration aborted (can CREATE in schema), nothing applied; preflight 'U6_no_client_or_public_create_on_schemas' fails
+  pass: guard H9_table_owner: migration aborted (table not owned by postgres), nothing applied; preflight 'public_tables_owned_by_postgres' fails
+  pass: guard H10_grantee: migration aborted (unexpected table grantee), nothing applied; preflight 'public_table_grantees_expected' fails
+  pass: guard H11_rls_off: migration aborted (row level security disabled), nothing applied; preflight 'public_tables_rls_enabled' fails
+  pass: guard database clean again after all reverts
+  pass: migration applies once every injected state is reverted
+
+=== G. ROLLBACK core (re-opens the vulnerabilities by design)
+  pass: rollback applied
+  pass: rollback restores the exact BEFORE policy/grant/function/default-privilege matrix
+  pass: legacy drivers.status values restored from the audit log
+  pass: BEFORE matrices of A and G identical (deterministic setup)
+
+=== S. real Supabase Storage API (meal-images)
+  pass: storage-api up; its own migrations created the storage schema (74 migrations)
+  pass: read-only preflight incl. storage checks: all required checks ok (staging storage reproduced)
+seed: customer-owned object (vulnerable policy): 200
+seed: customer SVG declared image/png:  200
+seed: customer truncated PNG:           200
+seed: customer 900-megapixel PNG bomb:  200
+seed: customer PNG + appended script:   200
+seed: customer JPEG declared image/png: 200
+seed: customer-owned object (vulnerable policy): 200
+seed: customer SVG declared image/png:  200
+seed: customer truncated PNG:           200
+seed: customer 900-megapixel PNG bomb:  200
+seed: customer PNG + appended script:   200
+seed: customer JPEG declared image/png: 200
+  BEFORE (staging storage policies): 10 pass / 12 fail  <- failures document the open upload hole
+      FAIL S02  customer cannot upload  (got 200, expected 403)
+      FAIL S03  customer cannot overwrite an object they uploaded  (got 200, expected 403)
+      FAIL S04  customer cannot upsert over an existing object  (got 200, expected 403)
+      FAIL S05  customer cannot delete an object (object still served)  (got 200+object-gone, expected 403)
+      FAIL S06  flagged is_admin account cannot upload  (got 200, expected 403)
+      FAIL S13  image/svg+xml is rejected  (got 200, expected 415)
+      FAIL S14  image/gif is rejected  (got 200, expected 415)
+      FAIL S15  text/html is rejected  (got 200, expected 415)
+      FAIL S16  application/octet-stream is rejected  (got 200, expected 415)
+      FAIL S17  an overwrite cannot change an object to SVG  (got 200, expected 415)
+      FAIL S19  5,242,881 bytes is rejected (413)  (got 200, expected 413)
+      FAIL S20  bucket: public, 5 MiB, jpeg/png/webp  (got public=True size=None mime=None, expected public=True size=5242880 mime=image/jpeg,image/png,image/webp)
+  pass: after core only: containment_violations() reports 4 storage problems (3 open write policies + bucket limits); containment not complete
+  pass: storage guard missing_bucket: migration aborted (bucket meal-images missing); bucket and policies unchanged
+  pass: storage guard unexpected_limits: migration aborted (unexpected limits); bucket and policies unchanged
+  pass: storage guard unexpected_types: migration aborted (unexpected limits); bucket and policies unchanged
+  pass: storage guard not_public: migration aborted (is not public); bucket and policies unchanged
+  pass: bucket before migration matches evidence: public, file_size_limit NULL, allowed_mime_types NULL
+  pass: storage migration applied
+  pass: bucket configured: public kept, file_size_limit 5242880, allowed_mime_types {image/jpeg,image/png,image/webp}
+  pass: existing objects preserved (16:before-bad.bin,before-bad.gif,before-bad.html,before-bad.svg,before-customer-new.png,before-exact.png,before-flagged.png,before-ok.png,before-ok.webp,before-over.png,seed-bomb.png,seed-customer.png,seed-jpeg-as-png.png,seed-polyglot.png,seed-svg-as-png.png,seed-truncated.png)
+  info: preflight inventory of pre-existing objects (not re-validated by the new limits): application/octet-stream=1, image/gif=1, image/png=9, image/png (over 5 MiB)=1, image/svg+xml=2, image/webp=1, text/html=1
+  pass: previous bucket values recorded in security_audit_log as JSON null (were SQL NULL)
+  pass: all Storage API checks pass
+    -- authorization (valid PNG bodies, so a denial is the policy, not the limits)
+    PASS S01  anon cannot upload  (got 403)
+    PASS S02  customer cannot upload  (got 403)
+    PASS S03  customer cannot overwrite an object they uploaded  (got 403)
+    PASS S04  customer cannot upsert over an existing object  (got 403)
+    PASS S05  customer cannot delete an object (object still served)  (got 403)
+    PASS S06  flagged is_admin account cannot upload  (got 403)
+    PASS S07  customer cannot create a bucket  (got 403)
+    PASS S08  customer cannot write the private src bucket  (got 403)
+    -- approved types (admin staff)
+    PASS S09  admin can upload image/png  (got 200)
+    PASS S10  admin can upload image/jpeg  (got 200)
+    PASS S11  admin can upload image/webp  (got 200)
+    PASS S12  admin can upsert an approved image (app uses upsert)  (got 200)
+    -- rejected types (admin staff; 415 = invalid_mime_type)
+    PASS S13  image/svg+xml is rejected  (got 415)
+    PASS S14  image/gif is rejected  (got 415)
+    PASS S15  text/html is rejected  (got 415)
+    PASS S16  application/octet-stream is rejected  (got 415)
+    PASS S17  an overwrite cannot change an object to SVG  (got 415)
+    -- size limit (bucket file_size_limit; container global limit is 50 MiB)
+    PASS S18  exactly 5,242,880 bytes is accepted  (got 200)
+    PASS S19  5,242,881 bytes is rejected (413)  (got 413)
+    -- effective bucket configuration as reported by the Storage API
+    PASS S20  bucket: public, 5 MiB, jpeg/png/webp  (got public=True size=5242880 mime=image/jpeg,image/png,image/webp)
+    -- public read and admin delete
+    PASS S21  approved images are publicly readable  (got yes)
+    PASS S22  admin can delete a meal image  (got 200)
+    -- documented limitation (not a pass/fail check)
+    LIMIT     SVG bytes declared as image/png -> 200 (the allowlist checks the declared Content-Type, not the bytes)
+    storage API: 22 pass / 0 fail
+  pass: containment_violations() = 0 rows (drift, containment, storage)
+  SQL tests with storage schema present: 45 pass / 0 fail
+  -- existing objects: per-object inventory, content scan, browser serving, reversible quarantine (all local)
+  pass: read-only inventory lists all 19 objects (id, path, declared type, size, timestamps, backend ETag, uploader class)
+  pass: inventory contains no user ids (uploader reported as a class only)
+    ok         image/png                declared=image/png                 5242880B  after-exact.png  -
+    ok         image/png                declared=image/png                      82B  after-ok.png  -
+    ok         image/webp               declared=image/webp                     62B  after-ok.webp  -
+    suspicious image/png                declared=application/octet-stream       82B  before-bad.bin  declared_type_not_approved,type_mismatch,extension_mismatch
+    suspicious image/gif                declared=image/gif                      14B  before-bad.gif  declared_type_not_approved,detected_format_not_approved,extension_mismatch
+    suspicious text/html                declared=text/html                      55B  before-bad.html  declared_type_not_approved,detected_format_not_approved,extension_mismatch
+    suspicious image/svg+xml            declared=image/svg+xml                  88B  before-bad.svg  declared_type_not_approved,detected_format_not_approved,extension_mismatch
+    suspicious image/png                declared=image/png                      82B  before-customer-new.png  non_staff_uploader
+    ok         image/png                declared=image/png                 5242880B  before-exact.png  -
+    suspicious image/png                declared=image/png                      82B  before-flagged.png  non_staff_uploader
+    suspicious image/svg+xml            declared=image/svg+xml                  88B  before-ok.png  declared_type_not_approved,detected_format_not_approved,extension_mismatch
+    ok         image/webp               declared=image/webp                     62B  before-ok.webp  -
+    suspicious image/png                declared=image/png                 5242881B  before-over.png  over_5_mib
+    suspicious image/png                declared=image/png                  109445B  seed-bomb.png  pixel_limit_exceeded,non_staff_uploader
+    suspicious image/png                declared=image/png                      82B  seed-customer.png  non_staff_uploader
+    suspicious image/jpeg               declared=image/png                     632B  seed-jpeg-as-png.png  type_mismatch,non_staff_uploader
+    suspicious image/png                declared=image/png                     137B  seed-polyglot.png  embedded_markup,non_staff_uploader
+    suspicious image/svg+xml            declared=image/png                      88B  seed-svg-as-png.png  detected_format_not_approved,type_mismatch,non_staff_uploader
+    suspicious image/png                declared=image/png                      41B  seed-truncated.png  decode_failure,non_staff_uploader
+    scan: 19 objects, 5 ok, 14 suspicious; by reason {"declared_type_not_approved": 5, "decode_failure": 1, "detected_format_not_approved": 5, "embedded_markup": 1, "extension_mismatch": 5, "non_staff_uploader": 8, "over_5_mib": 1, "pixel_limit_exceeded": 1, "type_mismatch": 3}; served without X-Content-Type-Options: nosniff: 19
+  pass: content scan: all 19 objects classified as expected (signatures + full decode; decode failure, pixel bomb, mislabelled, disallowed, oversize and non-staff uploads detected)
+  pass: browser serving behaviour matches the documented observations
+    browser: Chromium 141.0.7390.37 (Playwright)
+    PASS before-bad.svg: served image/svg+xml, nosniff=absent, navigate executes script=true (expected executes), <img> decoded=true, <img> executes script=false
+    PASS seed-svg-as-png.png: served image/png, nosniff=absent, navigate executes script=false (expected inert), <img> decoded=false, <img> executes script=false
+    PASS before-bad.html: served text/plain, nosniff=absent, navigate executes script=false (expected inert), <img> decoded=false, <img> executes script=false
+    PASS after-ok.png: served image/png, nosniff=absent, navigate executes script=false (expected inert), <img> decoded=true, <img> executes script=false
+  info: X-Content-Type-Options: nosniff is NOT returned by the Storage API (local v1.79.30)
+  pass: quarantine copy: every suspicious object copied to the PRIVATE bucket with a metadata sidecar; SHA-256 verified
+  pass: quarantine bucket is private (public URL does not serve)
+  pass: remove refuses to run without --confirm-remove
+  pass: approved removal (local only): suspicious objects removed from the public bucket after verified copies existed
+  pass: public bucket now holds only the 5 objects that passed the scan
+  pass: restore is reversible: a valid PNG is restored byte-identical; an SVG is refused by the new bucket limits and stays quarantined
+  pass: manifest contains no credentials
+    plan: 14 suspicious objects to quarantine; 0 without fetched bytes (not quarantinable)
+    copy: 14/14 copies verified; 0 failures
+    verify: 14/14 quarantine copies match the manifest
+    remove: 14 removed from meal-images (approved by local-harness); 0 refused
+    restore: before-bad.svg: refused by bucket (Storage API 415); copy kept in quarantine
+    restore: seed-customer.png: restored, sha256 verified
+  pass: containment_violations() still 0 rows with the private quarantine bucket present
+  pass: storage migration re-apply clean
+  pass: re-apply changed nothing (bucket unchanged, no second audit record)
+  pass: core rollback refuses to run before the storage rollback
+  pass: storage rollback applied
+  pass: storage rollback restores the exact original bucket settings (public; file_size_limit IS NULL; allowed_mime_types IS NULL)
+  pass: core rollback applied
+  pass: storage rollback restores the verbatim staging storage policies
+  pass: preflight bucket check matches the evidence again after rollback
+  pass: full rollback restores the exact BEFORE matrix (incl. storage policies and bucket settings)
+
+RESULT: ALL PHASE 1C LOCAL CHECKS PASSED
