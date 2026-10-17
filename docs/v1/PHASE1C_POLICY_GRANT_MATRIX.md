@@ -107,6 +107,13 @@ Before: 56 policies. After: 33. Removed: 38. Added: 15. Unchanged: 18.
 | added | objects | staff_admin_insert_meal_images | INSERT | authenticated | `-` | `((bucket_id = 'meal-images'::text) AND ( SELECT has_staff_role('admin'::text) AS has_staff_role))` |
 | added | objects | staff_admin_update_meal_images | UPDATE | authenticated | `((bucket_id = 'meal-images'::text) AND ( SELECT has_staff_role('admin'::text) AS has_staff_role))` | `((bucket_id = 'meal-images'::text) AND ( SELECT has_staff_role('admin'::text) AS has_staff_role))` |
 
+## 1c. Storage bucket configuration
+
+| Bucket | public before → after | file_size_limit before → after | allowed_mime_types before → after |
+|---|---|---|---|
+| meal-images | t → t | NULL → 5242880 | NULL → {image/jpeg,image/png,image/webp} |
+| src | f → f | NULL → NULL | NULL → NULL |
+
 ## 2. Table privileges for client roles
 
 Key: s = select, i = insert, u = update, d = delete, t = truncate, r = references, g = trigger. A dash (-) means none.

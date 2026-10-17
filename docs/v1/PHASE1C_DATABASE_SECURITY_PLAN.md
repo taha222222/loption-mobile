@@ -1,4 +1,4 @@
-# L'OPTION V1 — Phase 1C (amended, revision 2): Database Security Containment
+# L'OPTION V1 — Phase 1C (amended, revision 3): Database Security Containment
 
 **Status: implementation package for CTO review.**
 - **Not applied** to any remote database. Nothing was sent to Supabase.
@@ -8,7 +8,19 @@
 
 Branch: `claude/phase-1c-amended-containment`, cut from `main` (`0cb0fe0`). It contains only this package. Review PR: taha222222/loption-mobile#1 (draft).
 
-Revision 2 addresses the CTO review of 2026-10-16 (section 0). Sections 1–12 describe the package as it now stands.
+Revision 2 addresses the CTO review of 2026-10-16 (section 0). Revision 3 adds the CTO-approved storage limits of 2026-10-17 (section 0b). Sections 1–12 describe the package as it now stands.
+
+## 0b. Revision 3: CTO storage decisions of 2026-10-17
+
+| Decision | Implemented as | Evidence |
+|---|---|---|
+| Existing drivers must be re-approved; driver kitchen assignment optional; Kitchen A has stable code `A` | Already the behaviour (section 5, §9; `kitchens.code` is `unique`) | T06c, T06g, T10c |
+| `meal-images`: public read kept; admin staff only may upload, overwrite or delete | Storage migration policies (unchanged from revision 2) | S01–S08, S12, S21, S22 |
+| Max 5 MiB (5,242,880 bytes); only `image/jpeg`, `image/png`, `image/webp`; SVG and everything else rejected | The storage migration sets the bucket's `file_size_limit = 5242880` and `allowed_mime_types = {image/jpeg,image/png,image/webp}`. `public` is kept and no object is changed. | S09–S11 allowed; S13–S17 rejected with 415; S18 exactly 5,242,880 bytes accepted; S19 5,242,881 bytes rejected with 413; S20 bucket configuration as reported by the API |
+| Fail safely if the bucket is missing or in an unexpected state | The preflight aborts unless the bucket exists, is public, and has either the evidence limits (both NULL) or exactly the approved limits (re-run) | Storage guards: missing bucket, unexpected size limit, unexpected MIME list, not public. Each aborts with the bucket and policies unchanged. |
+| Rollback restores the exact original settings, including NULLs | The migration logs the previous values to `security_audit_log` (JSON `null` for SQL NULL). The storage rollback restores them exactly; if no change was logged, it leaves the bucket alone. | "storage rollback restores the exact original bucket settings (public; file_size_limit IS NULL; allowed_mime_types IS NULL)"; the full matrix, including bucket settings, equals BEFORE |
+| Do not overclaim MIME allowlisting | Documented in the migration header and section 6. The harness records the limitation on every run. | `LIMIT SVG bytes declared as image/png -> 200` |
+
 
 ## 0. CTO review items and responses
 
@@ -17,7 +29,7 @@ Revision 2 addresses the CTO review of 2026-10-16 (section 0). Sections 1–12 d
 | 1 | Drift protection U3–U6; preflight fails on unsafe or unexplained state; do not overstate the migration | New `public.containment_violations()`, category `drift`, covers roles, superuser/bypassrls, client-role attributes, memberships, Auth-hook grants, event triggers, `authenticator`, schema CREATE, table owners, grantees and RLS. **The migration aborts on any drift row before changing anything.** The read-only preflight has **required** checks for the same items, plus `safeupdate` (preflight only). Section 4 lists exactly what each layer verifies, and what neither can. | Harness H1–H11: each injected state aborts the migration with nothing applied **and** fails its preflight check; after the revert the check passes again. H7 (`safeupdate`) is preflight-only by design. |
 | 2 | Retire partner writes | `collaborators_update_own_orders` dropped. All collaborator rows preserved; partner reads kept. Postcondition: any write policy outside the reviewed allowlist aborts the migration. After deployment, the same function reports it. | T18a (partner cannot rewrite or delete their order; row intact), T18b (read kept), T18c (a re-added partner write policy is reported). Mutation: keeping the policy aborts the migration and names it. |
 | 3 | Least-privilege profile access | Blanket admin read on `user_profiles` **removed**. Driver approval uses `drivers` only (`staff_admin_all_drivers`). No V1 workflow was found that needs other users' profiles, so no extra interface is proposed. | T19 (admin, flagged account and driver see only their own profile), T10j (admin reads and provisions drivers without profile access). Mutation: re-adding the policy fails T19. |
-| 4 | Storage | Investigated on the evidence and on the **real Storage API**. `meal-images` is public with no limits, and any signed-in user can upload. New migration `20261016171000_phase1c_storage_meal_images.sql`: writes are admin staff only; public read is kept. Containment counts as complete only when `containment_violations()` returns **zero rows of every category**. | Scenario S, `supabase/storage-api` v1.79.30 over HTTP. BEFORE: customer upload, overwrite, upsert and delete, and the flagged account's upload, all succeed. AFTER: **12/12 checks pass**. Section 6. |
+| 4 | Storage | Investigated on the evidence and on the **real Storage API**. `meal-images` is public with no limits, and any signed-in user can upload. New migration `20261016171000_phase1c_storage_meal_images.sql`: writes are admin staff only; public read is kept. Containment counts as complete only when `containment_violations()` returns **zero rows of every category**. | Scenario S, `supabase/storage-api` v1.79.30 over HTTP. BEFORE: customer upload, overwrite, upsert and delete, and the flagged account's upload, all succeed. AFTER: **12/12 checks pass** (revision 2; **22/22** with the revision-3 limits). Section 6. |
 | 5 | Baseline outside `supabase/migrations/` | Moved to `supabase/baseline/staging_schema_2026-10-15.sql`. It refuses to run where the schema exists. Generators, harness and checklist updated; the `migration repair` step is gone. | Harness A ("baseline refuses to run on a database that already has the schema"). `supabase/migrations/` now holds only the two containment migrations. |
 | 6 | Evidence accuracy | Exact comparison scope and full omission list in `supabase/evidence/README.md`. The baseline is described as a reconstruction identical in 13 named sections, **not a complete clone**. Event-trigger, role and grant uncertainties are now required preflight checks and migration guards. | `supabase/evidence/README.md`, sections "Comparison scope" and "How U3–U6 … are handled" |
 | 7 | Regression coverage | Tests added for each item above. Full suite re-run. Generators verified reproducible. | Section 8 |
@@ -94,7 +106,11 @@ Revision 2 addresses the CTO review of 2026-10-16 (section 0). Sections 1–12 d
   - no unreviewed `storage.objects` policies;
   - **the migration role can manage `storage.objects` policies**: it owns the table or is covered by `supautils.policy_grants`. Verified locally: `storage.objects` is owned by `supabase_storage_admin`, and `postgres` gets policy rights only through `supautils.policy_grants`;
   - no drift.
-- **Change:** drops the 3 staging write policies and creates admin-staff-only INSERT, UPDATE and DELETE policies for `meal-images`. `Public Access` read is kept. No object or bucket row is changed.
+- **Change:**
+  - drops the 3 staging write policies and creates admin-staff-only INSERT, UPDATE and DELETE policies for `meal-images`; `Public Access` read is kept;
+  - sets the bucket's `file_size_limit = 5242880` and `allowed_mime_types = {image/jpeg,image/png,image/webp}`. The previous values are logged first; `public` is untouched. On a re-run where the bucket is already approved, nothing is changed or logged;
+  - no object row is changed.
+- **Bucket guard:** aborts if the bucket is missing, not public, or has limits other than the evidence values (NULL) or the approved values.
 - **Postcondition:** `containment_violations()` returns **zero rows of every category**.
 
 **Rows the package changes:**
@@ -114,7 +130,7 @@ Historical orders, card orders and kiosk records are untouched (T11, T15).
   - Ran `ghcr.io/supabase/storage-api:v1.79.30` against the 17.6 database; its own 74 migrations created the `storage` schema.
   - JWTs were signed with a throwaway local secret.
   - With the staging policies, a **customer can upload, overwrite, upsert and delete in `meal-images`**, and so can the flagged account. Anonymous uploads were already refused.
-- **After the migrations:** 12/12 HTTP checks pass.
+- **After the migrations:** 22/22 HTTP checks pass (revision 3). Each check asserts the Storage API's own status code: `403` policy denial, `415` invalid MIME type, `413` too large. Policy checks upload a valid PNG, so they cannot pass because a limit rejected the request.
 
   | Check | Result |
   |---|---|
@@ -123,15 +139,45 @@ Historical orders, card orders and kiosk records are untouched (T11, T15).
   | flagged account upload | 403 |
   | customer creates a bucket | 403 |
   | customer writes `src` | 403 |
-  | admin upload, upsert, delete | 200 |
-  | public read | 200 |
+  | admin upload `image/png`, `image/jpeg`, `image/webp`; admin upsert | 200 |
+  | admin upload `image/svg+xml`, `image/gif`, `text/html`, `application/octet-stream`; overwrite to SVG | 415 |
+  | exactly 5,242,880 bytes | 200 |
+  | 5,242,881 bytes | 413 |
+  | bucket configuration read from the API | public, 5242880, jpeg/png/webp |
+  | public read; admin delete | 200 |
 
   The app's admin upload path (`upsert: true`) keeps working.
 - **How to verify against hosted staging:**
   1. Preflight checks `storage_*` must pass.
   2. After deployment, `select * from public.containment_violations()` must return 0 rows.
   3. Run the same HTTP checks with `supabase/tests/storage_api_tests.sh`, using staging's Storage URL and **test accounts only**. **Not done** (no access, by design).
-- **Not changed (CTO decision):** bucket size and MIME limits. **Recommendation:** an `allowed_mime_types` image allowlist and a size cap.
+- **Bucket limits (revision 3, CTO-approved):** 5 MiB and `jpeg`/`png`/`webp` only.
+  - Tested through the real Storage API: S09–S11, S13–S19 and S20 in the table above.
+  - The size limit is the **bucket's own** setting. The test container's global `FILE_SIZE_LIMIT` is 50 MiB, so the 413 at 5,242,881 bytes can only come from the bucket.
+  - Before the migration, the same requests (SVG, GIF, HTML, octet-stream, over-size) all succeed with HTTP 200.
+
+### Limitation: the MIME allowlist does not validate image bytes
+The Storage API compares the **declared** `Content-Type` header with `allowed_mime_types`, and the body length with `file_size_limit`. It does not inspect or decode the bytes.
+
+The harness proves this on every run: an SVG body with a `<script>` element, uploaded by an admin with `Content-Type: image/png`, is **accepted** (`LIMIT … -> 200`). It is then served with `Content-Type: image/png`, so browsers will not run it as SVG. **But the bucket can hold bytes that are not a valid image.**
+
+Today only admin staff can upload, which limits the exposure. If byte-level verification is required, the proposal is a trusted server-side path (not implemented, CTO decision):
+1. **Admins stop writing `meal-images` directly.** The admin app uploads to a **private** `meal-images-incoming` bucket, again admin staff only, with the same 5 MiB/type limits as an early filter.
+2. **A trusted Edge Function** (service role, invoked by the admin app with the admin's JWT; it re-checks `has_staff_role('admin')`) downloads the object and checks it:
+   - checks the magic bytes against the declared type;
+   - **fully decodes** the image with a real decoder (e.g. libvips/sharp, or ImageMagick with a restrictive policy), rejecting anything that does not decode;
+   - enforces maximum pixel dimensions (decompression-bomb guard);
+   - **re-encodes** to WebP (or JPEG) at a fixed quality, which strips EXIF/GPS and any embedded payload;
+   - writes the result to `meal-images` under a server-generated name;
+   - deletes the incoming object and records the action in `security_audit_log`.
+3. **Admin-staff INSERT/UPDATE on `meal-images` is then removed.** Only the function (service role) writes there; public read stays.
+4. **Tests:** polyglot and mislabelled files rejected; oversize pixel counts rejected; output always decodes and is re-encoded; EXIF removed.
+
+### Existing objects are not re-validated
+- The new limits apply to uploads from now on.
+- Objects already in staging's bucket, uploaded while any signed-in user could write with no limits, **stay served unchanged** (CTO: preserve existing objects).
+- The read-only preflight now reports them as information: counts by declared MIME type and how many exceed 5 MiB (`info: existing meal-images objects …`). In the local run it lists the SVG, HTML, GIF and over-size test objects uploaded before the migration.
+- **Decision needed:** review that inventory on staging, and quarantine or delete anything unexpected, as a separate, approved operation.
 
 ## 7. Expected staging impact
 
@@ -141,6 +187,7 @@ Historical orders, card orders and kiosk records are untouched (T11, T15).
 | Drivers going online | Approval is required; the app's direct status write is denied | Admin `assign_staff_role(user, 'driver')`; the app calls `set_driver_availability()` |
 | Admin driver approve/reject screen | It writes `drivers.status` | Admin UI calls `assign_staff_role`/`revoke_staff_role` |
 | Uploads by non-admin accounts | Admin staff only | — (intended) |
+| Meal images that are not JPEG/PNG/WebP, or larger than 5 MiB | Bucket limits (415 / 413) | — (intended; the admin app must upload jpeg/png/webp ≤ 5 MiB) |
 | Partner order updates | Partner model retired | — (intended) |
 | Kiosk | Policies retired | Not planned |
 
@@ -171,7 +218,7 @@ Historical orders, card orders and kiosk records are untouched (T11, T15).
 | C | Re-apply: no change (matrix and audit identical); **45/45** |
 | D–F, H | 14 guards. 13 abort the migration with nothing applied and fail their preflight check; H7 `safeupdate` is preflight-only. Every revert restores a passing preflight, and the migration then applies. |
 | G | Core rollback: exact BEFORE matrix; legacy driver statuses restored |
-| S | Full preflight including storage passes. BEFORE storage **7/12** (5 documented holes). After core only, the 3 storage violations are reported. After storage: **12/12 HTTP checks**, 0 violations, SQL suite **45/45**. Storage re-apply clean. Core rollback refuses to run before the storage rollback. Storage + core rollback restore the exact BEFORE matrix, including storage policies. |
+| S | Full preflight including storage passes. BEFORE storage **10 pass / 12 fail** (documented holes: customer and flagged-account writes, no type or size limits). After core only, **4** storage violations are reported (3 write policies + bucket limits). **4 bucket guards** abort with nothing changed. After storage: bucket = public, 5242880, `{image/jpeg,image/png,image/webp}`; existing objects preserved; old values audited as JSON null; **22/22 HTTP checks**; 0 violations; SQL suite **45/45**. Re-apply: no change and no second audit record. Core rollback refuses to run before the storage rollback. Storage rollback restores `file_size_limit IS NULL` and `allowed_mime_types IS NULL`. Full rollback restores the exact BEFORE matrix, including storage policies and bucket settings. The `LIMIT` line records that SVG bytes declared as `image/png` are accepted. |
 
 **Mutation checks** (one fix removed per run, full harness):
 - **Revision 1:** `drivers` UPDATE revoke (postcondition aborts); driver normalisation (CHECK aborts); profile guard (T03b); public-update drop (postcondition); status-read drop (T07b).
@@ -180,6 +227,10 @@ Historical orders, card orders and kiosk records are untouched (T11, T15).
   - re-adding the admin profile read fails T19;
   - removing the event-trigger guard lets H5 through;
   - keeping the customer upload policy aborts the storage migration with "storage.objects.Authenticated users can upload - write policy not on the reviewed allowlist".
+
+- **Revision 3:**
+  - the storage migration without the bucket update aborts with "storage: bucket meal-images - size/MIME limits not as approved (file_size_limit=NULL, allowed_mime_types=NULL)";
+  - allowing `image/svg+xml` aborts with "… allowed_mime_types={image/jpeg,image/png,image/webp,image/svg+xml}".
 
 **Reproducibility:** `generate_baseline.py` and `generate_rollback.py` regenerate byte-identical files (SHA-256 checked).
 
@@ -220,7 +271,8 @@ Historical orders, card orders and kiosk records are untouched (T11, T15).
    - The preflight shows the migration as applied.
    - `supabase/tests/phase1c_matrix.sql` matches the AFTER side of `PHASE1C_POLICY_GRANT_MATRIX.md`.
    - API smoke tests with test accounts: anon `POST /rest/v1/orders` denied; customer `PATCH user_profiles {is_admin:true}` denied; menu works; the admin reads orders.
-   - `storage_api_tests.sh check` against staging Storage with test accounts: customer upload denied, admin upload allowed.
+   - `storage_api_tests.sh check` against staging Storage with test accounts: customer upload denied; admin jpeg/png/webp allowed; SVG, GIF and over-5-MiB rejected; bucket configuration as approved.
+   - Review the preflight's `info: existing meal-images objects` inventory, and decide separately on any pre-existing non-image or oversize objects.
 8. **After deployment:**
    - Approve legitimate drivers.
    - Ship the client changes (availability RPC, admin approval RPCs, routing from `staff_roles`).
@@ -232,11 +284,12 @@ Historical orders, card orders and kiosk records are untouched (T11, T15).
 2. **Pricing is not approved.** No fee logic exists here. Checkout stays disabled until a trusted `create_order` with an approved formula exists.
 3. **No hosted API, Realtime or hosted Storage test has been run**; the local equivalents passed.
 4. **Allowlists come from the Supabase 17.6 image** plus documented hosted roles. Hosted-only roles or triggers will fail the preflight until explained. This is intentional fail-closed behaviour, but it may need one review round.
-5. `meal-images` remains **public**, with no size or MIME limits (decision needed).
+5. **The `meal-images` MIME allowlist checks the declared type, not the bytes.** A mislabelled or non-image body is accepted if declared as jpeg/png/webp. Mitigated by admin-only uploads; byte-level validation needs the server-side re-encoding path in section 6 (CTO decision).
+5b. **Objects already in staging's `meal-images` are not re-validated** and stay public. Review the preflight inventory before or after deployment (decision needed).
 6. Policies not recreated here still target role `public` (M4). None of them allows writes beyond the allowlist.
 7. `authenticated` keeps RLS-protected grants on push-token, `cash_collections`, `driver_*` and `collaborator_*` tables.
 8. The mobile app still routes on `user_profiles.is_admin` and writes `drivers.status` directly; client changes are required (section 7).
-9. **Design choices to confirm:** every legacy driver re-approved; driver kitchen scope optional; Kitchen A seeded as `code A`, `Kitchen A (Casablanca)`; partners keep read-only access to their history.
+9. **Confirmed by the CTO (2026-10-17):** every legacy driver re-approved; driver kitchen scope optional; Kitchen A seeded with stable unique code `A`. Still to confirm: partners keep read-only access to their history.
 
 ## 12. Files
 
@@ -246,6 +299,6 @@ Historical orders, card orders and kiosk records are untouched (T11, T15).
 | `supabase/baseline/` | `staging_schema_2026-10-15.sql` (test fixture, not a migration); `generate_baseline.py`, `compare_catalog.py`, `generate_rollback.py` |
 | `supabase/migrations/` | `20261016170000_phase1c_security_containment.sql`, `20261016171000_phase1c_storage_meal_images.sql` |
 | `supabase/rollback/` | Generated down scripts (storage first, then core) |
-| `supabase/tests/` | `run_phase1c.sh` (A–H, S); `phase1c_security_tests.sql` (45 tests); `storage_api_tests.sh` (12 HTTP checks); `preflight_staging_readonly.sql`; `phase1c_matrix.sql` + `render_matrix_md.py`; fixtures and test-only auth bootstrap |
+| `supabase/tests/` | `run_phase1c.sh` (A–H, S); `phase1c_security_tests.sql` (45 tests); `storage_api_tests.sh` (22 HTTP checks + the recorded MIME limitation); `preflight_staging_readonly.sql`; `phase1c_matrix.sql` + `render_matrix_md.py`; fixtures and test-only auth bootstrap |
 | `docs/v1/PHASE1C_POLICY_GRANT_MATRIX.md` | Generated before/after matrix, including storage |
-| `docs/v1/PHASE1C_TEST_RUN_2026-10-17.txt` | Exact, unedited harness output of the run reported in section 8 |
+| `docs/v1/PHASE1C_TEST_RUN_2026-10-17_rev3.txt` | Exact, unedited harness output of the run reported in section 8 |
