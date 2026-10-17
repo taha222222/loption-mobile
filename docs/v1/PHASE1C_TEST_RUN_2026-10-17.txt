@@ -1,0 +1,99 @@
+# supabase/tests/run_phase1c.sh — run 2026-10-17 (local disposable containers only)
+
+Images: supabase/postgres:17.6.1.178 (supabase/postgres@sha256:c282d393ae56fd165b7ada2ddbac55e582a601b86f3840aa2bbc112e43d3a570)
+        ghcr.io/supabase/storage-api:v1.79.30 (ghcr.io/supabase/storage-api@sha256:bdd393f6f4d341bcf35d6ed1c0f45e2b8b07802f4491141bbf4a4fcc9f6c6eee)
+
+=== A. baseline round-trip, preflight, BEFORE tests
+  PostgreSQL 17.6 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 15.2.0, 64-bit
+  pass: baseline matches the staging evidence in every compared section (scope: supabase/evidence/README.md)
+      identical  tables (24 items)
+      identical  columns (278 items)
+      identical  constraints (66 items)
+      identical  indexes (52 items)
+      identical  policies (56 items)
+      identical  functions (5 items)
+      identical  triggers (2 items)
+      identical  effective_table_privileges (48 items)
+      identical  column_level_acls (0 items)
+      identical  enums (0 items)
+      identical  views (0 items)
+      identical  realtime_publication (0 items)
+      identical  extensions (5 items)
+      info       default_privileges differ (image configuration, not baseline)
+    RESULT: baseline reproduces the evidence
+  pass: read-only preflight: all required non-storage checks ok on the reproduced schema
+  pass: baseline refuses to run on a database that already has the schema
+  BEFORE (vulnerable staging reproduction): 11 pass / 34 fail  <- failures here document C1-C4/H2-H4
+
+=== B. AFTER: baseline + fixtures + core containment migration
+  pass: core migration applied (single transaction)
+  AFTER: 45 pass / 0 fail
+  pass: every SQL security test passes
+  pass: preflight reports the migration as already applied
+  pass: storage migration refuses to run where storage.objects is absent (fails closed)
+
+=== C. RE-APPLY core migration (repeatability)
+  pass: second apply succeeded
+  pass: second apply changed nothing (matrix identical, audit rows 4 = 4)
+  RE-APPLY tests: 45 pass / 0 fail
+
+=== D-F, H. data, policy and platform-drift guards (one database, injected one at a time)
+  pass: guard D_second_admin: migration aborted (admin seed guard), nothing applied; preflight 'exactly_one_legitimate_admin_profile' fails
+  pass: guard E_driver_status: migration aborted (unexpected drivers.status values), nothing applied; preflight 'drivers_status_values_known' fails
+  pass: guard F_rogue_policy: migration aborted (unreviewed policies), nothing applied; preflight 'public_policy_set_matches_evidence' fails
+  pass: guard H1_custom_role: migration aborted (unexpected database role), nothing applied; preflight 'U3_no_unexpected_roles' fails
+  pass: guard H2_membership: migration aborted (unexpected membership), nothing applied; preflight 'U3_no_unexpected_role_memberships' fails
+  pass: guard H3_bypassrls: migration aborted (unexpected BYPASSRLS role), nothing applied; preflight 'U3_no_unexpected_superuser_or_bypassrls' fails
+  pass: guard H4_auth_hook: migration aborted (possible Auth hook), nothing applied; preflight 'U3_no_auth_hook_functions' fails
+  pass: guard H5_event_trigger: migration aborted (unexpected event trigger), nothing applied; preflight 'U4_no_unexpected_event_triggers' fails
+  pass: guard H6_authenticator: migration aborted (authenticator must be), nothing applied; preflight 'U5_authenticator_nosuperuser_nobypassrls_noinherit' fails
+  pass: guard H7_safeupdate: preflight-only check 'U5_authenticator_preloads_safeupdate' fails (not verified by the migration)
+  pass: guard H8_schema_create: migration aborted (can CREATE in schema), nothing applied; preflight 'U6_no_client_or_public_create_on_schemas' fails
+  pass: guard H9_table_owner: migration aborted (table not owned by postgres), nothing applied; preflight 'public_tables_owned_by_postgres' fails
+  pass: guard H10_grantee: migration aborted (unexpected table grantee), nothing applied; preflight 'public_table_grantees_expected' fails
+  pass: guard H11_rls_off: migration aborted (row level security disabled), nothing applied; preflight 'public_tables_rls_enabled' fails
+  pass: guard database clean again after all reverts
+  pass: migration applies once every injected state is reverted
+
+=== G. ROLLBACK core (re-opens the vulnerabilities by design)
+  pass: rollback applied
+  pass: rollback restores the exact BEFORE policy/grant/function/default-privilege matrix
+  pass: legacy drivers.status values restored from the audit log
+  pass: BEFORE matrices of A and G identical (deterministic setup)
+
+=== S. real Supabase Storage API (meal-images)
+  pass: storage-api up; its own migrations created the storage schema (74 migrations)
+  pass: read-only preflight incl. storage checks: all required checks ok (staging storage reproduced)
+seed: customer-owned object (vulnerable policy): HTTP 200
+seed: customer-owned object (vulnerable policy): HTTP 200
+  BEFORE (staging storage policies): 7 pass / 5 fail  <- failures document the open upload hole
+      FAIL S02  customer cannot upload to meal-images  (HTTP 200)
+      FAIL S03  customer cannot overwrite even an object they uploaded earlier  (HTTP 200)
+      FAIL S04  customer cannot upsert over an existing object  (HTTP 200)
+      FAIL S05  customer cannot delete an object (object still served)  (HTTP 200)
+      FAIL S06  flagged is_admin account cannot upload  (HTTP 200)
+  pass: after core only: containment_violations() reports the 3 open storage write policies (containment not complete)
+  pass: storage migration applied
+  pass: all 12 Storage API checks pass
+    PASS S01  anon cannot upload to meal-images  (HTTP 400)
+    PASS S02  customer cannot upload to meal-images  (HTTP 400)
+    PASS S03  customer cannot overwrite even an object they uploaded earlier  (HTTP 400)
+    PASS S04  customer cannot upsert over an existing object  (HTTP 400)
+    PASS S05  customer cannot delete an object (object still served)  (HTTP 400)
+    PASS S06  flagged is_admin account cannot upload  (HTTP 400)
+    PASS S07  customer cannot create a bucket  (HTTP 400)
+    PASS S08  customer cannot write the private src bucket  (HTTP 400)
+    PASS S09  admin staff can upload a meal image  (HTTP 200)
+    PASS S10  admin staff can upsert (app uses upsert: true)  (HTTP 200)
+    PASS S11  meal images stay publicly readable  (public GET)
+    PASS S12  admin staff can delete a meal image  (HTTP 200)
+    storage API: 12 pass / 0 fail
+  pass: containment_violations() = 0 rows (drift, containment, storage)
+  SQL tests with storage schema present: 45 pass / 0 fail
+  pass: storage migration re-apply clean
+  pass: core rollback refuses to run before the storage rollback
+  pass: storage + core rollback applied
+  pass: storage rollback restores the verbatim staging storage policies
+  pass: full rollback restores the exact BEFORE matrix (incl. storage policies)
+
+RESULT: ALL PHASE 1C LOCAL CHECKS PASSED
