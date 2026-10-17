@@ -5,7 +5,8 @@
 -- TARGET: staging project teppcfnpkoxkudajnvad ONLY, after approval.
 --         Never production.
 -- SCHEMA BASIS: supabase/evidence/catalog_2026-10-15.json, reproduced by
---   20261015194030_baseline_staging_schema.sql (round-trip verified).
+--   supabase/baseline/staging_schema_2026-10-15.sql (round-trip verified
+--   in the dimensions the evidence captured; see supabase/evidence/README.md).
 -- MODEL: internal kitchens + one server-managed staff-role table
 --   (admin, support, cashier, kitchen_staff, driver). No partner model.
 --
@@ -14,7 +15,11 @@
 --         H2 (open order_status_updates), H3 (driver self-provisioning,
 --         self-approval and money fields; approval/availability split),
 --         H4 (client-executable create_order_transaction), M2 (default
---         privileges). Also retires the inert kiosk JWT-claim policies.
+--         privileges). Also retires the inert kiosk JWT-claim policies and
+--         the partner write policy, keeps user_profiles private (no admin
+--         read), and aborts on platform drift (U3-U6) before any change.
+--         Storage (meal-images) is closed by 20261016171000; containment
+--         is complete only when containment_violations() returns 0 rows.
 --
 -- Data: no row is deleted; no order, payment, card order, kiosk, product,
 --   stock or closing record is modified. The ONLY row changes are:
@@ -30,6 +35,235 @@
 -- =====================================================================
 
 set lock_timeout = '10s';
+
+-- ---------------------------------------------------------------------
+-- 00. public.containment_violations() — the single, read-only definition
+--     of "safe". Returns one row per problem; zero rows = contained.
+--       category 'drift'       unsafe/unexplained platform state (U3-U6):
+--                              roles, memberships, event triggers,
+--                              authenticator, schema CREATE, Auth-hook
+--                              grants, table owners and grantees, RLS off
+--       category 'containment' the C1-C4/H2-H4/M2 rules of this package
+--       category 'storage'     meal-images / storage.objects write rules
+--                              (closed by the separate storage migration)
+--     The migration calls it BEFORE changing anything (aborts on 'drift')
+--     and AFTER (aborts on 'drift' or 'containment'). It stays installed
+--     as the post-deployment verification / monitoring query:
+--       select * from public.containment_violations();
+--     It reads catalogs only, runs as the caller (SECURITY INVOKER), and
+--     is not executable by client roles.
+--     Allowlists below are the Supabase platform defaults observed in
+--     supabase/postgres:17.6.1.178 plus documented hosted-only roles. A
+--     state outside them is reported, never silently accepted: extend an
+--     allowlist only through a reviewed commit.
+-- ---------------------------------------------------------------------
+create or replace function public.containment_violations()
+returns table (category text, object text, problem text)
+language plpgsql stable set search_path = ''
+as $cv$
+declare
+  -- Supabase platform roles (image) + documented hosted-only roles.
+  -- cli_login_postgres is created by the Supabase CLI itself (link/db push).
+  allowed_roles text[] := array[
+    'anon','authenticated','authenticator','dashboard_user','pgbouncer','postgres',
+    'service_role','supabase_admin','supabase_auth_admin','supabase_etl_admin',
+    'supabase_privileged_role','supabase_read_only_user','supabase_replication_admin',
+    'supabase_storage_admin','supabase_functions_admin','supabase_realtime_admin',
+    'cli_login_postgres','pgsodium_keyholder','pgsodium_keyiduser','pgsodium_keymaker'];
+  allowed_superusers text[] := array['supabase_admin'];
+  allowed_bypassrls  text[] := array['postgres','service_role','supabase_admin',
+    'supabase_etl_admin','supabase_read_only_user'];
+  -- (group, member) pairs observed in the image, plus the CLI login role.
+  allowed_members text[] := array[
+    'anon<-authenticator','anon<-postgres','authenticated<-authenticator',
+    'authenticated<-postgres','authenticator<-postgres','authenticator<-supabase_storage_admin',
+    'service_role<-authenticator','service_role<-postgres',
+    'supabase_privileged_role<-postgres','supabase_privileged_role<-supabase_etl_admin',
+    'postgres<-cli_login_postgres'];
+  privileged_groups text[] := array['anon','authenticated','service_role','authenticator',
+    'postgres','supabase_admin','supabase_auth_admin','supabase_storage_admin',
+    'supabase_privileged_role','supabase_functions_admin','supabase_realtime_admin'];
+  -- Event-trigger functions shipped by Supabase, plus the staging RLS
+  -- auto-enable helper (it only runs ALTER TABLE ... ENABLE ROW LEVEL SECURITY).
+  allowed_evt_functions text[] := array[
+    'extensions.grant_pg_cron_access()','extensions.grant_pg_graphql_access()',
+    'extensions.grant_pg_net_access()','extensions.set_graphql_placeholder()',
+    'extensions.pgrst_ddl_watch()','extensions.pgrst_drop_watch()','public.rls_auto_enable()'];
+  -- The only write (INSERT/UPDATE/DELETE/ALL) policies allowed in public.
+  allowed_write_policies text[] := array[
+    'orders.Service role full access','orders.staff_admin_all_orders',
+    'order_items.Service role full access order_items','order_items.staff_admin_all_order_items',
+    'user_profiles.Service role has full access','user_profiles.Users can insert their own profile',
+    'user_profiles.Users can update their own profile',
+    'drivers.staff_admin_all_drivers','drivers.drivers_self_update_profile_location',
+    'meals.staff_admin_write_meals',
+    'collaborators.staff_admin_all_collaborators','collaborator_orders.staff_admin_all_collaborator_orders',
+    'collaborator_payouts.staff_admin_all_collaborator_payouts',
+    'collaborator_analytics.staff_admin_all_collaborator_analytics',
+    'driver_push_tokens.Drivers can insert own push tokens',
+    'user_push_tokens.Users can insert own push tokens'];
+  allowed_storage_write_policies text[] := array[
+    'staff_admin_insert_meal_images','staff_admin_update_meal_images','staff_admin_delete_meal_images'];
+begin
+  -- ============================ drift (U3) ============================
+  return query select 'drift'::text, r.rolname::text, 'unexpected database role'::text
+    from pg_roles r where r.rolname !~ '^pg_' and r.rolname <> all (allowed_roles);
+  return query select 'drift', r.rolname::text, 'unexpected SUPERUSER role'
+    from pg_roles r where r.rolsuper and r.rolname <> all (allowed_superusers);
+  return query select 'drift', r.rolname::text, 'unexpected BYPASSRLS role'
+    from pg_roles r where r.rolbypassrls and r.rolname <> all (allowed_bypassrls);
+  return query select 'drift', r.rolname::text, 'client role has elevated attributes (superuser/bypassrls/createrole/createdb/login)'
+    from pg_roles r where r.rolname in ('anon','authenticated')
+     and (r.rolsuper or r.rolbypassrls or r.rolcreaterole or r.rolcreatedb or r.rolcanlogin);
+  return query select 'drift', g.rolname || '<-' || m.rolname, 'unexpected membership in a privileged or client role'
+    from pg_auth_members a join pg_roles g on g.oid = a.roleid join pg_roles m on m.oid = a.member
+   where (g.rolname = any (privileged_groups) or m.rolname in ('anon','authenticated','service_role'))
+     and (g.rolname || '<-' || m.rolname) <> all (allowed_members);
+  -- ============================ drift (U4) ============================
+  -- schema-qualified name built explicitly (independent of search_path)
+  return query select 'drift', e.evtname::text, 'unexpected event trigger function ' || f.fn
+    from pg_event_trigger e
+    cross join lateral (select n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' from pg_proc p join pg_namespace n on n.oid = p.pronamespace where p.oid = e.evtfoid) as f(fn)
+   where f.fn <> all (allowed_evt_functions);
+  -- ============================ drift (U5) ============================
+  return query select 'drift', 'authenticator', 'authenticator must be NOSUPERUSER, NOBYPASSRLS, NOINHERIT'
+    from pg_roles r where r.rolname = 'authenticator' and (r.rolsuper or r.rolbypassrls or r.rolinherit);
+  return query select 'drift', 'authenticator', 'authenticator role missing'
+   where not exists (select 1 from pg_roles where rolname = 'authenticator');
+  -- ============================ drift (U6) ============================
+  return query select 'drift', 'schema ' || n.nspname || ' / ' || x.grantee, 'client or PUBLIC can CREATE in schema'
+    from pg_namespace n
+    cross join lateral (select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end as grantee
+                          from aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
+                         where a.privilege_type = 'CREATE') x
+   where n.nspname in ('public','extensions','graphql_public','auth','storage','realtime','vault')
+     and x.grantee in ('PUBLIC','anon','authenticated','authenticator');
+  -- Auth hooks: a custom access-token hook could rewrite the JWT role
+  -- claim (e.g. to service_role). Hooks are functions the Auth service may
+  -- execute; any non-auth function granted to supabase_auth_admin is flagged.
+  if to_regrole('supabase_auth_admin') is not null then
+    return query select 'drift', p.oid::regprocedure::text, 'function executable by supabase_auth_admin (possible Auth hook)'
+      from pg_proc p cross join lateral aclexplode(p.proacl) a
+     where p.proacl is not null and a.privilege_type = 'EXECUTE'
+       and a.grantee = 'supabase_auth_admin'::regrole
+       and p.pronamespace::regnamespace::text not in ('auth','pg_catalog','information_schema');
+  end if;
+  -- public tables: owner, RLS, unexpected grantees
+  return query select 'drift', 'public.' || c.relname, 'table not owned by postgres (owner ' || c.relowner::regrole::text || ')'
+    from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p')
+     and c.relowner <> 'postgres'::regrole;
+  return query select 'drift', 'public.' || c.relname, 'row level security disabled'
+    from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p')
+     and not c.relrowsecurity;
+  return query select distinct 'drift', 'public.' || c.relname || ' / ' || a.grantee::regrole::text, 'unexpected table grantee'
+    from pg_class c cross join lateral aclexplode(c.relacl) a
+   where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p') and c.relacl is not null
+     and a.grantee <> 0
+     and a.grantee::regrole::text not in ('postgres','anon','authenticated','service_role');
+  return query select 'drift', 'public.' || c.relname || ' / PUBLIC', 'table privilege granted to PUBLIC'
+    from pg_class c cross join lateral aclexplode(c.relacl) a
+   where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p') and c.relacl is not null
+     and a.grantee = 0;
+
+  -- ========================= containment =========================
+  return query select 'containment', p.tablename || '.' || p.policyname, 'legacy authority policy (is_admin / JWT role claim)'
+    from pg_policies p
+   where p.schemaname in ('public','storage')
+     and (coalesce(p.qual, '') ~ 'is_admin' or coalesce(p.with_check, '') ~ 'is_admin'
+          or coalesce(p.qual, '') || coalesce(p.with_check, '') ~ 'jwt\(\) ->> ''role'''
+          or coalesce(p.qual, '') || coalesce(p.with_check, '') ~ 'auth\.role\(\) = ANY'
+          or coalesce(p.qual, '') || coalesce(p.with_check, '') ~ 'auth\.role\(\) = ''(ceo|kitchen|cashier)''');
+  return query select 'containment', p.tablename || '.' || p.policyname, 'write policy not on the reviewed allowlist'
+    from pg_policies p
+   where p.schemaname = 'public' and p.cmd in ('INSERT','UPDATE','DELETE','ALL')
+     and (p.tablename || '.' || p.policyname) <> all (allowed_write_policies);
+  return query select 'containment', p.tablename || '.' || p.policyname, 'SELECT policy USING (true) outside the public menu'
+    from pg_policies p
+   where p.schemaname = 'public' and p.cmd = 'SELECT' and btrim(coalesce(p.qual, '')) = 'true'
+     and p.tablename not in ('meals','kitchens');
+  return query select 'containment', 'public.' || c.relname || ' / anon ' || v.p, 'anon privilege other than SELECT on meals'
+    from pg_class c cross join (values ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),('REFERENCES'),('TRIGGER')) v(p)
+   where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p')
+     and has_table_privilege('anon', c.oid, v.p)
+     and not (c.relname = 'meals' and v.p = 'SELECT');
+  return query select 'containment', x.col, 'authenticated may UPDATE a privileged column'
+    from (values ('user_profiles','role'),('user_profiles','is_admin'),('user_profiles','user_id'),
+                 ('drivers','status'),('drivers','commission_rate'),('drivers','total_earned'),
+                 ('drivers','weekly_earnings'),('drivers','email'),('drivers','national_id'),('drivers','id')) v(t, c)
+    cross join lateral (select v.t || '.' || v.c as col) x
+   where to_regclass('public.' || v.t) is not null
+     and has_column_privilege('authenticated', ('public.' || v.t)::regclass, v.c, 'UPDATE');
+  return query select 'containment', 'public.' || t, 'authenticated has access to a retired or service-only table'
+    from unnest(array['daily_closings','kiosks','products','stock_movements','admins','bank_accounts',
+                      'admin_logs','financial_transactions','platform_settings']) t
+   where to_regclass('public.' || t) is not null
+     and (has_table_privilege('authenticated', ('public.' || t)::regclass, 'SELECT')
+       or has_table_privilege('authenticated', ('public.' || t)::regclass, 'INSERT')
+       or has_table_privilege('authenticated', ('public.' || t)::regclass, 'UPDATE')
+       or has_table_privilege('authenticated', ('public.' || t)::regclass, 'DELETE'));
+  return query select 'containment', 'public.' || t, 'authenticated can write a server-managed table'
+    from unnest(array['staff_roles','security_audit_log','kitchens','order_status_updates']) t
+   where to_regclass('public.' || t) is not null
+     and (has_table_privilege('authenticated', ('public.' || t)::regclass, 'INSERT')
+       or has_table_privilege('authenticated', ('public.' || t)::regclass, 'UPDATE')
+       or has_table_privilege('authenticated', ('public.' || t)::regclass, 'DELETE'));
+  return query select 'containment', p.oid::regprocedure::text, 'unsafe function executable by a client role'
+    from pg_proc p
+   where p.pronamespace = 'public'::regnamespace
+     and p.proname in ('create_order_transaction','calculate_driver_weekly_earnings','containment_violations')
+     and (has_function_privilege('anon', p.oid, 'EXECUTE') or has_function_privilege('authenticated', p.oid, 'EXECUTE'));
+  return query select 'containment', p.oid::regprocedure::text, 'public function executable by anon'
+    from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and has_function_privilege('anon', p.oid, 'EXECUTE')
+     and p.prorettype not in ('trigger'::regtype, 'event_trigger'::regtype);
+  return query select 'containment', p.oid::regprocedure::text, 'SECURITY DEFINER function without a fixed search_path'
+    from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.prosecdef
+     and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) s where s like 'search_path=%');
+  return query select 'containment', 'trigger ' || x.t || '.' || x.g, 'required guard trigger missing or disabled'
+    from (values ('user_profiles','trg_enforce_profile_privilege_guard'),
+                 ('drivers','trg_enforce_driver_availability'),
+                 ('security_audit_log','security_audit_log_append_only')) x(t, g)
+   where not exists (select 1 from pg_trigger tg
+                      where tg.tgrelid = to_regclass('public.' || x.t) and tg.tgname = x.g and tg.tgenabled <> 'D');
+  return query select 'containment', 'public.drivers', 'availability check constraint missing'
+   where not exists (select 1 from pg_constraint
+                      where conrelid = to_regclass('public.drivers') and conname = 'drivers_status_availability_check');
+  return query select 'containment', 'default privileges ' || coalesce(d.defaclnamespace::regnamespace::text, '(global)')
+                    || ' ' || d.defaclobjtype::text, 'migration role default privileges grant client access'
+    from pg_default_acl d cross join lateral aclexplode(d.defaclacl) a
+   where d.defaclrole = 'postgres'::regrole
+     and (d.defaclnamespace = 'public'::regnamespace or d.defaclnamespace = 0)
+     and (a.grantee = 0 or a.grantee::regrole::text in ('anon','authenticated'));
+  return query select 'containment', 'default privileges (global) f', 'built-in default lets PUBLIC execute new functions'
+   where not exists (select 1 from pg_default_acl d
+                      where d.defaclrole = 'postgres'::regrole and d.defaclnamespace = 0 and d.defaclobjtype = 'f');
+
+  -- ============================ storage ============================
+  if to_regclass('storage.objects') is null then
+    return query select 'storage', 'storage.objects', 'storage schema absent: storage containment not verifiable here';
+  else
+    return query select 'storage', 'storage.objects.' || p.policyname, 'write policy not on the reviewed allowlist'
+      from pg_policies p
+     where p.schemaname = 'storage' and p.tablename = 'objects'
+       and p.cmd in ('INSERT','UPDATE','DELETE','ALL')
+       and p.policyname <> all (allowed_storage_write_policies);
+    return query select 'storage', 'storage.' || p.tablename || '.' || p.policyname, 'client write policy on bucket metadata'
+      from pg_policies p
+     where p.schemaname = 'storage' and p.tablename <> 'objects'
+       and p.cmd in ('INSERT','UPDATE','DELETE','ALL');
+    return query select 'storage', 'storage.objects.' || p.policyname, 'allowlisted write policy no longer requires an admin staff role'
+      from pg_policies p
+     where p.schemaname = 'storage' and p.tablename = 'objects'
+       and p.policyname = any (allowed_storage_write_policies)
+       and (coalesce(p.qual, '') || coalesce(p.with_check, '')) !~ 'has_staff_role\(''admin''::text\)';
+    return query execute
+      $q$select 'storage'::text, 'bucket ' || b.id, 'public bucket other than meal-images'::text
+           from storage.buckets b where b.public and b.id <> 'meal-images'$q$;
+  end if;
+end
+$cv$;
+revoke all on function public.containment_violations() from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------
 -- 0. PREFLIGHT — abort unless the database matches the reviewed evidence.
@@ -108,12 +342,12 @@ declare
     'order_items.staff_admin_all_order_items',
     'order_status_updates.order_owner_read_status',
     'order_status_updates.staff_admin_read_status',
-    'orders.staff_admin_all_orders',
-    'user_profiles.staff_admin_read_profiles'
+    'orders.staff_admin_all_orders'
   ];
+  v record;
 begin
   if current_setting('server_version_num')::int < 150000 then
-    problems := problems || 'PostgreSQL 15+ required (UNIQUE NULLS NOT DISTINCT)';
+    problems := problems || 'PostgreSQL 15+ required (UNIQUE NULLS NOT DISTINCT)'::text;
   end if;
 
   -- Tables this migration touches must exist.
@@ -182,6 +416,11 @@ begin
       problems := problems || format('admin seed guard: expected exactly 1 profile with role=admin and is_admin=true, found %s', n);
     end if;
   end if;
+
+  -- Platform drift (U3-U6, owners, grantees, RLS): see containment_violations().
+  for v in select * from public.containment_violations() c where c.category = 'drift' loop
+    problems := problems || ('drift: ' || v.object || ' - ' || v.problem);
+  end loop;
 
   if cardinality(problems) > 0 then
     raise exception 'Phase 1C preflight failed; nothing was changed: %', array_to_string(problems, ' | ')
@@ -478,11 +717,21 @@ create policy staff_admin_all_collaborator_payouts on public.collaborator_payout
 drop policy if exists staff_admin_all_collaborator_analytics on public.collaborator_analytics;
 create policy staff_admin_all_collaborator_analytics on public.collaborator_analytics for all to authenticated
   using ((select public.has_staff_role('admin'))) with check ((select public.has_staff_role('admin')));
--- Admins could not see other users' profiles or driver rows before
--- (Phase 1B F5); driver approval needs both. Read-only.
+-- Least privilege: NO blanket admin read of user_profiles (customers'
+-- health and contact data). Driver approval uses public.drivers only
+-- (staff_admin_all_drivers, section 9). No V1 admin workflow needs other
+-- users' profiles; one that does must get a narrow, tested interface.
 drop policy if exists staff_admin_read_profiles on public.user_profiles;
-create policy staff_admin_read_profiles on public.user_profiles for select to authenticated
-  using ((select public.has_staff_role('admin')));
+
+-- ---------------------------------------------------------------------
+-- 5b. Partner model retired: no partner writes. All collaborator,
+--     collaborator_orders and payout rows are preserved; partners keep
+--     read access to their own rows (collaborators_view_own,
+--     collaborators_view_own_orders). containment_violations() reports
+--     any write policy outside its allowlist, so this cannot return
+--     unnoticed (checked by the postcondition below and after deploy).
+-- ---------------------------------------------------------------------
+drop policy if exists collaborators_update_own_orders on public.collaborator_orders;  -- UPDATE own rows, any column incl. shares
 
 -- ---------------------------------------------------------------------
 -- 6. C2 + C3 — no client creation or modification of orders/items.
@@ -692,48 +941,20 @@ revoke all on public.kiosks, public.products, public.stock_movements,
 -- INSERT/UPDATE policy for customers or drivers on those tables.
 
 -- ---------------------------------------------------------------------
--- 13. POSTCONDITIONS — abort (and roll back) if any hole remains.
+-- 13. POSTCONDITIONS — abort (and roll back) if any drift or containment
+--     violation remains. Same function as the post-deployment check.
+--     'storage' rows are closed by 20261016171000_phase1c_storage_meal_images.sql,
+--     whose own postcondition requires zero rows of every category.
 -- ---------------------------------------------------------------------
 do $post$
 declare
   bad text;
 begin
-  select string_agg(tablename || '.' || policyname, '; ') into bad
-    from pg_policies
-   where schemaname = 'public'
-     and (coalesce(qual, '') ~ 'is_admin' or coalesce(with_check, '') ~ 'is_admin'
-          or coalesce(qual, '') ~ 'jwt\(\) ->> ''role''' or coalesce(with_check, '') ~ 'jwt\(\) ->> ''role'''
-          or coalesce(qual, '') ~ 'auth\.role\(\) = ANY'
-          or coalesce(qual, '') ~ 'auth\.role\(\) = ''(ceo|kitchen|cashier)''');
+  select string_agg(v.category || ': ' || v.object || ' - ' || v.problem, ' | ') into bad
+    from public.containment_violations() v
+   where v.category in ('drift', 'containment');
   if bad is not null then
-    raise exception 'postcondition: legacy authority policies remain: %', bad;
-  end if;
-
-  select string_agg(tablename || '.' || policyname, '; ') into bad
-    from pg_policies
-   where schemaname = 'public'
-     and tablename in ('orders','order_items','daily_closings','order_status_updates','drivers')
-     and cmd in ('INSERT','UPDATE','DELETE','ALL')
-     and policyname not in ('Service role full access','Service role full access order_items',
-                            'staff_admin_all_orders','staff_admin_all_order_items',
-                            'staff_admin_all_drivers','drivers_self_update_profile_location');
-  if bad is not null then
-    raise exception 'postcondition: unexpected client write policies: %', bad;
-  end if;
-
-  if has_table_privilege('anon', 'public.orders', 'INSERT')
-     or has_column_privilege('authenticated', 'public.user_profiles', 'is_admin', 'UPDATE')
-     or has_column_privilege('authenticated', 'public.user_profiles', 'role', 'UPDATE')
-     or has_column_privilege('authenticated', 'public.drivers', 'status', 'UPDATE')
-     or has_column_privilege('authenticated', 'public.drivers', 'commission_rate', 'UPDATE')
-     or has_table_privilege('authenticated', 'public.daily_closings', 'SELECT') then
-    raise exception 'postcondition: a client privilege that must be revoked is still granted';
-  end if;
-
-  if to_regprocedure('public.create_order_transaction(text, uuid, jsonb, numeric, text, text)') is not null
-     and (has_function_privilege('anon', 'public.create_order_transaction(text, uuid, jsonb, numeric, text, text)', 'EXECUTE')
-       or has_function_privilege('authenticated', 'public.create_order_transaction(text, uuid, jsonb, numeric, text, text)', 'EXECUTE')) then
-    raise exception 'postcondition: create_order_transaction is still client-executable';
+    raise exception 'Phase 1C postcondition failed (rolled back): %', bad;
   end if;
 end
 $post$;
