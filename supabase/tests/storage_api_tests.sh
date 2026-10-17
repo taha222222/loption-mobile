@@ -23,31 +23,37 @@
 set -uo pipefail
 : "${STORAGE_URL:?}" "${JWT_SECRET:?}" "${ANON_KEY:?}" "${SERVICE_KEY:?}"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-RUN="r$(date +%s%N)"   # unique object names per run (a previous run must not cause 409 conflicts)
+RUN="${RUN_ID:-r$(date +%s%N)}"   # distinct object names per run (a previous run must not cause 409 conflicts)
 
 python3 -I - "$TMP" <<'PY'
-import base64, struct, sys, zlib
+import io, struct, sys, zlib
+from PIL import Image
 d = sys.argv[1]
-def png(path, size=None):
-    # a real 1x1 PNG; optionally padded with an ancillary chunk to an exact size
-    def chunk(t, data): return struct.pack('>I', len(data)) + t + data + struct.pack('>I', zlib.crc32(t + data) & 0xffffffff)
-    head = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0))
-    body = chunk(b'IDAT', zlib.compress(b'\x00\xff\x00\x00')) + chunk(b'IEND', b'')
-    if size is not None:
-        pad = size - len(head) - len(body) - 12
-        head += chunk(b'tEXt', b'x' * pad)
-    data = head + body
-    assert size is None or len(data) == size
+def chunk(t, data): return struct.pack('>I', len(data)) + t + data + struct.pack('>I', zlib.crc32(t + data) & 0xffffffff)
+# genuine, fully decodable images
+for fmt, ext in (('PNG', 'png'), ('JPEG', 'jpg'), ('WEBP', 'webp')):
+    Image.new('RGB', (16, 16), (30, 140, 60)).save(f'{d}/img.{ext}', fmt)
+def padded_png(path, size):
+    # a valid PNG padded to an exact size with a private ancillary chunk ('loPt'), which decoders skip
+    b = io.BytesIO(); Image.new('RGB', (16, 16), (30, 140, 60)).save(b, 'PNG'); raw = b.getvalue()
+    iend = raw.rindex(b'IEND') - 4
+    pad = size - len(raw) - 12
+    data = raw[:iend] + chunk(b'loPt', b'\0' * pad) + raw[iend:]
+    assert len(data) == size
     open(path, 'wb').write(data)
-png(d + '/img.png')
-png(d + '/exact.png', 5242880)       # exactly 5 MiB
-png(d + '/over.png', 5242881)        # 5 MiB + 1 byte
-open(d + '/img.jpg', 'wb').write(base64.b64decode(
-    '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA='))
-open(d + '/img.webp', 'wb').write(base64.b64decode('UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA=='))
-open(d + '/img.svg', 'w').write('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
-open(d + '/img.gif', 'wb').write(b'GIF89a\x01\x00\x01\x00\x00\x00\x00;')
-open(d + '/page.html', 'w').write('<html><script>alert(1)</script></html>')
+padded_png(f'{d}/exact.png', 5242880)       # exactly 5 MiB
+padded_png(f'{d}/over.png', 5242881)        # 5 MiB + 1 byte
+# unsafe / invalid content for the seed (uploaded while the bucket is still vulnerable)
+open(f'{d}/img.svg', 'w').write('<svg xmlns="http://www.w3.org/2000/svg"><script>document.title="EXECUTED"</script></svg>')
+open(f'{d}/img.gif', 'wb').write(b'GIF89a\x01\x00\x01\x00\x00\x00\x00;')
+open(f'{d}/page.html', 'w').write('<html><script>document.title="EXECUTED"</script></html>')
+png = open(f'{d}/img.png', 'rb').read()
+open(f'{d}/truncated.png', 'wb').write(png[:len(png) // 2])                       # valid signature, corrupt body
+open(f'{d}/polyglot.png', 'wb').write(png + b'<html><script>document.title="EXECUTED"</script></html>')  # decodes, carries markup
+w = h = 30000                                                                       # 900 megapixel decompression bomb
+z = zlib.compressobj(9); row = b'\0' * (1 + w // 8); idat = b''.join(z.compress(row) for _ in range(h)) + z.flush()
+open(f'{d}/bomb.png', 'wb').write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 1, 0, 0, 0, 0))
+                                  + chunk(b'IDAT', idat) + chunk(b'IEND', b''))
 PY
 
 jwt() {  # jwt <sub>  -> authenticated JWT valid for 10 minutes
@@ -86,6 +92,12 @@ served() { [ "$(curl -s -o /dev/null -w '%{http_code}' "$STORAGE_URL/object/publ
 
 if [ "${1:-}" = "seed" ]; then
   echo "seed: customer-owned object (vulnerable policy): $(up "$CUSTOMER" POST meal-images/seed-customer.png "$TMP/img.png" image/png)"
+  # Content that the new limits would refuse or cannot judge, uploaded while staging is still open:
+  echo "seed: customer SVG declared image/png:  $(up "$CUSTOMER" POST meal-images/seed-svg-as-png.png "$TMP/img.svg" image/png -H 'x-upsert: true')"
+  echo "seed: customer truncated PNG:           $(up "$CUSTOMER" POST meal-images/seed-truncated.png "$TMP/truncated.png" image/png -H 'x-upsert: true')"
+  echo "seed: customer 900-megapixel PNG bomb:  $(up "$CUSTOMER" POST meal-images/seed-bomb.png "$TMP/bomb.png" image/png -H 'x-upsert: true')"
+  echo "seed: customer PNG + appended script:   $(up "$CUSTOMER" POST meal-images/seed-polyglot.png "$TMP/polyglot.png" image/png -H 'x-upsert: true')"
+  echo "seed: customer JPEG declared image/png: $(up "$CUSTOMER" POST meal-images/seed-jpeg-as-png.png "$TMP/img.jpg" image/png -H 'x-upsert: true')"
   exit 0
 fi
 

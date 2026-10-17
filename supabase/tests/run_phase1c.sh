@@ -44,6 +44,8 @@ CATALOG_Q="$ROOT/supabase/evidence/phase1b_catalog_query.sql"
 BOOT="$HERE/bootstrap_hosted_auth.sql"; FIX="$HERE/fixtures_staging_like.sql"
 TESTS="$HERE/phase1c_security_tests.sql"; MATRIX="$HERE/phase1c_matrix.sql"
 PREFLIGHT="$HERE/preflight_staging_readonly.sql"; STORAGE_TESTS="$HERE/storage_api_tests.sh"
+INVENTORY="$ROOT/supabase/evidence/meal_images_inventory_readonly.sql"; SCAN="$ROOT/supabase/tools/meal_images_scan.py"
+QUARANTINE="$ROOT/supabase/tools/meal_images_quarantine.py"; BROWSER_TESTS="$HERE/browser_serving_tests.js"
 OUT="$(mktemp -d /tmp/phase1c-run.XXXXXX)"
 NET="p1c-net-$$"
 CONTAINERS=()
@@ -259,7 +261,7 @@ PY
     || { fail "full preflight not ok in storage scenario"; cat "$OUT/preflight.json"; }
   q postgres -f "$MATRIX" > "$OUT/matrix_s_before.txt"
   "$STORAGE_TESTS" seed
-  "$STORAGE_TESTS" check > "$OUT/storage_before.txt" || true
+  RUN_ID=before "$STORAGE_TESTS" check > "$OUT/storage_before.txt" || true
   "$STORAGE_TESTS" seed   # the BEFORE run deleted the seed object (that is the hole); re-seed while still vulnerable
   echo "  BEFORE (staging storage policies):$(tail -1 "$OUT/storage_before.txt" | sed 's/.*storage API://')  <- failures document the open upload hole"
   grep -E "FAIL S" "$OUT/storage_before.txt" | sed 's/^/    /'
@@ -299,13 +301,102 @@ d = json.load(open(sys.argv[1]))
 print(next(c['detail'] for c in d['checks'] if c['check'].startswith('info: existing meal-images objects')))" "$OUT/preflight_s_after.json")"
   [ "$(qa "select count(*) = 1 and bool_and(details -> 'old_file_size_limit' = 'null'::jsonb and details -> 'old_allowed_mime_types' = 'null'::jsonb) from public.security_audit_log where action = 'storage.bucket.limits_set'")" = "t" ] \
     && pass "previous bucket values recorded in security_audit_log as JSON null (were SQL NULL)" || fail "bucket audit record missing or wrong"
-  if "$STORAGE_TESTS" check > "$OUT/storage_after.txt"; then pass "all Storage API checks pass"; else fail "Storage API checks failing"; fi
+  if RUN_ID=after "$STORAGE_TESTS" check > "$OUT/storage_after.txt"; then pass "all Storage API checks pass"; else fail "Storage API checks failing"; fi
   sed 's/^/  /' "$OUT/storage_after.txt"
   [ "$(qa 'select count(*) from public.containment_violations()')" = "0" ] && pass "containment_violations() = 0 rows (drift, containment, storage)" \
     || { fail "violations remain"; qa 'select * from public.containment_violations()'; }
   q postgres -f "$TESTS" > "$OUT/tests_storage_env.txt"
   echo "  SQL tests with storage schema present: $(summary)"; [ "$(nfail)" = "0" ] || fail "SQL tests failing in storage scenario"
   q postgres -f "$MATRIX" > "$OUT/matrix_s_after.txt"
+
+  echo "  -- existing objects: per-object inventory, content scan, browser serving, reversible quarantine (all local)"
+  q postgres -At -f "$INVENTORY" > "$OUT/inventory.json"
+  N_DB="$(qa "select count(*) from storage.objects where bucket_id = 'meal-images'")"
+  N_INV="$(python3 -I -c "import json,sys; print(len(json.load(open(sys.argv[1]))['objects']))" "$OUT/inventory.json")"
+  [ "$N_DB" = "$N_INV" ] && pass "read-only inventory lists all $N_INV objects (id, path, declared type, size, timestamps, backend ETag, uploader class)" \
+    || fail "inventory lists $N_INV of $N_DB objects"
+  grep -q '00000000-0000-0000-0000-0000000000' "$OUT/inventory.json" && fail "inventory exposes user ids" || pass "inventory contains no user ids (uploader reported as a class only)"
+  if python3 -I "$SCAN" --inventory "$OUT/inventory.json" --base-url "$STORAGE_URL" --download-dir "$OUT/scan_dl" --report "$OUT/scan.json" > "$OUT/scan.txt"; then
+    sed 's/^/  /' "$OUT/scan.txt"
+  else fail "content scan did not complete"; cat "$OUT/scan.txt"; fi
+  if python3 -I - "$OUT/scan.json" > "$OUT/scan_assert.txt" <<'PY'
+import json, sys
+res = {r["path"]: r for r in json.load(open(sys.argv[1]))["results"]}
+must_be_ok = {"before-ok.webp", "before-exact.png", "after-ok.png", "after-ok.webp", "after-exact.png"}
+expect = {   # path -> reasons that MUST be reported (others may be reported too)
+  "seed-svg-as-png.png": {"detected_format_not_approved", "type_mismatch", "non_staff_uploader"},
+  "seed-truncated.png": {"decode_failure", "non_staff_uploader"},
+  "seed-bomb.png": {"pixel_limit_exceeded", "non_staff_uploader"},
+  "seed-customer.png": {"non_staff_uploader"},
+  "seed-polyglot.png": {"embedded_markup", "non_staff_uploader"},
+  "seed-jpeg-as-png.png": {"type_mismatch", "non_staff_uploader"},
+  "before-customer-new.png": {"non_staff_uploader"},
+  "before-flagged.png": {"non_staff_uploader"},
+  "before-ok.png": {"declared_type_not_approved", "detected_format_not_approved", "extension_mismatch"},  # overwritten with SVG while open
+  "before-bad.svg": {"declared_type_not_approved", "detected_format_not_approved"},
+  "before-bad.gif": {"declared_type_not_approved", "detected_format_not_approved"},
+  "before-bad.html": {"declared_type_not_approved", "detected_format_not_approved"},
+  "before-bad.bin": {"declared_type_not_approved", "type_mismatch"},
+  "before-over.png": {"over_5_mib"},
+}
+bad = []
+for path, r in res.items():
+    if path in must_be_ok:
+        if r["status"] != "ok": bad.append(f"{path}: expected ok, got {r['reasons']}")
+    elif path in expect:
+        missing = expect[path] - set(r["reasons"])
+        if r["status"] != "suspicious" or missing: bad.append(f"{path}: missing reasons {sorted(missing)}")
+    else:
+        bad.append(f"{path}: unexpected object in bucket")
+for path in set(must_be_ok) | set(expect):
+    if path not in res: bad.append(f"{path}: not in inventory")
+for path, r in res.items():   # served headers recorded for every object; locally none carries nosniff (documented)
+    sh = r.get("served_headers") or {}
+    if sh.get("content-type", "absent") == "absent": bad.append(f"{path}: served headers not recorded")
+    if sh.get("x-content-type-options", "absent").lower() == "nosniff": bad.append(f"{path}: nosniff present; update the docs")
+print("\n".join(bad) if bad else f"all {len(res)} objects classified as expected")
+sys.exit(1 if bad else 0)
+PY
+  then pass "content scan: $(cat "$OUT/scan_assert.txt") (signatures + full decode; decode failure, pixel bomb, mislabelled, disallowed, oversize and non-staff uploads detected)"
+  else fail "content scan classification wrong"; cat "$OUT/scan_assert.txt"; fi
+
+  if ! NODE_PATH="${NODE_PATH:-/opt/node-tools/node_modules}" node -e "require('playwright')" 2>/dev/null; then
+    fail "BLOCKED: Playwright not available; browser serving behaviour NOT verified"
+  elif NODE_PATH="${NODE_PATH:-/opt/node-tools/node_modules}" node "$BROWSER_TESTS" "$STORAGE_URL" \
+       before-bad.svg=executes seed-svg-as-png.png=inert before-bad.html=inert after-ok.png=inert > "$OUT/browser.txt" 2>&1; then
+    pass "browser serving behaviour matches the documented observations"; grep -v '^  headers' "$OUT/browser.txt" | sed 's/^/  /'
+  else fail "browser serving behaviour differs from the documentation"; cat "$OUT/browser.txt"; fi
+  grep -q "nosniff=absent" "$OUT/browser.txt" && echo "  info: X-Content-Type-Options: nosniff is NOT returned by the Storage API (local v1.79.30)"
+
+  export SERVICE_KEY
+  QM="$OUT/quarantine_manifest.json"
+  python3 -I "$QUARANTINE" plan --scan-report "$OUT/scan.json" --manifest "$QM" > "$OUT/q.txt"
+  python3 -I "$QUARANTINE" copy --manifest "$QM" --base-url "$STORAGE_URL" --confirm-copy >> "$OUT/q.txt" \
+    && python3 -I "$QUARANTINE" verify --manifest "$QM" --base-url "$STORAGE_URL" >> "$OUT/q.txt" \
+    && pass "quarantine copy: every suspicious object copied to the PRIVATE bucket with a metadata sidecar; SHA-256 verified" \
+    || { fail "quarantine copy/verify failed"; cat "$OUT/q.txt"; }
+  [ "$(curl -s "$STORAGE_URL/bucket/meal-images-quarantine" -H "Authorization: Bearer $SERVICE_KEY" | python3 -I -c "import json,sys; print(json.load(sys.stdin)['public'])")" = "False" ] \
+    && [ "$(curl -s -o /dev/null -w '%{http_code}' "$STORAGE_URL/object/public/meal-images-quarantine/before-bad.svg")" != "200" ] \
+    && pass "quarantine bucket is private (public URL does not serve)" || fail "quarantine bucket is publicly readable"
+  python3 -I "$QUARANTINE" remove --manifest "$QM" --base-url "$STORAGE_URL" --approved-by local-harness >/dev/null 2>&1 \
+    && fail "remove ran without --confirm-remove" || pass "remove refuses to run without --confirm-remove"
+  python3 -I "$QUARANTINE" remove --manifest "$QM" --base-url "$STORAGE_URL" --approved-by local-harness --confirm-remove >> "$OUT/q.txt" \
+    && pass "approved removal (local only): suspicious objects removed from the public bucket after verified copies existed" \
+    || { fail "quarantine remove failed"; cat "$OUT/q.txt"; }
+  [ "$(qa "select count(*) from storage.objects where bucket_id = 'meal-images'")" = "5" ] \
+    && pass "public bucket now holds only the 5 objects that passed the scan" || fail "unexpected objects remain: $(qa "select string_agg(name, ',') from storage.objects where bucket_id = 'meal-images'")"
+  python3 -I "$QUARANTINE" restore --manifest "$QM" --base-url "$STORAGE_URL" --path seed-customer.png --path before-bad.svg --confirm-restore >> "$OUT/q.txt" || true
+  grep -q "seed-customer.png: restored, sha256 verified" "$OUT/q.txt" && grep -q "before-bad.svg: refused by bucket (Storage API 415)" "$OUT/q.txt" \
+    && pass "restore is reversible: a valid PNG is restored byte-identical; an SVG is refused by the new bucket limits and stays quarantined" \
+    || { fail "restore behaviour wrong"; cat "$OUT/q.txt"; }
+  grep -q "$SERVICE_KEY" "$QM" && fail "service key written to the manifest" || pass "manifest contains no credentials"
+  sed 's/^/  /' "$OUT/q.txt"
+  [ "$(qa 'select count(*) from public.containment_violations()')" = "0" ] && pass "containment_violations() still 0 rows with the private quarantine bucket present" \
+    || { fail "violations after quarantine"; qa 'select * from public.containment_violations()'; }
+  # test cleanup only (local): remove the quarantine bucket so the rollback comparison below stays exact
+  curl -s -o /dev/null -X POST "$STORAGE_URL/bucket/meal-images-quarantine/empty" -H "Authorization: Bearer $SERVICE_KEY"
+  curl -s -o /dev/null -X DELETE "$STORAGE_URL/bucket/meal-images-quarantine" -H "Authorization: Bearer $SERVICE_KEY"
+  [ "$(qa "select count(*) from storage.buckets where id = 'meal-images-quarantine'")" = "0" ] || fail "local quarantine bucket cleanup failed"
   if migrate s_storage2 "$MIG_S"; then pass "storage migration re-apply clean"; else fail "storage re-apply failed"; cat "$OUT/s_storage2.log"; fi
   [ "$(qa "select count(*) from public.security_audit_log where action = 'storage.bucket.limits_set'")" = "1" ] && [ "$(bucket_state)" = "true:5242880:{image/jpeg,image/png,image/webp}" ] \
     && pass "re-apply changed nothing (bucket unchanged, no second audit record)" || fail "re-apply changed the bucket or logged again"
