@@ -111,11 +111,12 @@ table_grantees as (
     from pg_class c cross join lateral aclexplode(c.relacl) a
    where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p') and c.relacl is not null),
 bucket_list as (
-  select b->>'id' || ':' || case when (b->>'public')::boolean then 'public' else 'private' end as x
+  select b->>'id' || ':' || case when (b->>'public')::boolean then 'public' else 'private' end
+         || ':size=' || coalesce(b->>'size', 'null') || ':mime=' || coalesce(b->>'mime', 'null') as x
     from jsonb_array_elements(
            case when to_regclass('storage.buckets') is null then '[]'::jsonb
                 else (xpath('/row/j/text()', query_to_xml(
-                        'select coalesce(jsonb_agg(jsonb_build_object(''id'', id, ''public'', public)), ''[]'')::text as j from storage.buckets',
+                        'select coalesce(jsonb_agg(jsonb_build_object(''id'', id, ''public'', public, ''size'', file_size_limit, ''mime'', array_to_string(allowed_mime_types, ''|''))), ''[]'')::text as j from storage.buckets',
                         false, true, '')))[1]::text::jsonb end) b),   -- tableforest=true: <row><j>..</j></row>
 checks(check_name, ok, detail) as (
   select 'server_version', current_setting('server_version_num')::int >= 150000,
@@ -261,7 +262,7 @@ checks(check_name, ok, detail) as (
   union all
   select 'storage_buckets_match_evidence',
          to_regclass('storage.buckets') is not null
-         and (select coalesce(string_agg(x, ',' order by x), '') from bucket_list) = 'meal-images:public,src:private',
+         and (select coalesce(string_agg(x, ',' order by x), '') from bucket_list) = 'meal-images:public:size=null:mime=null,src:private:size=null:mime=null',
          coalesce((select string_agg(x, ',' order by x) from bucket_list), 'storage.buckets missing')
   union all
   select 'storage_policies_manageable_by_migration_role',
@@ -272,6 +273,16 @@ checks(check_name, ok, detail) as (
          || ' supautils.policy_grants covers storage.objects='
          || (coalesce(current_setting('supautils.policy_grants', true), '') ~ 'storage\.objects')::text
   -- ---- information only (ok = true by definition; read the detail) ----
+  union all
+  -- Existing objects are NOT re-validated by the new bucket limits; this
+  -- inventory (counts only) shows what is already being served.
+  select 'info: existing meal-images objects by declared mimetype / over 5 MiB', true,
+         case when to_regclass('storage.objects') is null then 'storage.objects absent'
+              else (xpath('/row/j/text()', query_to_xml(
+                      'select coalesce(string_agg(m || ''='' || n, '', '' order by m), ''none'') as j from ('
+                   || 'select coalesce(metadata->>''mimetype'', ''<none>'') || case when coalesce((metadata->>''size'')::bigint, 0) > 5242880 then '' (over 5 MiB)'' else '''' end as m, count(*) n '
+                   || 'from storage.objects where bucket_id = ''meal-images'' group by 1) s',
+                      false, true, '')))[1]::text end
   union all
   select 'info: realtime publication', true,
          coalesce((select string_agg(schemaname || '.' || tablename, ',') from pg_publication_tables

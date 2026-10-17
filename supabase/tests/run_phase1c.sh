@@ -23,9 +23,11 @@
 #      matching preflight check; reverting it makes the preflight pass
 #   G  rollback (core) restores the exact BEFORE matrix + driver statuses
 #   S  real Storage API: preflight incl. storage passes; BEFORE shows the
-#      customer-upload hole; core+storage migrations; 12 HTTP checks pass;
-#      zero containment violations; SQL tests pass; storage migration
-#      re-apply clean; storage+core rollback restores the BEFORE state
+#      customer-upload hole; bucket-state guards abort; core+storage
+#      migrations; HTTP checks (authorization, MIME allowlist, 5 MiB bucket
+#      limit, effective bucket config) pass; zero containment violations;
+#      SQL tests pass; re-apply clean; storage+core rollback restores the
+#      exact BEFORE state incl. NULL bucket limits
 # =====================================================================
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -260,13 +262,44 @@ PY
   "$STORAGE_TESTS" check > "$OUT/storage_before.txt" || true
   "$STORAGE_TESTS" seed   # the BEFORE run deleted the seed object (that is the hole); re-seed while still vulnerable
   echo "  BEFORE (staging storage policies):$(tail -1 "$OUT/storage_before.txt" | sed 's/.*storage API://')  <- failures document the open upload hole"
-  grep -E "FAIL S0[2-6]" "$OUT/storage_before.txt" | sed 's/^/    /'
+  grep -E "FAIL S" "$OUT/storage_before.txt" | sed 's/^/    /'
+  bucket_state() { qa "select public || ':' || coalesce(file_size_limit::text, 'NULL') || ':' || coalesce(allowed_mime_types::text, 'NULL') from storage.buckets where id = 'meal-images'"; }
   migrate s_core || { fail "core migration failed"; cat "$OUT/s_core.log"; }
-  [ "$(qa "select count(*) from public.containment_violations() where category = 'storage'")" = "3" ] \
-    && pass "after core only: containment_violations() reports the 3 open storage write policies (containment not complete)" \
-    || fail "storage violations after core not as expected"
+  [ "$(qa "select count(*) from public.containment_violations() where category = 'storage'")" = "4" ] \
+    && pass "after core only: containment_violations() reports 4 storage problems (3 open write policies + bucket limits); containment not complete" \
+    || { fail "storage violations after core not as expected"; qa "select * from public.containment_violations() where category = 'storage'"; }
+  # Storage guards: each unexpected bucket state is injected in the SAME transaction as the
+  # migration, so the abort rolls back the injection too; nothing may persist.
+  BUCKET_BEFORE="$(bucket_state)"; POL_BEFORE="$(qa "select count(*) from pg_policies where schemaname = 'storage'")"
+  sguard() {
+    printf '%s\n\\i %s\n' "$2" "$MIG_S" > "$OUT/sguard_$1.sql"
+    if q postgres --single-transaction -f "$OUT/sguard_$1.sql" > "$OUT/sguard_$1.log" 2>&1; then fail "storage guard $1: migration did not abort"
+    elif grep -q "$3" "$OUT/sguard_$1.log" && [ "$(bucket_state)" = "$BUCKET_BEFORE" ] \
+         && [ "$(qa "select count(*) from pg_policies where schemaname = 'storage'")" = "$POL_BEFORE" ]; then
+      pass "storage guard $1: migration aborted ($3); bucket and policies unchanged"
+    else fail "storage guard $1: wrong error or partial application"; cat "$OUT/sguard_$1.log"; fi
+  }
+  sguard missing_bucket "set storage.allow_delete_query = 'true'; delete from storage.objects where bucket_id = 'meal-images'; delete from storage.buckets where id = 'meal-images';" \
+    "bucket meal-images missing"
+  sguard unexpected_limits "update storage.buckets set file_size_limit = 1048576 where id = 'meal-images';" "unexpected limits"
+  sguard unexpected_types "update storage.buckets set allowed_mime_types = array['image/png'] where id = 'meal-images';" "unexpected limits"
+  sguard not_public "update storage.buckets set public = false where id = 'meal-images';" "is not public"
+  [ "$BUCKET_BEFORE" = "true:NULL:NULL" ] && pass "bucket before migration matches evidence: public, file_size_limit NULL, allowed_mime_types NULL" \
+    || fail "unexpected bucket state before migration: $BUCKET_BEFORE"
+  OBJ_BEFORE="$(qa "select count(*) || ':' || coalesce(string_agg(name, ',' order by name), '') from storage.objects where bucket_id = 'meal-images'")"
   if migrate s_storage "$MIG_S"; then pass "storage migration applied"; else fail "storage migration failed"; cat "$OUT/s_storage.log"; fi
-  if "$STORAGE_TESTS" check > "$OUT/storage_after.txt"; then pass "all 12 Storage API checks pass"; else fail "Storage API checks failing"; fi
+  [ "$(bucket_state)" = "true:5242880:{image/jpeg,image/png,image/webp}" ] \
+    && pass "bucket configured: public kept, file_size_limit 5242880, allowed_mime_types {image/jpeg,image/png,image/webp}" \
+    || fail "bucket after migration: $(bucket_state)"
+  [ "$(qa "select count(*) || ':' || coalesce(string_agg(name, ',' order by name), '') from storage.objects where bucket_id = 'meal-images'")" = "$OBJ_BEFORE" ] \
+    && pass "existing objects preserved ($OBJ_BEFORE)" || fail "objects changed by the migration"
+  q postgres -At -f "$PREFLIGHT" > "$OUT/preflight_s_after.json" 2>/dev/null || true
+  echo "  info: preflight inventory of pre-existing objects (not re-validated by the new limits): $(python3 -I -c "import json,sys
+d = json.load(open(sys.argv[1]))
+print(next(c['detail'] for c in d['checks'] if c['check'].startswith('info: existing meal-images objects')))" "$OUT/preflight_s_after.json")"
+  [ "$(qa "select count(*) = 1 and bool_and(details -> 'old_file_size_limit' = 'null'::jsonb and details -> 'old_allowed_mime_types' = 'null'::jsonb) from public.security_audit_log where action = 'storage.bucket.limits_set'")" = "t" ] \
+    && pass "previous bucket values recorded in security_audit_log as JSON null (were SQL NULL)" || fail "bucket audit record missing or wrong"
+  if "$STORAGE_TESTS" check > "$OUT/storage_after.txt"; then pass "all Storage API checks pass"; else fail "Storage API checks failing"; fi
   sed 's/^/  /' "$OUT/storage_after.txt"
   [ "$(qa 'select count(*) from public.containment_violations()')" = "0" ] && pass "containment_violations() = 0 rows (drift, containment, storage)" \
     || { fail "violations remain"; qa 'select * from public.containment_violations()'; }
@@ -274,13 +307,19 @@ PY
   echo "  SQL tests with storage schema present: $(summary)"; [ "$(nfail)" = "0" ] || fail "SQL tests failing in storage scenario"
   q postgres -f "$MATRIX" > "$OUT/matrix_s_after.txt"
   if migrate s_storage2 "$MIG_S"; then pass "storage migration re-apply clean"; else fail "storage re-apply failed"; cat "$OUT/s_storage2.log"; fi
+  [ "$(qa "select count(*) from public.security_audit_log where action = 'storage.bucket.limits_set'")" = "1" ] && [ "$(bucket_state)" = "true:5242880:{image/jpeg,image/png,image/webp}" ] \
+    && pass "re-apply changed nothing (bucket unchanged, no second audit record)" || fail "re-apply changed the bucket or logged again"
   if q postgres --single-transaction -f "$DOWN" > "$OUT/s_down_wrong_order.log" 2>&1; then fail "core rollback ran before storage rollback"
   else grep -q "run supabase/rollback/20261016171000" "$OUT/s_down_wrong_order.log" && pass "core rollback refuses to run before the storage rollback" || fail "core rollback: wrong error"; fi
-  q postgres --single-transaction -f "$DOWN_S" > "$OUT/s_down_s.log" 2>&1 && q postgres --single-transaction -f "$DOWN" > "$OUT/s_down.log" 2>&1 \
-    && pass "storage + core rollback applied" || { fail "rollback failed"; cat "$OUT/s_down_s.log" "$OUT/s_down.log"; }
+  if q postgres --single-transaction -f "$DOWN_S" > "$OUT/s_down_s.log" 2>&1; then pass "storage rollback applied"; else fail "storage rollback failed"; cat "$OUT/s_down_s.log"; fi
+  [ "$(qa "select public and file_size_limit is null and allowed_mime_types is null from storage.buckets where id = 'meal-images'")" = "t" ] \
+    && pass "storage rollback restores the exact original bucket settings (public; file_size_limit IS NULL; allowed_mime_types IS NULL)" \
+    || fail "bucket not restored exactly: $(bucket_state)"
+  if q postgres --single-transaction -f "$DOWN" > "$OUT/s_down.log" 2>&1; then pass "core rollback applied"; else fail "core rollback failed"; cat "$OUT/s_down.log"; fi
   [ "$(preflight storage_objects_policies_match_evidence)" = "True" ] && pass "storage rollback restores the verbatim staging storage policies" || fail "storage policies not restored"
+  [ "$(preflight storage_buckets_match_evidence)" = "True" ] && pass "preflight bucket check matches the evidence again after rollback" || fail "preflight bucket check not restored"
   q postgres -f "$MATRIX" > "$OUT/matrix_s_rollback.txt"
-  diff -q "$OUT/matrix_s_before.txt" "$OUT/matrix_s_rollback.txt" >/dev/null && pass "full rollback restores the exact BEFORE matrix (incl. storage policies)" \
+  diff -q "$OUT/matrix_s_before.txt" "$OUT/matrix_s_rollback.txt" >/dev/null && pass "full rollback restores the exact BEFORE matrix (incl. storage policies and bucket settings)" \
     || { fail "storage-scenario rollback matrix differs"; diff "$OUT/matrix_s_before.txt" "$OUT/matrix_s_rollback.txt" || true; }
 fi
 

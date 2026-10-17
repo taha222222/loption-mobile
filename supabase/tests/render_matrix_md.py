@@ -86,6 +86,18 @@ def main():
         w(f"| {tag} | {r[0]} | {esc(r[1])} | {r[2]} | {r[3]} | `{esc(r[4])}` | `{esc(r[5])}` |")
     w("")
 
+    # ---- bucket configuration
+    bb = {r[0]: r for r in before.get("storage buckets", [])}
+    ba = {r[0]: r for r in after.get("storage buckets", [])}
+    w("## 1c. Storage bucket configuration")
+    w("")
+    w("| Bucket | public before → after | file_size_limit before → after | allowed_mime_types before → after |")
+    w("|---|---|---|---|")
+    for k in sorted(set(bb) | set(ba)):
+        b0 = bb.get(k, [k, "-", "-", "-"]); a0 = ba.get(k, [k, "-", "-", "-"])
+        w(f"| {k} | {b0[1]} → {a0[1]} | {b0[2]} → {a0[2]} | {esc(b0[3])} → {esc(a0[3])} |")
+    w("")
+
     # ---- table privileges
     tb = {r[0]: r for r in before.get("table privileges (public)", [])}
     ta = {r[0]: r for r in after.get("table privileges (public)", [])}

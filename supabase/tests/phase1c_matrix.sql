@@ -62,3 +62,10 @@ select tablename, policyname, cmd, array_to_string(roles, ','),
        coalesce(regexp_replace(with_check, '\s+', ' ', 'g'), '-')
   from pg_policies where schemaname = 'storage'
  order by tablename, policyname;
+
+\echo '## storage buckets: id | public | file_size_limit | allowed_mime_types'
+select to_regclass('storage.buckets') is not null as has_buckets \gset
+\if :has_buckets
+select id, public, coalesce(file_size_limit::text, 'NULL'), coalesce(allowed_mime_types::text, 'NULL')
+  from storage.buckets order by id;
+\endif
