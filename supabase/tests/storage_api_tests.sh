@@ -16,7 +16,8 @@
 #   at most 5,242,880 bytes (else 413), enforced by the BUCKET setting
 #   (the container's global FILE_SIZE_LIMIT is 50 MiB, so a 413 at
 #   5 MiB + 1 byte can only come from the bucket's file_size_limit);
-#   public read kept.
+#   public read kept; listing the bucket (names, ids, metadata) only for
+#   admin staff.
 # Policy-denial checks upload a valid PNG, so they cannot pass merely
 # because the MIME or size limit rejected the request.
 # =====================================================================
@@ -98,6 +99,10 @@ if [ "${1:-}" = "seed" ]; then
   echo "seed: customer 900-megapixel PNG bomb:  $(up "$CUSTOMER" POST meal-images/seed-bomb.png "$TMP/bomb.png" image/png -H 'x-upsert: true')"
   echo "seed: customer PNG + appended script:   $(up "$CUSTOMER" POST meal-images/seed-polyglot.png "$TMP/polyglot.png" image/png -H 'x-upsert: true')"
   echo "seed: customer JPEG declared image/png: $(up "$CUSTOMER" POST meal-images/seed-jpeg-as-png.png "$TMP/img.jpg" image/png -H 'x-upsert: true')"
+  # object names that mean something in a URL (scan/quarantine must address exactly these objects)
+  echo "seed: customer valid PNG named 'seed space.png': $(up "$CUSTOMER" POST 'meal-images/seed%20space.png' "$TMP/img.png" image/png -H 'x-upsert: true')"
+  echo "seed: customer SVG named 'seed?q.png':           $(up "$CUSTOMER" POST 'meal-images/seed%3Fq.png' "$TMP/img.svg" image/png -H 'x-upsert: true')"
+  echo "seed: customer PNG named 'seed#h.png' (key rule): $(up "$CUSTOMER" POST 'meal-images/seed%23h.png' "$TMP/img.png" image/png -H 'x-upsert: true')"
   exit 0
 fi
 
@@ -147,6 +152,19 @@ check S20 "bucket: public, 5 MiB, jpeg/png/webp"                "$cfg" "public=T
 echo "  -- public read and admin delete"
 ok=no; served "$RUN-ok.webp" && ok=yes;                                check S21 "approved images are publicly readable" "$ok" yes
 check S22 "admin can delete a meal image"                       "$(req "$ADMIN" DELETE "/object/meal-images/$RUN-ok.jpg")" 200
+
+echo "  -- listing (object names, ids, metadata): admin staff only; public URLs above stay readable"
+# listed <token>: number of objects the list endpoint returns for meal-images (or the error code)
+listed() {
+  local h; h="$(curl -s -o "$TMP/list" -w '%{http_code}' -X POST "$STORAGE_URL/object/list/meal-images" \
+       -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d '{"prefix":"","limit":1000}')"
+  [ "$h" = "200" ] && python3 -I -c "import json,sys; print(len(json.load(open(sys.argv[1]))))" "$TMP/list" || echo "http-$h"
+}
+n_anon="$(listed "$ANON_KEY")"; n_cust="$(listed "$CUSTOMER")"; n_adm="$(listed "$ADMIN")"
+check S23 "anon cannot list the bucket (0 objects returned)"     "$n_anon" 0
+check S24 "customer cannot list the bucket (0 objects returned)" "$n_cust" 0
+nz=no; [ "${n_adm#http-}" = "$n_adm" ] && [ "$n_adm" -gt 0 ] && nz=yes
+check S25 "admin staff can list the bucket"                     "$nz" yes
 
 echo "  -- documented limitation (not a pass/fail check)"
 lim="$(up "$ADMIN" POST meal-images/$RUN-svg-bytes-as.png "$TMP/img.svg" image/png)"

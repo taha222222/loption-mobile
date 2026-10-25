@@ -52,3 +52,6 @@ sb.txt
 
 # Local Expo files
 .expo/
+# Python bytecode (supabase/tools, supabase/tests)
+__pycache__/
+*.pyc

@@ -100,11 +100,12 @@ Before: 56 policies. After: 33. Removed: 38. Added: 15. Unchanged: 18.
 | Change | Table | Policy | Cmd | Roles | USING | WITH CHECK |
 |---|---|---|---|---|---|---|
 | removed | objects | Authenticated users can upload | INSERT | public | `-` | `((bucket_id = 'meal-images'::text) AND (auth.role() = 'authenticated'::text))` |
-| unchanged | objects | Public Access | SELECT | public | `(bucket_id = 'meal-images'::text)` | `-` |
+| removed | objects | Public Access | SELECT | public | `(bucket_id = 'meal-images'::text)` | `-` |
 | removed | objects | Users can delete own uploads | DELETE | public | `((bucket_id = 'meal-images'::text) AND (auth.uid() = owner))` | `-` |
 | removed | objects | Users can update own uploads | UPDATE | public | `((bucket_id = 'meal-images'::text) AND (auth.uid() = owner))` | `-` |
 | added | objects | staff_admin_delete_meal_images | DELETE | authenticated | `((bucket_id = 'meal-images'::text) AND ( SELECT has_staff_role('admin'::text) AS has_staff_role))` | `-` |
 | added | objects | staff_admin_insert_meal_images | INSERT | authenticated | `-` | `((bucket_id = 'meal-images'::text) AND ( SELECT has_staff_role('admin'::text) AS has_staff_role))` |
+| added | objects | staff_admin_select_meal_images | SELECT | authenticated | `((bucket_id = 'meal-images'::text) AND ( SELECT has_staff_role('admin'::text) AS has_staff_role))` | `-` |
 | added | objects | staff_admin_update_meal_images | UPDATE | authenticated | `((bucket_id = 'meal-images'::text) AND ( SELECT has_staff_role('admin'::text) AS has_staff_role))` | `((bucket_id = 'meal-images'::text) AND ( SELECT has_staff_role('admin'::text) AS has_staff_role))` |
 
 ## 1c. Storage bucket configuration
@@ -116,39 +117,39 @@ Before: 56 policies. After: 33. Removed: 38. Added: 15. Unchanged: 18.
 
 ## 2. Table privileges for client roles
 
-Key: s = select, i = insert, u = update, d = delete, t = truncate, r = references, g = trigger. A dash (-) means none.
+Key: s = select, i = insert, u = update, d = delete, t = truncate, r = references, g = trigger, m = maintain. A dash (-) means none.
 
 RLS still applies on top of these grants. Where `authenticated` keeps a write grant, the only write policy is the staff-admin policy, plus the service role.
 
 | Table | anon before | anon after | authenticated before | authenticated after |
 |---|---|---|---|---|
-| admin_logs ⟵ | dgirstu | - | dgirstu | - |
-| admins ⟵ | dgirstu | - | dgirstu | - |
-| bank_accounts ⟵ | dgirstu | - | dgirstu | - |
-| cash_collections ⟵ | dgirstu | - | dgirstu | dgirstu |
-| collaborator_analytics ⟵ | dgirstu | - | dgirstu | dgirstu |
-| collaborator_orders ⟵ | dgirstu | - | dgirstu | dgirstu |
-| collaborator_payouts ⟵ | dgirstu | - | dgirstu | dgirstu |
-| collaborators ⟵ | dgirstu | - | dgirstu | dgirstu |
-| daily_closings ⟵ | dgirstu | - | dgirstu | - |
-| driver_payouts ⟵ | dgirstu | - | dgirstu | dgirstu |
-| driver_push_tokens ⟵ | dgirstu | - | dgirstu | dgirstu |
-| driver_weekly_earnings ⟵ | dgirstu | - | dgirstu | dgirstu |
-| drivers ⟵ | dgirstu | - | dgirstu | dgirst |
-| financial_transactions ⟵ | dgirstu | - | dgirstu | - |
-| kiosks ⟵ | dgirstu | - | dgirstu | - |
+| admin_logs ⟵ | dgimrstu | - | dgimrstu | - |
+| admins ⟵ | dgimrstu | - | dgimrstu | - |
+| bank_accounts ⟵ | dgimrstu | - | dgimrstu | - |
+| cash_collections ⟵ | dgimrstu | - | dgimrstu | disu |
+| collaborator_analytics ⟵ | dgimrstu | - | dgimrstu | disu |
+| collaborator_orders ⟵ | dgimrstu | - | dgimrstu | disu |
+| collaborator_payouts ⟵ | dgimrstu | - | dgimrstu | disu |
+| collaborators ⟵ | dgimrstu | - | dgimrstu | disu |
+| daily_closings ⟵ | dgimrstu | - | dgimrstu | - |
+| driver_payouts ⟵ | dgimrstu | - | dgimrstu | disu |
+| driver_push_tokens ⟵ | dgimrstu | - | dgimrstu | disu |
+| driver_weekly_earnings ⟵ | dgimrstu | - | dgimrstu | disu |
+| drivers ⟵ | dgimrstu | - | dgimrstu | dis |
+| financial_transactions ⟵ | dgimrstu | - | dgimrstu | - |
+| kiosks ⟵ | dgimrstu | - | dgimrstu | - |
 | kitchens ⟵ | (absent) | - | (absent) | s |
-| meals ⟵ | dgirstu | s | dgirstu | dgirstu |
-| order_items ⟵ | dgirstu | - | dgirstu | dgirstu |
-| order_status_updates ⟵ | dgirstu | - | dgirstu | s |
-| orders ⟵ | dgirstu | - | dgirstu | dgirstu |
-| platform_settings ⟵ | dgirstu | - | dgirstu | - |
-| products ⟵ | dgirstu | - | dgirstu | - |
+| meals ⟵ | dgimrstu | s | dgimrstu | disu |
+| order_items ⟵ | dgimrstu | - | dgimrstu | disu |
+| order_status_updates ⟵ | dgimrstu | - | dgimrstu | s |
+| orders ⟵ | dgimrstu | - | dgimrstu | disu |
+| platform_settings ⟵ | dgimrstu | - | dgimrstu | - |
+| products ⟵ | dgimrstu | - | dgimrstu | - |
 | security_audit_log ⟵ | (absent) | - | (absent) | s |
 | staff_roles ⟵ | (absent) | - | (absent) | s |
-| stock_movements ⟵ | dgirstu | - | dgirstu | - |
-| user_profiles ⟵ | dgirstu | - | dgirstu | dgirst |
-| user_push_tokens ⟵ | dgirstu | - | dgirstu | dgirstu |
+| stock_movements ⟵ | dgimrstu | - | dgimrstu | - |
+| user_profiles ⟵ | dgimrstu | - | dgimrstu | dis |
+| user_push_tokens ⟵ | dgimrstu | - | dgimrstu | disu |
 
 ## 3. Column UPDATE privilege for `authenticated` on sensitive columns
 
@@ -183,6 +184,9 @@ RLS still applies on top of these grants. Where `authenticated` keeps a write gr
 | `rls_auto_enable()` | t | search_path=pg_catalog → search_path=pg_catalog | t → f | t → f |
 | `security_audit_log_append_only()` | f | (absent) → search_path="" | - → f | - → f |
 | `set_driver_availability(boolean)` | t | (absent) → search_path="" | - → f | - → t |
+| `staff_roles_driver_offline()` | t | (absent) → search_path="" | - → f | - → f |
+| `staff_roles_no_truncate()` | f | (absent) → search_path="" | - → f | - → f |
+| `staff_roles_require_admin()` | f | (absent) → search_path="" | - → f | - → f |
 | `update_collaborator_analytics()` | f | - → - | t → f | t → f |
 
 ## 5. Triggers (public)
@@ -198,6 +202,10 @@ collaborator_orders | trigger_calculate_revenue_split | CREATE TRIGGER trigger_c
 collaborator_orders | trigger_update_analytics | CREATE TRIGGER trigger_update_analytics AFTER INSERT OR UPDATE OF preparation_status ON public.collaborator_orders FOR EACH ROW EXECUTE FUNCTION update_collaborator_analytics()
 drivers | trg_enforce_driver_availability | CREATE TRIGGER trg_enforce_driver_availability BEFORE INSERT OR UPDATE OF status ON public.drivers FOR EACH ROW EXECUTE FUNCTION enforce_driver_availability()
 security_audit_log | security_audit_log_append_only | CREATE TRIGGER security_audit_log_append_only BEFORE DELETE OR UPDATE ON public.security_audit_log FOR EACH ROW EXECUTE FUNCTION security_audit_log_append_only()
+security_audit_log | security_audit_log_no_truncate | CREATE TRIGGER security_audit_log_no_truncate BEFORE TRUNCATE ON public.security_audit_log FOR EACH STATEMENT EXECUTE FUNCTION security_audit_log_append_only()
+staff_roles | trg_staff_roles_driver_offline | CREATE TRIGGER trg_staff_roles_driver_offline AFTER DELETE OR UPDATE ON public.staff_roles FOR EACH ROW EXECUTE FUNCTION staff_roles_driver_offline()
+staff_roles | trg_staff_roles_no_truncate | CREATE TRIGGER trg_staff_roles_no_truncate BEFORE TRUNCATE ON public.staff_roles FOR EACH STATEMENT EXECUTE FUNCTION staff_roles_no_truncate()
+staff_roles | trg_staff_roles_require_admin | CREATE TRIGGER trg_staff_roles_require_admin AFTER DELETE OR UPDATE ON public.staff_roles FOR EACH ROW EXECUTE FUNCTION staff_roles_require_admin()
 user_profiles | trg_enforce_profile_privilege_guard | CREATE TRIGGER trg_enforce_profile_privilege_guard BEFORE INSERT OR UPDATE ON public.user_profiles FOR EACH ROW EXECUTE FUNCTION enforce_profile_privilege_guard()
 ```
 

@@ -511,7 +511,7 @@ do $$ declare r text; n int := -9; begin
   create policy p1c_probe_partner_write on public.collaborator_orders for update to authenticated using (true);
   if to_regprocedure('public.containment_violations()') is not null then
     execute $q$select count(*) from public.containment_violations()
-               where object = 'collaborator_orders.p1c_probe_partner_write'$q$ into n;
+               where object = 'public.collaborator_orders.p1c_probe_partner_write'$q$ into n;
   end if;
   drop policy p1c_probe_partner_write on public.collaborator_orders;
   perform tests.rec('T18c', 'partner', 'a re-added partner write policy is reported by containment_violations()',
@@ -593,6 +593,86 @@ do $$ declare a boolean; begin
   perform tests.rec('T17', 'grants', 'anon cannot execute any staff / driver function', not a, 'anon_exec=' || a);
 exception when undefined_function then
   perform tests.rec('T17', 'grants', 'anon cannot execute any staff / driver function', false, 'functions absent (pre-migration)');
+end $$;
+
+-- ======================= L1: privileges RLS does not govern ===========
+do $$ declare r text; n int; bad text; begin
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000c1');
+  r := tests.attempt('truncate public.meals cascade');
+  perform tests.reset();
+  select count(*) into n from public.meals;
+  select string_agg(c.relname || ':' || v.p, ',') into bad
+    from pg_class c cross join (values ('TRUNCATE'),('REFERENCES'),('TRIGGER'),('MAINTAIN')) v(p)
+   where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p','v','m','f')
+     and (has_table_privilege('authenticated', c.oid, v.p) or has_table_privilege('anon', c.oid, v.p));
+  perform tests.rec('T21', 'L1', 'clients cannot TRUNCATE (RLS does not apply) and hold no TRUNCATE/REFERENCES/TRIGGER/MAINTAIN',
+    r like 'err:%' and n = 1 and bad is null, format('truncate %s meals=%s extra_privileges=%s', r, n, coalesce(bad, 'none')));
+end $$;
+
+-- ======================= L2: at least one active admin, every writer ===
+do $$ declare r_upd text; r_del text; r_trunc text; n int := -1; begin
+  -- a1 is the only active admin here; service_role and the owner bypass
+  -- the revoke function, so the invariant must hold in the table itself.
+  perform tests.act('service_role');
+  r_upd := tests.attempt($q$update public.staff_roles set is_active = false where role = 'admin'$q$);
+  r_del := tests.attempt($q$delete from public.staff_roles where role = 'admin'$q$);
+  perform tests.reset();
+  r_trunc := tests.attempt('truncate public.staff_roles');   -- even the owner
+  if to_regclass('public.staff_roles') is not null then
+    execute $q$select count(*) from public.staff_roles where role = 'admin' and is_active$q$ into n;
+  end if;
+  perform tests.rec('T22', 'L2', 'the last active admin cannot be removed by any writer (service_role update/delete, owner TRUNCATE)',
+    r_upd like 'err:%' and r_del like 'err:%' and r_trunc like 'err:%' and n >= 1,
+    format('update %s delete %s truncate %s active_admins=%s', r_upd, r_del, r_trunc, n));
+end $$;
+
+-- ======================= L3: revoked/deleted approval => offline =======
+do $$ declare r1 text; r2 text; r3 text; r4 text; s1 text; s2 text; n_audit int := 0; n_before int := 0; begin
+  if to_regclass('public.security_audit_log') is not null then
+    execute $q$select count(*) from public.security_audit_log where action = 'drivers.status.forced_offline'$q$ into n_before;
+  end if;
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000a1');
+  r1 := tests.attempt($q$select public.assign_staff_role('00000000-0000-0000-0000-0000000000d1', 'driver')$q$);
+  perform tests.reset();
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000d1');
+  r2 := tests.attempt($q$select public.set_driver_availability(true)$q$);
+  perform tests.reset();
+  -- approval revoked directly (not through revoke_staff_role)
+  perform tests.act('service_role');
+  r3 := tests.attempt($q$update public.staff_roles set is_active = false
+                          where user_id = '00000000-0000-0000-0000-0000000000d1' and role = 'driver'$q$);
+  perform tests.reset();
+  select status into s1 from public.drivers where id = '00000000-0000-0000-0000-0000000000d1';
+  -- approved again, online again, then the approval row is DELETED
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000a1');
+  perform tests.attempt($q$select public.assign_staff_role('00000000-0000-0000-0000-0000000000d1', 'driver')$q$);
+  perform tests.reset();
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000d1');
+  perform tests.attempt($q$select public.set_driver_availability(true)$q$);
+  perform tests.reset();
+  perform tests.act('service_role');
+  r4 := tests.attempt($q$delete from public.staff_roles
+                          where user_id = '00000000-0000-0000-0000-0000000000d1' and role = 'driver'$q$);
+  perform tests.reset();
+  select status into s2 from public.drivers where id = '00000000-0000-0000-0000-0000000000d1';
+  if to_regclass('public.security_audit_log') is not null then
+    execute $q$select count(*) from public.security_audit_log
+                where action = 'drivers.status.forced_offline'$q$ into n_audit;
+    n_audit := n_audit - n_before;
+  end if;
+  perform tests.rec('T23', 'L3', 'a driver whose approval is revoked or deleted directly is forced offline (audited)',
+    r1 like 'ok:%' and r2 like 'ok:%' and r3 = 'ok:1' and s1 = 'offline' and r4 = 'ok:1' and s2 = 'offline' and n_audit = 2,
+    format('assign %s online %s revoke-direct %s -> %s | delete %s -> %s | audit=%s', r1, r2, r3, s1, r4, s2, n_audit));
+end $$;
+
+-- ======================= drivers.status is never NULL ==================
+do $$ declare r text; nn boolean; begin
+  perform tests.act('service_role');
+  r := tests.attempt($q$update public.drivers set status = null where id = '00000000-0000-0000-0000-0000000000d2'$q$);
+  perform tests.reset();
+  select attnotnull into nn from pg_attribute where attrelid = 'public.drivers'::regclass and attname = 'status';
+  perform tests.rec('T24', 'H3', 'drivers.status is NOT NULL and only online/offline (even for service_role)',
+    r like 'err:%' and nn, format('set null %s not_null=%s', r, nn));
 end $$;
 
 \pset footer off

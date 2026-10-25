@@ -15,13 +15,13 @@ select tablename, policyname, cmd, array_to_string(roles, ','),
   from pg_policies where schemaname = 'public'
  order by tablename, policyname;
 
-\echo '## table privileges (public): table | anon | authenticated   (s=select i=insert u=update d=delete t=truncate r=references g=trigger)'
+\echo '## table privileges (public): table | anon | authenticated   (s=select i=insert u=update d=delete t=truncate r=references g=trigger m=maintain)'
 select c.relname,
   coalesce(string_agg(case when has_table_privilege('anon', c.oid, p) then k end, '' order by k), '-'),
   coalesce(string_agg(case when has_table_privilege('authenticated', c.oid, p) then k end, '' order by k), '-')
   from pg_class c
   cross join (values ('SELECT','s'),('INSERT','i'),('UPDATE','u'),('DELETE','d'),
-                     ('TRUNCATE','t'),('REFERENCES','r'),('TRIGGER','g')) v(p, k)
+                     ('TRUNCATE','t'),('REFERENCES','r'),('TRIGGER','g'),('MAINTAIN','m')) v(p, k)
  where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
  group by c.relname order by c.relname;
 

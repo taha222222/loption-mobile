@@ -15,7 +15,12 @@
 --   public bucket (HTTP 200).
 -- CHANGE (CTO-approved 2026-10-17):
 --   * the three write policies are replaced by admin-staff-only policies;
---     "Public Access" (read) is kept: the app serves menu images by URL;
+--   * (CTO decision 2026-10-25: restrict listing if public reads keep
+--     working) "Public Access" (SELECT for anyone) is replaced by an
+--     admin-only SELECT policy. Public object URLs (/object/public/meal-images/...)
+--     do not use RLS and keep working; what anonymous users and customers
+--     lose is LISTING the bucket (object names, ids, metadata). Admin
+--     staff keep SELECT, which upload/upsert/delete need (tested);
 --   * bucket meal-images: file_size_limit = 5242880 bytes (5 MiB) and
 --     allowed_mime_types = {image/jpeg, image/png, image/webp}; SVG and
 --     every other type is rejected by the Storage API. public stays true.
@@ -30,10 +35,31 @@
 --   migration role (postgres) may manage its policies only through
 --   Supabase's supautils.policy_grants (or ownership); the preflight checks
 --   this and aborts otherwise.
--- Transaction: one transaction; re-runnable (tested).
+-- Transaction: this file contains its own BEGIN ... COMMIT and the same
+--   execution guards as the core migration (role postgres; deferred commit
+--   gate that fails COMMIT unless preflight and postcondition completed).
+--   Supported procedure: `supabase db push` (see the plan). Re-runnable
+--   (tested).
 -- =====================================================================
 
-set lock_timeout = '10s';
+begin;
+
+set local lock_timeout = '10s';
+
+do $role$
+begin
+  if current_user <> 'postgres' then
+    raise exception 'Phase 1C storage: must run as role postgres (current_user=%, session_user=%); aborting before any change',
+      current_user, session_user using errcode = '42501';
+  end if;
+end
+$role$;
+
+create temp table phase1c_storage_gate_ok (step text primary key) on commit drop;
+create temp table phase1c_storage_gate (
+  step text constraint phase1c_storage_guard_did_not_pass references phase1c_storage_gate_ok deferrable initially deferred
+) on commit drop;
+insert into phase1c_storage_gate values ('storage preflight'), ('storage postcondition');
 
 do $preflight$
 declare
@@ -47,7 +73,8 @@ declare
     -- evidence
     'Authenticated users can upload','Public Access','Users can delete own uploads','Users can update own uploads',
     -- created here
-    'staff_admin_insert_meal_images','staff_admin_update_meal_images','staff_admin_delete_meal_images'];
+    'staff_admin_select_meal_images','staff_admin_insert_meal_images','staff_admin_update_meal_images',
+    'staff_admin_delete_meal_images'];
 begin
   if to_regprocedure('public.has_staff_role(text)') is null
      or to_regprocedure('public.containment_violations()') is null then
@@ -93,15 +120,21 @@ begin
     end loop;
   end if;
   if cardinality(problems) > 0 then
-    raise exception 'Phase 1C storage preflight failed; nothing was changed: %', array_to_string(problems, ' | ')
-      using errcode = 'P0001';
+    raise exception 'Phase 1C storage preflight failed; aborting the migration transaction (its COMMIT cannot succeed): %',
+      array_to_string(problems, ' | ') using errcode = 'P0001';
   end if;
+  insert into pg_temp.phase1c_storage_gate_ok values ('storage preflight');
 end
 $preflight$;
 
 drop policy if exists "Authenticated users can upload" on storage.objects;  -- INSERT into meal-images for ANY signed-in user
 drop policy if exists "Users can update own uploads"   on storage.objects;  -- UPDATE by uploader, no staff check
 drop policy if exists "Users can delete own uploads"   on storage.objects;  -- DELETE by uploader, no staff check
+drop policy if exists "Public Access"                  on storage.objects;  -- SELECT (listing) for anyone
+
+drop policy if exists staff_admin_select_meal_images on storage.objects;
+create policy staff_admin_select_meal_images on storage.objects for select to authenticated
+  using (bucket_id = 'meal-images' and (select public.has_staff_role('admin')));
 
 drop policy if exists staff_admin_insert_meal_images on storage.objects;
 create policy staff_admin_insert_meal_images on storage.objects for insert to authenticated
@@ -150,9 +183,10 @@ begin
   select string_agg(v.category || ': ' || v.object || ' - ' || v.problem, ' | ') into bad
     from public.containment_violations() v;
   if bad is not null then
-    raise exception 'Phase 1C storage postcondition failed (rolled back): %', bad;
+    raise exception 'Phase 1C storage postcondition failed; aborting the migration transaction (its COMMIT cannot succeed): %', bad;
   end if;
+  insert into pg_temp.phase1c_storage_gate_ok values ('storage postcondition');
 end
 $post$;
 
-reset lock_timeout;
+commit;

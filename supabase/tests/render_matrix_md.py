@@ -103,7 +103,7 @@ def main():
     ta = {r[0]: r for r in after.get("table privileges (public)", [])}
     w("## 2. Table privileges for client roles")
     w("")
-    w("Key: s = select, i = insert, u = update, d = delete, t = truncate, r = references, g = trigger. A dash (-) means none.")
+    w("Key: s = select, i = insert, u = update, d = delete, t = truncate, r = references, g = trigger, m = maintain. A dash (-) means none.")
     w("")
     w("RLS still applies on top of these grants. Where `authenticated` keeps a write grant, the only write policy is the staff-admin policy, plus the service role.")
     w("")

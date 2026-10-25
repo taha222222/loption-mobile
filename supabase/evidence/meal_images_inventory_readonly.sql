@@ -51,7 +51,6 @@ select jsonb_pretty(jsonb_build_object(
   'objects', coalesce((select jsonb_agg(jsonb_build_object(
       'id', c.id,
       'path', c.name,
-      'public_url_path', '/object/public/meal-images/' || c.name,
       'declared_mimetype', c.declared_mimetype,
       'size_bytes', c.size_bytes,
       'created_at', c.created_at,

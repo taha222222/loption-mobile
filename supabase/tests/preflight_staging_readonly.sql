@@ -92,12 +92,19 @@ cfg as (
 memberships as (
   select g.rolname::text as grp, m.rolname::text as member
     from pg_auth_members a join pg_roles g on g.oid = a.roleid join pg_roles m on m.oid = a.member),
-auth_hook_candidates as (
+auth_hook_candidates as (   -- explicit grant to supabase_auth_admin, or hook-shaped (jsonb -> jsonb) and effectively executable
   select p.oid::regprocedure::text as fn
     from pg_proc p cross join lateral aclexplode(p.proacl) a
    where to_regrole('supabase_auth_admin') is not null and p.proacl is not null
      and a.privilege_type = 'EXECUTE' and a.grantee = to_regrole('supabase_auth_admin')
-     and p.pronamespace::regnamespace::text not in ('auth','pg_catalog','information_schema')),
+     and p.pronamespace::regnamespace::text not in ('auth','pg_catalog','information_schema')
+  union
+  select p.oid::regprocedure::text
+    from pg_proc p
+   where to_regrole('supabase_auth_admin') is not null
+     and p.pronamespace::regnamespace::text not in ('auth','pg_catalog','information_schema')
+     and p.pronargs = 1 and p.proargtypes[0] = 'jsonb'::regtype and p.prorettype = 'jsonb'::regtype
+     and has_function_privilege('supabase_auth_admin', p.oid, 'EXECUTE')),
 schema_create as (
   select n.nspname::text as nsp, x.grantee
     from pg_namespace n
@@ -119,7 +126,7 @@ bucket_list as (
                         'select coalesce(jsonb_agg(jsonb_build_object(''id'', id, ''public'', public, ''size'', file_size_limit, ''mime'', array_to_string(allowed_mime_types, ''|''))), ''[]'')::text as j from storage.buckets',
                         false, true, '')))[1]::text::jsonb end) b),   -- tableforest=true: <row><j>..</j></row>
 checks(check_name, ok, detail) as (
-  select 'server_version', current_setting('server_version_num')::int >= 150000,
+  select 'server_version_17', current_setting('server_version_num')::int >= 170000,
          current_setting('server_version')
   union all
   select 'phase1c_not_yet_applied (U9)', to_regclass('public.staff_roles') is null
@@ -147,14 +154,9 @@ checks(check_name, ok, detail) as (
   union all
   select 'drivers_status_values_known',
          not exists (select 1 from public.drivers
-                      where status is null or status not in ('online','offline','pending','rejected')),
+                      where status is not null and status not in ('online','offline','pending','rejected')),
          (select string_agg(coalesce(status, '<null>') || '=' || n, ', ')
             from (select status, count(*) n from public.drivers group by 1) s)
-  union all
-  select 'exactly_one_legitimate_admin_profile',
-         (select count(*) from public.user_profiles where role = 'admin' and is_admin and user_id is not null) = 1,
-         (select string_agg(role || '/' || is_admin || '=' || n, ', ')
-            from (select role, is_admin, count(*) n from public.user_profiles group by 1, 2) s)
   union all
   select 'create_order_transaction_signature',
          not exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace
@@ -273,6 +275,12 @@ checks(check_name, ok, detail) as (
          || ' supautils.policy_grants covers storage.objects='
          || (coalesce(current_setting('supautils.policy_grants', true), '') ~ 'storage\.objects')::text
   -- ---- information only (ok = true by definition; read the detail) ----
+  union all
+  -- The migration does NOT use these legacy flags to choose the initial
+  -- administrator (owner-supplied id; see verify_initial_admin_readonly.sql).
+  select 'info: legacy user_profiles role / is_admin counts (not a source of authority)', true,
+         (select string_agg(coalesce(role, '<null>') || '/' || coalesce(is_admin::text, '<null>') || '=' || n, ', ' order by 1)
+            from (select role, is_admin, count(*) n from public.user_profiles group by 1, 2) s)
   union all
   -- Existing objects are NOT re-validated by the new bucket limits; this
   -- inventory (counts only) shows what is already being served.
