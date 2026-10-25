@@ -13,27 +13,42 @@
 -- Do NOT use this as a routine undo. Use the forward-recovery procedure in
 -- docs/v1/PHASE1C_DATABASE_SECURITY_PLAN.md (section "Recovery") first.
 -- Only if staging is unusable AND the CTO approves: run the STORAGE
--- rollback first, then this file, each in ONE transaction, then re-apply
--- the containment migrations as soon as possible.
+-- rollback first, then this file, then re-apply the containment
+-- migrations as soon as possible. This file contains its own BEGIN ...
+-- COMMIT; run it with the supported procedure (plan, "Supported
+-- migration procedure"); never split it.
 --
 -- Data: no existing order, profile, payment, kiosk or closing row is
--- changed. It DROPS the new tables kitchens, staff_roles and
--- security_audit_log. EXPORT THEM FIRST (they hold role grants and the
--- audit trail):
---   copy (select * from public.staff_roles)        to stdout with csv header;
+-- changed. The new tables kitchens, staff_roles and security_audit_log
+-- are NOT dropped: they are ARCHIVED (moved, rows unchanged) into a new
+-- private schema phase1c_archive_<UTC timestamp> that no client role and
+-- not service_role can read. Their triggers and policies are removed, and
+-- the staff_roles foreign key to auth.users is dropped so that a later
+-- account deletion cannot change archived rows. Deleting an archive needs
+-- a separate CTO decision. An export is still recommended:
 --   copy (select * from public.security_audit_log) to stdout with csv header;
---   copy (select * from public.kitchens)           to stdout with csv header;
 -- Driver availability: drivers that the migration set offline get their
--- previous drivers.status back from security_audit_log, but only if they
--- are still 'offline' (a later change is not overwritten).
+-- previous drivers.status back from security_audit_log (including NULL),
+-- but only if they are still 'offline' (a later change is not overwritten).
 -- =====================================================================
 
-set lock_timeout = '10s';
+begin;
+
+set local lock_timeout = '10s';
+
+do $role$
+begin
+  if current_user <> 'postgres' then
+    raise exception 'Phase 1C core rollback: must run as role postgres (current_user=%, session_user=%); aborting before any change',
+      current_user, session_user using errcode = '42501';
+  end if;
+end
+$role$;
 
 do $order$
 begin
   if exists (select 1 from pg_policies where schemaname = 'storage'
-              and policyname in ('staff_admin_insert_meal_images', 'staff_admin_update_meal_images', 'staff_admin_delete_meal_images')) then
+              and policyname in ('staff_admin_select_meal_images', 'staff_admin_insert_meal_images', 'staff_admin_update_meal_images', 'staff_admin_delete_meal_images')) then
     raise exception 'run supabase/rollback/20261016171000_phase1c_storage_meal_images.down.sql first (storage policies depend on has_staff_role)';
   end if;
 end
@@ -42,6 +57,7 @@ $order$;
 -- 1. Driver availability: remove the invariant, restore legacy values.
 drop trigger if exists trg_enforce_driver_availability on public.drivers;
 alter table public.drivers drop constraint if exists drivers_status_availability_check;
+alter table public.drivers alter column status drop not null;
 do $restore$
 begin
   if to_regclass('public.security_audit_log') is not null then
@@ -234,17 +250,49 @@ grant execute on function public.rls_auto_enable() to public, anon, authenticate
 grant execute on function public.update_collaborator_analytics() to public, anon, authenticated;
 alter function public.update_collaborator_analytics() reset all;
 
--- 7. New functions and tables.
+-- 7. New tables: ARCHIVED (never dropped) into a private schema, then the
+--    new functions are dropped.
+do $archive$
+declare
+  arch text := 'phase1c_archive_' || to_char(clock_timestamp() at time zone 'UTC', 'YYYYMMDD"_"HH24MISS');
+  t text;
+  r record;
+begin
+  if to_regclass('public.staff_roles') is null and to_regclass('public.security_audit_log') is null
+     and to_regclass('public.kitchens') is null then
+    return;
+  end if;
+  execute format('create schema %I', arch);
+  execute format('revoke all on schema %I from public, anon, authenticated, service_role', arch);
+  foreach t in array array['security_audit_log', 'staff_roles', 'kitchens'] loop
+    if to_regclass('public.' || t) is not null then
+      for r in select tgname from pg_trigger where tgrelid = ('public.' || t)::regclass and not tgisinternal loop
+        execute format('drop trigger %I on public.%I', r.tgname, t);
+      end loop;
+      for r in select policyname from pg_policies where schemaname = 'public' and tablename = t loop
+        execute format('drop policy %I on public.%I', r.policyname, t);
+      end loop;
+      for r in select conname from pg_constraint
+                where conrelid = ('public.' || t)::regclass and contype = 'f' and confrelid = 'auth.users'::regclass loop
+        execute format('alter table public.%I drop constraint %I', t, r.conname);
+      end loop;
+      execute format('revoke all on public.%I from public, anon, authenticated, service_role', t);
+      execute format('alter table public.%I set schema %I', t, arch);
+    end if;
+  end loop;
+  raise notice 'Phase 1C core rollback: kitchens, staff_roles and security_audit_log archived in schema %', arch;
+end
+$archive$;
 drop function if exists public.containment_violations();
 drop function if exists public.set_driver_availability(boolean);
 drop function if exists public.enforce_driver_availability();
 drop function if exists public.assign_staff_role(uuid, text, uuid);
 drop function if exists public.revoke_staff_role(uuid, text, uuid);
-drop table if exists public.security_audit_log;
 drop function if exists public.security_audit_log_append_only();
-drop table if exists public.staff_roles;
+drop function if exists public.staff_roles_require_admin();
+drop function if exists public.staff_roles_driver_offline();
+drop function if exists public.staff_roles_no_truncate();
 drop function if exists public.has_staff_role(text);
-drop table if exists public.kitchens;
 
 -- 8. Default privileges back to the observed Supabase defaults.
 alter default privileges in schema public grant all on tables    to anon, authenticated;
@@ -252,4 +300,4 @@ alter default privileges in schema public grant all on sequences to anon, authen
 alter default privileges in schema public grant all on functions to anon, authenticated;
 alter default privileges grant execute on functions to public;
 
-reset lock_timeout;
+commit;

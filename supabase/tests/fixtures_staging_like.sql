@@ -10,7 +10,7 @@
 -- Users (supabase_admin owns auth.users in the image; run this file as
 -- supabase_admin, see run_phase1c.sh).
 insert into auth.users (id) values
-  ('00000000-0000-0000-0000-0000000000a1'),  -- legitimate admin
+  ('00000000-0000-0000-0000-0000000000a1'),  -- legitimate admin (the harness supplies it as the initial admin id)
   ('00000000-0000-0000-0000-0000000000e1'),  -- illegitimate: role=customer, is_admin=true
   ('00000000-0000-0000-0000-0000000000c1'),  -- customer A
   ('00000000-0000-0000-0000-0000000000c2'),  -- customer B
@@ -21,6 +21,14 @@ insert into auth.users (id) values
   ('00000000-0000-0000-0000-0000000000d4'),  -- driver, legacy status 'rejected'
   ('00000000-0000-0000-0000-0000000000f1'),  -- future cashier
   ('00000000-0000-0000-0000-0000000000b1');  -- legacy partner (collaborators.user_id)
+-- Accounts with a confirmed e-mail (the initial-admin check requires it;
+-- the bare image's auth.users has confirmed_at, hosted Auth also has
+-- email_confirmed_at). The flagged account is confirmed too, so the
+-- tests prove it is refused for its profile pattern, not for this.
+update auth.users set confirmed_at = now()
+ where id in ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000e1',
+              '00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000c2',
+              '00000000-0000-0000-0000-0000000000f1');
 
 set role postgres;
 

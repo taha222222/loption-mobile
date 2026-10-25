@@ -2,10 +2,13 @@
 """Reversible quarantine of suspicious `meal-images` objects.
 
 NOT part of any migration. Every command that writes requires an explicit
---confirm-* flag; removal additionally requires --approved-by. Nothing is
-ever deleted from the public bucket unless a verified quarantine copy of
-the exact same bytes exists. Run against staging ONLY with written CTO
-approval for that specific step. Tested locally by run_phase1c.sh (S).
+--confirm-* flag; removal additionally requires --approved-by, ONE object
+path and that object's SHA-256. Nothing is ever deleted from the public
+bucket unless a verified quarantine copy of the exact same bytes exists.
+Objects are never removed as a group or because they share a flag: each
+removal names one object. Run against staging ONLY with written CTO
+approval for that specific step and object. Tested locally by
+run_phase1c.sh (S).
 
 Commands
   plan     READ-ONLY. Build a manifest of suspicious objects from a scan
@@ -18,14 +21,24 @@ Commands
            download both back and verify. Records copy_verified.
   verify   READ-ONLY. Re-download every quarantine copy and sidecar and check
            SHA-256 against the manifest.
-  remove   For entries with a verified copy only: re-check that the public
-           object still has the scanned SHA-256, delete it from `meal-images`
-           through the Storage API, and confirm the public URL no longer
-           serves it. Records who approved and when.
+  remove   ONE object (--path) whose SHA-256 the operator states (--sha256):
+           the manifest entry must exist and have a verified copy, the
+           quarantine copy and the live object must both still have that
+           SHA-256, and an entry whose ONLY reason is the provenance flag
+           non_staff_uploader additionally needs --allow-provenance-only.
+           Deletes through the Storage API and verifies the deletion through
+           the AUTHENTICATED Storage API (object must be gone). The public
+           URL is checked too and recorded; if a CDN/cache still serves the
+           old bytes this is reported as a warning (purge or wait for expiry),
+           not as success of the public check. Records who approved and when.
   restore  Copy the quarantined bytes back to `meal-images` with the original
-           Content-Type and verify SHA-256 over the public URL. Types that
-           the bucket no longer allows (e.g. SVG) are refused by the bucket
-           (HTTP 415) and stay in quarantine; this is reported, not forced.
+           Content-Type and verify SHA-256 through the authenticated API (and
+           record the public URL result). Types or sizes the bucket no longer
+           allows are refused by the bucket (415 / 413) and stay in
+           quarantine. Any other outcome (target already exists, path not in
+           the manifest, copy missing, other HTTP errors) is a FAILURE.
+Exit codes: 0 success; 1 failure or refusal; 3 (restore only) nothing
+failed but at least one object was refused by the bucket limits.
 
 Credentials: the service-role key is read from the SERVICE_KEY environment
 variable and is never printed or written to the manifest.
@@ -33,7 +46,7 @@ Usage:
   meal_images_quarantine.py plan    --scan-report R --manifest M
   meal_images_quarantine.py copy    --manifest M --base-url URL --confirm-copy
   meal_images_quarantine.py verify  --manifest M --base-url URL
-  meal_images_quarantine.py remove  --manifest M --base-url URL --approved-by NAME --confirm-remove
+  meal_images_quarantine.py remove  --manifest M --base-url URL --path P --sha256 H --approved-by NAME --confirm-remove [--allow-provenance-only]
   meal_images_quarantine.py restore --manifest M --base-url URL --path P [--path P ...] --confirm-restore
 """
 import argparse
@@ -78,6 +91,20 @@ def quote(path: str) -> str:
     return "/".join(urllib.parse.quote(seg, safe="") for seg in path.split("/"))
 
 
+def error_code(status: int, body: bytes) -> str:
+    """The Storage API's own statusCode from an error body (it often answers HTTP 400 with statusCode 404/413/415)."""
+    try:
+        return str(json.loads(body).get("statusCode", status))
+    except (ValueError, AttributeError):
+        return str(status)
+
+
+def object_gone(base: str, bucket: str, path: str) -> bool:
+    """True only if the AUTHENTICATED Storage API says the object does not exist."""
+    s, body = http("GET", f"{base}/object/{bucket}/{quote(path)}")
+    return s != 200 and error_code(s, body) == "404"
+
+
 def sha(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
@@ -95,7 +122,10 @@ def cmd_plan(a) -> int:
     entries = [{"path": r["path"], "id": r["id"], "declared_mimetype": r["declared_mimetype"],
                 "bytes": r.get("bytes"), "sha256": r.get("sha256"), "detected": r.get("detected"),
                 "reasons": r["reasons"], "quarantine_path": r["path"],
-                "sidecar_path": r["path"] + ".quarantine.json"}
+                "sidecar_path": r["path"] + ".quarantine.json",
+                # provenance only = the bytes passed every content check; the only
+                # concern is who uploaded it. Removal needs an extra explicit flag.
+                "provenance_only": r["reasons"] == ["non_staff_uploader"]}
                for r in rep["results"] if r["status"] == "suspicious" and r.get("sha256")]
     skipped = [r["path"] for r in rep["results"] if r["status"] == "suspicious" and not r.get("sha256")]
     save(a.manifest, {"created_at": now(), "source_bucket": PUBLIC, "quarantine_bucket": QUARANTINE,
@@ -167,62 +197,97 @@ def cmd_verify(a) -> int:
 
 def cmd_remove(a) -> int:
     m = load(a.manifest)
-    removed = refused = 0
-    for e in m["entries"]:
-        if not e.get("copy_verified"):
-            e["remove_refused"] = "no verified quarantine copy"
-            refused += 1
-            continue
-        s1, back = http("GET", f"{a.base_url}/object/{QUARANTINE}/{quote(e['quarantine_path'])}")
-        s2, cur = http("GET", f"{a.base_url}/object/{PUBLIC}/{quote(e['path'])}")
-        if not (s1 == 200 and sha(back) == e["sha256"] and s2 == 200 and sha(cur) == e["sha256"]):
-            e["remove_refused"] = "quarantine copy or public object no longer matches the scanned SHA-256"
-            refused += 1
-            continue
-        s, resp = http("DELETE", f"{a.base_url}/object/{PUBLIC}/{quote(e['path'])}")
-        gone, _ = http("GET", f"{a.base_url}/object/public/{PUBLIC}/{quote(e['path'])}", auth=False)
-        if s == 200 and gone != 200:
-            e["removed_from_public_at"] = now()
-            e["removal_approved_by"] = a.approved_by
-            removed += 1
-        else:
-            e["remove_refused"] = f"delete HTTP {s}, public GET afterwards HTTP {gone}"
-            refused += 1
-    m["log"].append({"at": now(), "command": "remove", "approved_by": a.approved_by, "removed": removed, "refused": refused})
+    matches = [e for e in m["entries"] if e["path"] == a.path]
+    result = {"at": now(), "command": "remove", "path": a.path, "approved_by": a.approved_by}
+
+    def refuse(reason: str, e: dict | None = None) -> int:
+        if e is not None:
+            e["remove_refused"] = reason
+        result["refused"] = reason
+        m["log"].append(result)
+        save(a.manifest, m)
+        print(f"  remove: REFUSED {a.path}: {reason}")
+        return 1
+
+    if len(matches) != 1:
+        return refuse("path is not a (single) entry of the quarantine manifest")
+    e = matches[0]
+    if e.get("removed_from_public_at"):
+        return refuse("already removed", e)
+    if a.sha256 != e["sha256"]:
+        return refuse("--sha256 does not match the scanned SHA-256 of this entry", e)
+    if not e.get("copy_verified"):
+        return refuse("no verified quarantine copy", e)
+    if e.get("provenance_only") and not a.allow_provenance_only:
+        return refuse("only reason is the provenance flag non_staff_uploader; needs --allow-provenance-only", e)
+    s1, back = http("GET", f"{a.base_url}/object/{QUARANTINE}/{quote(e['quarantine_path'])}")
+    s2, cur = http("GET", f"{a.base_url}/object/{PUBLIC}/{quote(e['path'])}")
+    if not (s1 == 200 and sha(back) == e["sha256"]):
+        return refuse("quarantine copy missing or no longer matches the scanned SHA-256", e)
+    if not (s2 == 200 and sha(cur) == e["sha256"]):
+        return refuse("public object missing or no longer matches the scanned SHA-256", e)
+    s, resp = http("DELETE", f"{a.base_url}/object/{PUBLIC}/{quote(e['path'])}")
+    if s != 200:
+        return refuse(f"delete failed: HTTP {s} statusCode {error_code(s, resp)}", e)
+    if not object_gone(a.base_url, PUBLIC, e["path"]):
+        return refuse("delete returned 200 but the authenticated Storage API still returns the object", e)
+    pub, pub_body = http("GET", f"{a.base_url}/object/public/{PUBLIC}/{quote(e['path'])}", auth=False)
+    e.pop("remove_refused", None)
+    e["removed_from_public_at"] = now()
+    e["removal_approved_by"] = a.approved_by
+    e["removal_verified_via"] = "authenticated Storage API (object not found)"
+    e["public_url_after_removal"] = pub
+    e["public_url_still_served"] = pub == 200
+    result.update(removed=True, public_url_after_removal=pub)
+    m["log"].append(result)
     save(a.manifest, m)
-    print(f"  remove: {removed} removed from {PUBLIC} (approved by {a.approved_by}); {refused} refused")
-    return 1 if refused else 0
+    print(f"  remove: {a.path} removed from {PUBLIC} (approved by {a.approved_by}); verified via the authenticated API")
+    if pub == 200:
+        same = sha(pub_body) == e["sha256"]
+        print(f"  remove: WARNING public URL still returns HTTP 200 ({'the removed bytes' if same else 'other bytes'}): "
+              "a CDN or cache is serving a copy; purge it or wait for expiry")
+    return 0
 
 
 def cmd_restore(a) -> int:
     m = load(a.manifest)
-    wanted = set(a.path)
+    by_path = {e["path"]: e for e in m["entries"]}
     results = []
-    for e in m["entries"]:
-        if e["path"] not in wanted:
+    for path in a.path:
+        e = by_path.get(path)
+        if e is None:
+            results.append((path, "failed", "path is not an entry of the quarantine manifest"))
             continue
         s, data = http("GET", f"{a.base_url}/object/{QUARANTINE}/{quote(e['quarantine_path'])}")
         if s != 200 or sha(data) != e["sha256"]:
-            e["restore_result"] = "quarantine copy missing or changed"
+            outcome = ("failed", "quarantine copy missing or changed")
         else:
             s, resp = http("POST", f"{a.base_url}/object/{PUBLIC}/{quote(e['path'])}", data,
                            {"Content-Type": e["declared_mimetype"] or "application/octet-stream"})
+            code = error_code(s, resp)
             if s == 200:
-                g, served = http("GET", f"{a.base_url}/object/public/{PUBLIC}/{quote(e['path'])}", auth=False)
-                e["restore_result"] = "restored, sha256 verified" if g == 200 and sha(served) == e["sha256"] else "restored, verification FAILED"
+                g, back = http("GET", f"{a.base_url}/object/{PUBLIC}/{quote(e['path'])}")
+                p, _ = http("GET", f"{a.base_url}/object/public/{PUBLIC}/{quote(e['path'])}", auth=False)
+                e["restore_public_url_status"] = p
+                outcome = (("restored", "sha256 verified via the authenticated API") if g == 200 and sha(back) == e["sha256"]
+                           else ("failed", "uploaded, but the stored bytes do not match the SHA-256"))
+            elif code in ("413", "415"):
+                outcome = ("refused_by_bucket_limits", f"Storage API {code}; copy kept in quarantine")
+            elif code == "409" or b"already exists" in resp.lower():
+                outcome = ("failed", f"an object already exists at this path (Storage API {code}); not overwritten")
             else:
-                try:
-                    code = json.loads(resp).get("statusCode", s)
-                except ValueError:
-                    code = s
-                e["restore_result"] = f"refused by bucket (Storage API {code}); copy kept in quarantine"
+                outcome = ("failed", f"HTTP {s} statusCode {code}: {resp[:120]!r}")
+        e["restore_result"] = outcome[0] + ": " + outcome[1]
         e["restore_attempted_at"] = now()
-        results.append((e["path"], e["restore_result"]))
-    m["log"].append({"at": now(), "command": "restore", "paths": sorted(wanted)})
+        results.append((path,) + outcome)
+    m["log"].append({"at": now(), "command": "restore", "paths": list(a.path),
+                     "results": {p: r for p, r, _ in results}})
     save(a.manifest, m)
-    for p, r in results:
-        print(f"  restore: {p}: {r}")
-    return 0 if all(r.startswith("restored, sha256 verified") or r.startswith("refused by bucket") for _, r in results) else 1
+    for p, r, d in results:
+        print(f"  restore: {p}: {r} ({d})")
+    if any(r == "failed" for _, r, _ in results):
+        return 1
+    return 3 if any(r == "refused_by_bucket_limits" for _, r, _ in results) else 0
 
 
 def main() -> int:
@@ -236,8 +301,12 @@ def main() -> int:
         if name == "copy":
             p.add_argument("--confirm-copy", action="store_true", required=True)
         if name == "remove":
+            p.add_argument("--path", required=True, help="exactly ONE object path from the manifest")
+            p.add_argument("--sha256", required=True, help="the SHA-256 of that object, as in the manifest")
             p.add_argument("--approved-by", required=True)
             p.add_argument("--confirm-remove", action="store_true", required=True)
+            p.add_argument("--allow-provenance-only", action="store_true",
+                           help="required when the entry's only reason is non_staff_uploader")
         if name == "restore":
             p.add_argument("--path", action="append", required=True)
             p.add_argument("--confirm-restore", action="store_true", required=True)

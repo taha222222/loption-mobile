@@ -4,7 +4,9 @@
 MIME metadata alone is not trusted. For every object this tool:
   * downloads the bytes over the bucket's PUBLIC URL (no credentials are
     needed or accepted) into a fresh directory, with index-based file
-    names (object names are never used as local paths);
+    names (object names are never used as local paths). The URL is built
+    from the object path with EVERY path segment percent-encoded, so names
+    containing spaces, '?', '#' or '%' address exactly that object;
   * records SHA-256 and the byte length, and compares the length with the
     inventory;
   * identifies the real format from file signatures (magic bytes) and a
@@ -42,6 +44,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 
 APPROVED = {"image/jpeg", "image/png", "image/webp"}
@@ -124,6 +127,12 @@ def decode(path: pathlib.Path, mime: str) -> dict:
         return {"ok": False, "error": "decoder timed out"}
 
 
+def public_url(base_url: str, path: str) -> str:
+    """Public URL of a meal-images object; every path segment percent-encoded."""
+    return (base_url.rstrip("/") + "/object/public/meal-images/"
+            + "/".join(urllib.parse.quote(seg, safe="") for seg in path.split("/")))
+
+
 SERVED_HEADERS = ("content-type", "x-content-type-options", "content-disposition", "content-security-policy", "cache-control")
 
 
@@ -177,7 +186,7 @@ def main() -> int:
              "inventory_size_bytes": o.get("size_bytes"), "uploader_class": o.get("uploader_class"),
              "reasons": []}
         if not a.offline:
-            status, err, served = fetch(a.base_url.rstrip("/") + o["public_url_path"], local)
+            status, err, served = fetch(public_url(a.base_url, o["path"]), local)
             r["served_headers"] = served
             if err:
                 r["reasons"].append("fetch_failed")
