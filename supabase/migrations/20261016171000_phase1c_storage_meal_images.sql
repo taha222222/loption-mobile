@@ -39,7 +39,9 @@
 --   execution guards as the core migration (role postgres; deferred commit
 --   gate that fails COMMIT unless preflight and postcondition completed).
 --   Supported procedure: `supabase db push` (see the plan). Re-runnable
---   (tested).
+--   on its own result (tested); a pre-existing policy with one of the four
+--   names it creates must already be the reviewed definition, otherwise it
+--   aborts instead of overwriting it (revision 6).
 -- =====================================================================
 
 begin;
@@ -60,6 +62,18 @@ create temp table phase1c_storage_gate (
   step text constraint phase1c_storage_guard_did_not_pass references phase1c_storage_gate_ok deferrable initially deferred
 ) on commit drop;
 insert into phase1c_storage_gate values ('storage preflight'), ('storage postcondition');
+
+-- The four policies this migration (re)creates must not silently replace
+-- an unknown policy of the same name: their state before any change is kept
+-- here, and the postcondition requires each pre-existing one to be exactly
+-- the reviewed definition (a re-run).
+create temp table phase1c_storage_pre on commit drop as
+  select p.policyname, p.permissive || '|' || p.roles::text || '|' || p.cmd || '|' || coalesce(p.qual, '-') || '|'
+                       || coalesce(p.with_check, '-') as descr
+    from pg_policies p
+   where p.schemaname = 'storage' and p.tablename = 'objects'
+     and p.policyname in ('staff_admin_select_meal_images', 'staff_admin_insert_meal_images',
+                          'staff_admin_update_meal_images', 'staff_admin_delete_meal_images');
 
 do $preflight$
 declare
@@ -123,6 +137,9 @@ begin
     raise exception 'Phase 1C storage preflight failed; aborting the migration transaction (its COMMIT cannot succeed): %',
       array_to_string(problems, ' | ') using errcode = 'P0001';
   end if;
+  if current_user <> 'postgres' then   -- also here, so a skipped role check (ON_ERROR_ROLLBACK) cannot pass the gate
+    raise exception 'Phase 1C storage: storage preflight must run as role postgres (current_user=%)', current_user using errcode = '42501';
+  end if;
   insert into pg_temp.phase1c_storage_gate_ok values ('storage preflight');
 end
 $preflight$;
@@ -184,6 +201,18 @@ begin
     from public.containment_violations() v;
   if bad is not null then
     raise exception 'Phase 1C storage postcondition failed; aborting the migration transaction (its COMMIT cannot succeed): %', bad;
+  end if;
+  select string_agg(b.policyname, ', ') into bad
+    from pg_temp.phase1c_storage_pre b
+   where not exists (select 1 from pg_policies p
+                      where p.schemaname = 'storage' and p.tablename = 'objects' and p.policyname = b.policyname
+                        and p.permissive || '|' || p.roles::text || '|' || p.cmd || '|' || coalesce(p.qual, '-') || '|'
+                            || coalesce(p.with_check, '-') = b.descr);
+  if bad is not null then
+    raise exception 'Phase 1C storage postcondition failed; aborting the migration transaction (its COMMIT cannot succeed): pre-existing storage policies differ from what this migration defines and were not overwritten: %', bad;
+  end if;
+  if current_user <> 'postgres' then   -- also here, so a skipped role check (ON_ERROR_ROLLBACK) cannot pass the gate
+    raise exception 'Phase 1C storage: storage postcondition must run as role postgres (current_user=%)', current_user using errcode = '42501';
   end if;
   insert into pg_temp.phase1c_storage_gate_ok values ('storage postcondition');
 end

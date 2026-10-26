@@ -1,0 +1,396 @@
+# Phase 1C revision 6 — exact, unedited output of:
+#   git archive 0bffbc72100ea7b5918a69640bd9c8ec67e49aac | tar -x -C <clean dir>; cd <clean dir>
+#   PHASE1C_SUPABASE_CLI=<scratch>/node_modules/.bin/supabase KEEP_OUTPUT=<scratch>/run6e supabase/tests/run_phase1c.sh
+# i.e. from a clean export (no git checkout, no untracked files) of the revision-6 code commit 0bffbc7.
+# Run on 2026-10-26 against local disposable containers only (no Supabase project, hosted Storage, staging or
+# production contacted). Supabase CLI 2.122.0, used only against a local container.
+# The final line 'exit=N' is the harness exit code, appended by the invoking shell.
+# Totals: 200 'pass:' lines, 0 'FAIL:' lines, nothing skipped, exit 0. The indented 'FAIL Snn' lines and the
+# 'BEFORE ... fail' counts are the intended BEFORE-side demonstrations of the open holes (as in revision 5),
+# not regressions. Revision 5 (PHASE1C_TEST_RUN_2026-10-25_rev5.txt) had 127 'pass:' lines. 8 of its checks were
+# replaced because the behaviour they tested changed by design: 'a re-apply restores a weakened function' (now
+# refused, M3), the two READ COMMITTED concurrency checks (now the 22-case suite, M1) and five checks of the two
+# separate rollback files (now the single one-transaction procedure, M2). Every other revision-5 check is present.
+# Lines below this header are the harness output, unedited.
+Images: supabase/postgres:17.6.1.178 (supabase/postgres@sha256:c282d393ae56fd165b7ada2ddbac55e582a601b86f3840aa2bbc112e43d3a570)
+        ghcr.io/supabase/storage-api:v1.79.30 (ghcr.io/supabase/storage-api@sha256:bdd393f6f4d341bcf35d6ed1c0f45e2b8b07802f4491141bbf4a4fcc9f6c6eee)
+
+=== A. baseline round-trip, preflight, BEFORE tests
+  PostgreSQL 17.6 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 15.2.0, 64-bit
+  pass: baseline matches the staging evidence in every compared section (scope: supabase/evidence/README.md)
+      identical  tables (24 items)
+      identical  columns (278 items)
+      identical  constraints (66 items)
+      identical  indexes (52 items)
+      identical  policies (56 items)
+      identical  functions (5 items)
+      identical  triggers (2 items)
+      identical  effective_table_privileges (48 items)
+      identical  column_level_acls (0 items)
+      identical  enums (0 items)
+      identical  views (0 items)
+      identical  realtime_publication (0 items)
+      identical  extensions (5 items)
+      info       default_privileges differ (image configuration, not baseline)
+    RESULT: baseline reproduces the evidence
+  pass: read-only preflight: all required non-storage checks ok on the reproduced schema
+  pass: baseline refuses to run on a database that already has the schema
+psql:/var/tmp/p1c/export/supabase/tests/phase1c_security_tests.sql:610: NOTICE:  truncate cascades to table "order_items"
+  BEFORE (vulnerable staging reproduction): 11 pass / 38 fail  <- failures here document C1-C4/H2-H4
+
+=== B. AFTER: baseline + fixtures + core containment migration
+  pass: core migration applied (file-controlled transaction; test copy with the fixture admin)
+  pass: exactly one active admin: the supplied initial admin (not derived from user_profiles)
+  AFTER: 49 pass / 0 fail
+  pass: every SQL security test passes
+  pass: every pre-existing policy the migration keeps is unchanged from the staging evidence (18 kept policies, all identical to the evidence)
+  pass: preflight reports the migration as already applied
+  pass: the reviewed definition of kitchens/staff_roles/security_audit_log in the migration equals a clean application (49 entries)
+  pass: storage migration refuses to run where storage.objects is absent (fails closed)
+
+=== C. RE-APPLY core migration (repeatability)
+  pass: second apply succeeded
+  pass: second apply changed nothing (matrix identical, audit rows 4 = 4)
+  RE-APPLY tests: 49 pass / 0 fail
+
+=== P. migration procedure and initial administrator (M1, L6)
+  pass: committed file refuses until the owner-authorized initial admin id is supplied (deployment prerequisite); nothing applied
+  pass: initial admin 'flagged' refused (illegitimate profile pattern); nothing applied
+  pass: initial admin 'unknown' refused (does not exist in auth.users); nothing applied
+  pass: initial admin 'unconfirmed' refused (has not confirmed); nothing applied
+  pass: guard failure under 'plain' runner: nothing committed (no staff_roles, no admin, policies unchanged)
+  pass: guard failure under 'stop' runner: nothing committed (no staff_roles, no admin, policies unchanged)
+  pass: guard failure under 'single' runner: nothing committed (no staff_roles, no admin, policies unchanged)
+  pass: guard failure under 'rollback_on' runner: nothing committed (no staff_roles, no admin, policies unchanged)
+  pass: postcondition failure under 'plain' runner: nothing committed (no staff_roles, no admin, policies unchanged)
+  pass: postcondition failure under 'stop' runner: nothing committed (no staff_roles, no admin, policies unchanged)
+  pass: postcondition failure under 'single' runner: nothing committed (no staff_roles, no admin, policies unchanged)
+  pass: postcondition failure under 'rollback_on' runner: nothing committed (no staff_roles, no admin, policies unchanged)
+  pass: with ON_ERROR_ROLLBACK=on the deferred commit gate is what refuses the COMMIT (guards ignored by the runner)
+  pass: a login role that has not switched to postgres is refused before any change (L6)
+  pass: the same login role with ON_ERROR_ROLLBACK=on (role check skipped by the runner): the gate refuses the COMMIT; nothing applied
+  pass: applied with plain psql -f: the only admin is the supplied id; the customer-controlled role=admin/is_admin=true profiles (c2, e1) are NOT admins
+  -- Supabase CLI 2.122.0 db push against a LOCAL container (--db-url 127.0.0.1)
+  pass: CLI db push with a failing guard: nothing applied, migration not recorded
+  pass: CLI db push applies the migration (with its own BEGIN/COMMIT), records it, 0 violations
+
+=== E-F, H. data, policy and platform-drift guards (one database, injected one at a time)
+  pass: guard E_driver_status: migration aborted (unexpected drivers.status values), nothing applied; preflight 'drivers_status_values_known' fails
+  pass: guard F_rogue_policy: migration aborted (unreviewed policies), nothing applied; preflight 'public_policy_set_matches_evidence' fails
+  pass: guard H1_custom_role: migration aborted (unexpected database role), nothing applied; preflight 'U3_no_unexpected_roles' fails
+  pass: guard H2_membership: migration aborted (unexpected membership), nothing applied; preflight 'U3_no_unexpected_role_memberships' fails
+  pass: guard H3_bypassrls: migration aborted (unexpected BYPASSRLS role), nothing applied; preflight 'U3_no_unexpected_superuser_or_bypassrls' fails
+  pass: guard H4_auth_hook: migration aborted (possible Auth hook), nothing applied; preflight 'U3_no_auth_hook_functions' fails
+  pass: guard H5_event_trigger: migration aborted (unexpected event trigger), nothing applied; preflight 'U4_no_unexpected_event_triggers' fails
+  pass: guard H6_authenticator: migration aborted (authenticator must be), nothing applied; preflight 'U5_authenticator_nosuperuser_nobypassrls_noinherit' fails
+  pass: guard H7_safeupdate: preflight-only check 'U5_authenticator_preloads_safeupdate' fails (not verified by the migration)
+  pass: guard H8_schema_create: migration aborted (can CREATE in schema), nothing applied; preflight 'U6_no_client_or_public_create_on_schemas' fails
+  pass: guard H9_table_owner: migration aborted (relation not owned by postgres), nothing applied; preflight 'public_tables_owned_by_postgres' fails
+  pass: guard H10_grantee: migration aborted (unexpected table grantee), nothing applied; preflight 'public_table_grantees_expected' fails
+  pass: guard H11_rls_off: migration aborted (row level security disabled), nothing applied; preflight 'public_tables_rls_enabled' fails
+  pass: guard database clean again after all reverts
+  pass: migration applies once every injected state is reverted
+
+=== X. pre-existing objects on conditional paths (rev6 M3): validated, never accepted or overwritten
+  -- first application: an object of the same name already exists
+  pass: x malformed_tables: refused (existing new tables differ from the reviewed definition); database byte-for-byte unchanged
+  pass: x partial_tables: refused (only some of the new tables); database byte-for-byte unchanged
+  pass: x unknown_function: refused (function public.has_staff_role(text)); database byte-for-byte unchanged
+  pass: x unknown_trigger: refused (trigger user_profiles.trg_enforce_profile_privilege_guard); database byte-for-byte unchanged
+  pass: x unknown_constraint: refused (constraint drivers.drivers_status_availability_check); database byte-for-byte unchanged
+  pass: x policy_name_collision: refused (policy orders.staff_admin_all_orders); database byte-for-byte unchanged
+  pass: valid first application after the reverts
+  pass: valid pre-existing tables (re-run on its own result): accepted, database byte-for-byte unchanged
+  -- re-run: the existing tables differ from the reviewed definition or hold unsafe data
+  pass: x missing_trigger: refused (missing trigger staff_roles.trg_staff_roles_no_truncate); database byte-for-byte unchanged
+  pass: x disabled_trigger: refused (trigger staff_roles.trg_staff_roles_require_admin); database byte-for-byte unchanged
+  pass: x missing_rls: refused (table security_audit_log); database byte-for-byte unchanged
+  pass: x extra_column: refused (column staff_roles.note); database byte-for-byte unchanged
+  pass: x dropped_constraint: refused (missing constraint staff_roles.staff_roles_scope); database byte-for-byte unchanged
+  pass: x extra_index: refused (index kitchens.p1c_probe_idx); database byte-for-byte unchanged
+  pass: x unexpected_grant: refused (unexpected table grants: staff_roles: authenticated=INSERT); database byte-for-byte unchanged
+  pass: x anon_grant: refused (unexpected table grants: security_audit_log: anon=SELECT); database byte-for-byte unchanged
+  pass: x service_truncate: refused (kitchens: service_role=TRUNCATE); database byte-for-byte unchanged
+  pass: x column_grant: refused (column_acl staff_roles.is_active); database byte-for-byte unchanged
+  pass: x unexpected_policy: refused (policy staff_roles.p1c_probe); database byte-for-byte unchanged
+  pass: x changed_policy: refused (policy staff_roles.staff_roles_self_read); database byte-for-byte unchanged
+  pass: x unaudited_admin: refused (has no seed or assign audit record (unknown provenance)); database byte-for-byte unchanged
+  pass: x audited_flagged_admin: refused (illegitimate profile pattern); database byte-for-byte unchanged
+  pass: x kitchen_a_changed: refused (Kitchen A is missing or differs); database byte-for-byte unchanged
+  pass: x seed_record_removed: refused (0 initial-admin seed records); database byte-for-byte unchanged
+
+=== M. monitoring: containment_violations() reports regressions of the reviewed state (M2, L1-L3)
+  pass: monitor P2_policy_expression: reported ('differ from the reviewed definition')
+  pass: monitor P2_profile_update_expression: reported ('differ from the reviewed definition')
+  pass: monitor P2_policy_roles: reported ('differ from the reviewed definition')
+  pass: monitor P3_broad_select_uid: reported ('policy not reviewed')
+  pass: monitor P3_broad_select_1eq1: reported ('policy not reviewed')
+  pass: monitor P4_view: reported ('view / materialized view / foreign table accessible')
+  pass: monitor P4_security_invoker_view: reported ('view / materialized view / foreign table accessible')
+  pass: monitor P4_matview: reported ('view / materialized view / foreign table accessible')
+  pass: monitor P4_foreign_table: reported ('view / materialized view / foreign table accessible')
+  pass: monitor P4_unreviewed_schema: reported ('client-accessible relation in a schema that is not reviewed')
+NOTICE:  drop cascades to table p1c_api.t
+  pass: monitor P7_extra_definer: reported ('SECURITY DEFINER function executable by a client role is not reviewed')
+  pass: monitor P7_definer_other_schema: reported ('SECURITY DEFINER function executable by a client role is not reviewed')
+NOTICE:  drop cascades to function p1c_fn.dump()
+  pass: monitor P6_auth_hook_public: reported ('effectively executable by supabase_auth_admin')
+NOTICE:  drop cascades to function p1c_hooks.custom_access_token(jsonb)
+  pass: monitor L1_truncate_grant: reported ('privilege that RLS does not govern')
+  pass: monitor L1_trigger_grant: reported ('privilege that RLS does not govern')
+  pass: monitor L1_service_truncate_audit: reported ('TRUNCATE on an authority or append-only table')
+  pass: monitor L2_no_active_admin: reported ('no active admin staff role')
+  pass: monitor L2_guard_trigger_disabled: reported ('required guard trigger missing or disabled')
+  pass: monitor L3_unapproved_online: reported ('driver online without an active driver approval')
+  pass: monitor P2_nullable_status: reported ('drivers.status allows NULL')
+  pass: concurrency round 1: 22 cases, every one leaves >= 1 active admin and the expected committed state
+  -- concurrent administrator changes (every write path x every isolation level; committed state asserted)
+  pass: fn_revoke_each_other_read_committed (read committed): one transaction committed, the other was refused (ERROR:  only an admin may revoke staff roles); committed state: 1 active admin
+  pass: direct_update_each_other_read_committed (read committed): one transaction committed, the other was refused (ERROR:  at least one active admin must remain); committed state: 1 active admin
+  pass: delete_vs_update_read_committed (read committed): one transaction committed, the other was refused (ERROR:  at least one active admin must remain); committed state: 1 active admin
+  pass: role_change_vs_delete_read_committed (read committed): one transaction committed, the other was refused (ERROR:  at least one active admin must remain); committed state: 1 active admin
+  pass: fn_revoke_vs_direct_update_read_committed (read committed): one transaction committed, the other was refused (ERROR:  at least one active admin must remain); committed state: 1 active admin
+  pass: fn_revoke_each_other_repeatable_read (repeatable read): one transaction committed, the other was refused (ERROR:  could not serialize access due to concurrent update); committed state: 1 active admin
+  pass: direct_update_each_other_repeatable_read (repeatable read): one transaction committed, the other was refused (ERROR:  could not serialize access due to concurrent update); committed state: 1 active admin
+  pass: delete_vs_update_repeatable_read (repeatable read): one transaction committed, the other was refused (ERROR:  could not serialize access due to concurrent update); committed state: 1 active admin
+  pass: role_change_vs_delete_repeatable_read (repeatable read): one transaction committed, the other was refused (ERROR:  could not serialize access due to concurrent update); committed state: 1 active admin
+  pass: fn_revoke_vs_direct_update_repeatable_read (repeatable read): one transaction committed, the other was refused (ERROR:  could not serialize access due to concurrent update); committed state: 1 active admin
+  pass: fn_revoke_each_other_serializable (serializable): one transaction committed, the other was refused (ERROR:  could not serialize access due to concurrent update); committed state: 1 active admin
+  pass: direct_update_each_other_serializable (serializable): one transaction committed, the other was refused (ERROR:  could not serialize access due to read/write dependencies among transactions); committed state: 1 active admin
+  pass: delete_vs_update_serializable (serializable): one transaction committed, the other was refused (ERROR:  could not serialize access due to read/write dependencies among transactions); committed state: 1 active admin
+  pass: role_change_vs_delete_serializable (serializable): one transaction committed, the other was refused (ERROR:  could not serialize access due to read/write dependencies among transactions); committed state: 1 active admin
+  pass: fn_revoke_vs_direct_update_serializable (serializable): one transaction committed, the other was refused (ERROR:  could not serialize access due to read/write dependencies among transactions); committed state: 1 active admin
+  pass: auth_user_delete_cascade_vs_update (read committed): one committed, the other refused; committed state: 1 active admin
+  pass: auth_user_delete_cascade_vs_update (repeatable read): one committed, the other refused; committed state: 1 active admin
+  pass: rollback_after_failed_operation (read committed): T1 failed and rolled back; T2 committed; committed state: f1 is the 1 active admin
+  pass: rollback_after_failed_operation (repeatable read): T1 failed and rolled back; T2 committed; committed state: f1 is the 1 active admin
+  pass: removing every admin in one transaction is refused; committed state unchanged (2 active admins)
+  pass: removing every admin in one statement is refused; committed state unchanged (2 active admins)
+  pass: a revoked admin cannot act on a stale REPEATABLE READ snapshot (assign refused, nothing committed)
+  concurrency: all cases passed
+  pass: concurrency round 2: 22 cases, every one leaves >= 1 active admin and the expected committed state
+  pass: 0 violations after the concurrency cases
+  pass: monitor P7_weakened_reviewed_function: reported ('reviewed function changed')
+  pass: re-applying over the weakened function is refused (never silently repaired); nothing changed
+
+=== G. ROLLBACK (re-opens the vulnerabilities by design): supported procedure only (rev6 M2)
+  pass: a NULL drivers.status is normalised to offline and its previous value (NULL) is audited
+  pass: rollback wrong_target_staging: refused (exit 2: target staging accepts only project); database unchanged
+  pass: rollback wrong_target_remote_host: refused (exit 2: target local accepts only 127.0.0.1); database unchanged
+  pass: rollback wrong_target_kind: refused (exit 2: --target must be staging or local); database unchanged
+  pass: rollback missing_confirmation: refused (exit 2: --confirm must be exactly); database unchanged
+  pass: rollback unexpected_database: refused (exit 2: unexpected database); database unchanged
+  pass: rollback missing_backup_ref: refused (exit 2: --backup-ref is required); database unchanged
+  pass: rollback missing_approval: refused (exit 2: --approved-by is required); database unchanged
+  pass: rollback export_dir_exists: refused (exit 2: already exists); database unchanged
+  pass: rollback export_dir_in_repo: refused (exit 2: outside the repository); database unchanged
+  pass: rollback wrong_role: refused (exit 2: must connect as role postgres); database unchanged
+  pass: rollback missing_history: refused (exit 2: migration history must end with the Phase 1C versions); database unchanged
+NOTICE:  schema "supabase_migrations" already exists, skipping
+NOTICE:  relation "schema_migrations" already exists, skipping
+  pass: rollback later_migration: refused (exit 2: migration history must end with the Phase 1C versions); database unchanged
+  pass: the rollback SQL run directly (plain psql -f, no procedure variables) fails before any change; database unchanged
+  pass: the rollback SQL run directly by a login role that is not postgres (even with ON_ERROR_ROLLBACK=on) commits nothing
+  pass: rollback injected_failure_midway: refused (exit 1: the rollback transaction did not commit); database unchanged
+  pass: the injected failure happened at the end of the core part (drop function), after the earlier changes
+  pass: same failure under psql ON_ERROR_ROLLBACK=on (errors ignored): the deferred commit gate refuses the COMMIT; database unchanged
+NOTICE:  drop cascades to view p1c_dep.v
+  pass: supported rollback procedure: committed and verified (exit 0)
+  pass: audit export made first: security_audit_log (4 rows), staff_roles, kitchens; SHA-256 manifest verifies; directory mode 700
+  pass: rollback ARCHIVES kitchens, staff_roles and security_audit_log in phase1c_archive_20261026_012704 with every row (1 / 1 / 4)
+  pass: the archive schema records the approval, the backup reference and the export checksum
+  pass: archive schema is not usable by anon, authenticated or service_role
+  pass: the Phase 1C migration-history rows are removed in the same transaction
+  pass: rollback restores the exact BEFORE policy/grant/function/default-privilege matrix
+  pass: legacy drivers.status values (incl. NULL) restored from the audit log
+  pass: historical orders and kiosk records unchanged by the rollback
+  pass: BEFORE matrices of A and G identical (deterministic setup)
+  pass: rollback repeat_invocation: refused (exit 2: Phase 1C is not applied on this database); database unchanged
+  pass: repeat run of the rollback SQL itself: refused by its preflight; database unchanged
+
+=== S. real Supabase Storage API (meal-images)
+  pass: tooling unit tests: object paths are percent-encoded per segment (space, ?, #, %, /, unicode)
+  pass: storage-api up; its own migrations created the storage schema (74 migrations)
+  pass: read-only preflight incl. storage checks: all required checks ok (staging storage reproduced)
+seed: customer-owned object (vulnerable policy): 200
+seed: customer SVG declared image/png:  200
+seed: customer truncated PNG:           200
+seed: customer 900-megapixel PNG bomb:  200
+seed: customer PNG + appended script:   200
+seed: customer JPEG declared image/png: 200
+seed: customer valid PNG named 'seed space.png': 200
+seed: customer SVG named 'seed?q.png':           200
+seed: customer PNG named 'seed#h.png' (key rule): 400
+seed: customer-owned object (vulnerable policy): 200
+seed: customer SVG declared image/png:  200
+seed: customer truncated PNG:           200
+seed: customer 900-megapixel PNG bomb:  200
+seed: customer PNG + appended script:   200
+seed: customer JPEG declared image/png: 200
+seed: customer valid PNG named 'seed space.png': 200
+seed: customer SVG named 'seed?q.png':           200
+seed: customer PNG named 'seed#h.png' (key rule): 400
+  BEFORE (staging storage policies): 11 pass / 14 fail  <- failures document the open upload hole
+      FAIL S02  customer cannot upload  (got 200, expected 403)
+      FAIL S03  customer cannot overwrite an object they uploaded  (got 200, expected 403)
+      FAIL S04  customer cannot upsert over an existing object  (got 200, expected 403)
+      FAIL S05  customer cannot delete an object (object still served)  (got 200+object-gone, expected 403)
+      FAIL S06  flagged is_admin account cannot upload  (got 200, expected 403)
+      FAIL S13  image/svg+xml is rejected  (got 200, expected 415)
+      FAIL S14  image/gif is rejected  (got 200, expected 415)
+      FAIL S15  text/html is rejected  (got 200, expected 415)
+      FAIL S16  application/octet-stream is rejected  (got 200, expected 415)
+      FAIL S17  an overwrite cannot change an object to SVG  (got 200, expected 415)
+      FAIL S19  5,242,881 bytes is rejected (413)  (got 200, expected 413)
+      FAIL S20  bucket: public, 5 MiB, jpeg/png/webp  (got public=True size=None mime=None, expected public=True size=5242880 mime=image/jpeg,image/png,image/webp)
+      FAIL S23  anon cannot list the bucket (0 objects returned)  (got 17, expected 0)
+      FAIL S24  customer cannot list the bucket (0 objects returned)  (got 17, expected 0)
+  pass: after core only: containment_violations() reports the 4 staging storage policies as unreviewed, the 4 reviewed ones as missing and the bucket limits; containment not complete
+  pass: storage guard missing_bucket: migration aborted (bucket meal-images missing); bucket and policies unchanged
+  pass: storage guard unexpected_limits: migration aborted (unexpected limits); bucket and policies unchanged
+  pass: storage guard unexpected_types: migration aborted (unexpected limits); bucket and policies unchanged
+  pass: storage guard not_public: migration aborted (is not public); bucket and policies unchanged
+  pass: storage guard preexisting_policy: migration aborted (pre-existing storage policies differ); bucket and policies unchanged
+  pass: bucket before migration matches evidence: public, file_size_limit NULL, allowed_mime_types NULL
+  pass: storage migration applied
+  pass: bucket configured: public kept, file_size_limit 5242880, allowed_mime_types {image/jpeg,image/png,image/webp}
+  pass: existing objects preserved (18:before-bad.bin,before-bad.gif,before-bad.html,before-bad.svg,before-customer-new.png,before-exact.png,before-flagged.png,before-ok.png,before-ok.webp,before-over.png,seed space.png,seed-bomb.png,seed-customer.png,seed-jpeg-as-png.png,seed-polyglot.png,seed-svg-as-png.png,seed-truncated.png,seed?q.png)
+  info: preflight inventory of pre-existing objects (not re-validated by the new limits): application/octet-stream=1, image/gif=1, image/png=11, image/png (over 5 MiB)=1, image/svg+xml=2, image/webp=1, text/html=1
+  pass: previous bucket values recorded in security_audit_log as JSON null (were SQL NULL)
+  pass: all Storage API checks pass
+    -- authorization (valid PNG bodies, so a denial is the policy, not the limits)
+    PASS S01  anon cannot upload  (got 403)
+    PASS S02  customer cannot upload  (got 403)
+    PASS S03  customer cannot overwrite an object they uploaded  (got 403)
+    PASS S04  customer cannot upsert over an existing object  (got 403)
+    PASS S05  customer cannot delete an object (object still served)  (got 403)
+    PASS S06  flagged is_admin account cannot upload  (got 403)
+    PASS S07  customer cannot create a bucket  (got 403)
+    PASS S08  customer cannot write the private src bucket  (got 403)
+    -- approved types (admin staff)
+    PASS S09  admin can upload image/png  (got 200)
+    PASS S10  admin can upload image/jpeg  (got 200)
+    PASS S11  admin can upload image/webp  (got 200)
+    PASS S12  admin can upsert an approved image (app uses upsert)  (got 200)
+    -- rejected types (admin staff; 415 = invalid_mime_type)
+    PASS S13  image/svg+xml is rejected  (got 415)
+    PASS S14  image/gif is rejected  (got 415)
+    PASS S15  text/html is rejected  (got 415)
+    PASS S16  application/octet-stream is rejected  (got 415)
+    PASS S17  an overwrite cannot change an object to SVG  (got 415)
+    -- size limit (bucket file_size_limit; container global limit is 50 MiB)
+    PASS S18  exactly 5,242,880 bytes is accepted  (got 200)
+    PASS S19  5,242,881 bytes is rejected (413)  (got 413)
+    -- effective bucket configuration as reported by the Storage API
+    PASS S20  bucket: public, 5 MiB, jpeg/png/webp  (got public=True size=5242880 mime=image/jpeg,image/png,image/webp)
+    -- public read and admin delete
+    PASS S21  approved images are publicly readable  (got yes)
+    PASS S22  admin can delete a meal image  (got 200)
+    -- listing (object names, ids, metadata): admin staff only; public URLs above stay readable
+    PASS S23  anon cannot list the bucket (0 objects returned)  (got 0)
+    PASS S24  customer cannot list the bucket (0 objects returned)  (got 0)
+    PASS S25  admin staff can list the bucket  (got yes)
+    -- documented limitation (not a pass/fail check)
+    LIMIT     SVG bytes declared as image/png -> 200 (the allowlist checks the declared Content-Type, not the bytes)
+    storage API: 25 pass / 0 fail
+  pass: containment_violations() = 0 rows (drift, containment, storage)
+  pass: storage monitor weakened_insert: reported ('differ from the reviewed definition')
+  pass: storage monitor private_bucket_select: reported ('storage policy not reviewed')
+  pass: storage monitor public_listing_readded: reported ('storage policy not reviewed')
+  pass: storage monitor bucket_metadata_write: reported ('storage policy not reviewed')
+  SQL tests with storage schema present: 49 pass / 0 fail
+  -- existing objects: per-object inventory, content scan, browser serving, reversible quarantine (all local)
+  pass: read-only inventory lists all 21 objects (id, path, declared type, size, timestamps, backend ETag, uploader class)
+  pass: inventory contains no user ids (uploader reported as a class only)
+    ok         image/png                declared=image/png                 5242880B  after-exact.png  -
+    ok         image/png                declared=image/png                      82B  after-ok.png  -
+    ok         image/webp               declared=image/webp                     62B  after-ok.webp  -
+    suspicious image/png                declared=application/octet-stream       82B  before-bad.bin  declared_type_not_approved,type_mismatch,extension_mismatch
+    suspicious image/gif                declared=image/gif                      14B  before-bad.gif  declared_type_not_approved,detected_format_not_approved,extension_mismatch
+    suspicious text/html                declared=text/html                      55B  before-bad.html  declared_type_not_approved,detected_format_not_approved,extension_mismatch
+    suspicious image/svg+xml            declared=image/svg+xml                  88B  before-bad.svg  declared_type_not_approved,detected_format_not_approved,extension_mismatch
+    suspicious image/png                declared=image/png                      82B  before-customer-new.png  non_staff_uploader
+    ok         image/png                declared=image/png                 5242880B  before-exact.png  -
+    suspicious image/png                declared=image/png                      82B  before-flagged.png  non_staff_uploader
+    suspicious image/svg+xml            declared=image/svg+xml                  88B  before-ok.png  declared_type_not_approved,detected_format_not_approved,extension_mismatch
+    ok         image/webp               declared=image/webp                     62B  before-ok.webp  -
+    suspicious image/png                declared=image/png                 5242881B  before-over.png  over_5_mib
+    suspicious image/png                declared=image/png                      82B  seed space.png  non_staff_uploader
+    suspicious image/png                declared=image/png                  109445B  seed-bomb.png  pixel_limit_exceeded,non_staff_uploader
+    suspicious image/png                declared=image/png                      82B  seed-customer.png  non_staff_uploader
+    suspicious image/jpeg               declared=image/png                     632B  seed-jpeg-as-png.png  type_mismatch,non_staff_uploader
+    suspicious image/png                declared=image/png                     137B  seed-polyglot.png  embedded_markup,non_staff_uploader
+    suspicious image/svg+xml            declared=image/png                      88B  seed-svg-as-png.png  detected_format_not_approved,type_mismatch,non_staff_uploader
+    suspicious image/png                declared=image/png                      41B  seed-truncated.png  decode_failure,non_staff_uploader
+    suspicious image/svg+xml            declared=image/png                      88B  seed?q.png  detected_format_not_approved,type_mismatch,non_staff_uploader
+    scan: 21 objects, 5 ok, 16 suspicious; by reason {"declared_type_not_approved": 5, "decode_failure": 1, "detected_format_not_approved": 6, "embedded_markup": 1, "extension_mismatch": 5, "non_staff_uploader": 10, "over_5_mib": 1, "pixel_limit_exceeded": 1, "type_mismatch": 4}; served without X-Content-Type-Options: nosniff: 21
+  pass: content scan: all 21 objects classified as expected (signatures + full decode; decode failure, pixel bomb, mislabelled, disallowed, oversize and non-staff uploads detected)
+  pass: browser serving behaviour matches the documented observations
+    browser: Chromium 153.0.8010.12 (Playwright)
+    PASS before-bad.svg: served image/svg+xml, nosniff=absent, navigate executes script=true (expected executes), <img> decoded=true, <img> executes script=false
+    PASS seed-svg-as-png.png: served image/png, nosniff=absent, navigate executes script=false (expected inert), <img> decoded=false, <img> executes script=false
+    PASS before-bad.html: served text/plain, nosniff=absent, navigate executes script=false (expected inert), <img> decoded=false, <img> executes script=false
+    PASS after-ok.png: served image/png, nosniff=absent, navigate executes script=false (expected inert), <img> decoded=true, <img> executes script=false
+  info: X-Content-Type-Options: nosniff is NOT returned by the Storage API (local v1.79.30)
+  pass: scan fetched exactly the object named 'seed space.png' (URL-encoded; SHA-256 equals the authenticated download)
+  pass: scan fetched exactly the object named 'seed?q.png' (URL-encoded; SHA-256 equals the authenticated download)
+  pass: Storage API v1.79.30 refuses '#' in object keys (InvalidKey); '#' and '%' are covered by the offline unit tests
+  pass: quarantine copy: every suspicious object copied to the PRIVATE bucket with a metadata sidecar; SHA-256 verified
+  pass: quarantine bucket is private (public URL does not serve)
+  pass: remove refuses to run without --confirm-remove
+  pass: remove refuses to run without the object's --sha256
+  pass: remove refuses an object that is not a manifest entry (a scan-clean image)
+  pass: remove refuses when --sha256 does not match the scanned bytes
+  pass: remove refuses a provenance-only entry (valid image, non-staff uploader) without --allow-provenance-only
+  pass: every refused removal left the public bucket unchanged (21 objects)
+  pass: single-object removal: only before-bad.svg removed; other suspicious objects (mixed set) still present
+  pass: removal verified through the authenticated Storage API
+  pass: cached public URL (CDN stand-in): deletion verified via the authenticated API; the still-served public URL is reported as a warning, not as success
+  pass: after per-object removals the public bucket holds only the 5 objects that passed the scan
+  pass: restore: a valid PNG is restored byte-identical (exit 0)
+  pass: restore: an SVG is refused by the bucket limits (415), stays quarantined, exit 3 (refused, not failed)
+  pass: restore: an object already present is NOT overwritten and is reported as a failure (exit 1)
+  pass: restore: mixed request restores the valid entry and reports the unknown path as a failure (exit 1)
+  pass: manifest contains no credentials
+    plan: 16 suspicious objects to quarantine; 0 without fetched bytes (not quarantinable)
+    copy: 16/16 copies verified; 0 failures
+    verify: 16/16 quarantine copies match the manifest
+    remove: REFUSED before-ok.webp: path is not a (single) entry of the quarantine manifest
+    remove: REFUSED before-bad.svg: --sha256 does not match the scanned SHA-256 of this entry
+    remove: REFUSED seed-customer.png: only reason is the provenance flag non_staff_uploader; needs --allow-provenance-only
+    remove: before-bad.svg removed from meal-images (approved by local-harness); verified via the authenticated API
+    remove: seed space.png removed from meal-images (approved by local-harness); verified via the authenticated API
+    remove: WARNING public URL still returns HTTP 200 (the removed bytes): a CDN or cache is serving a copy; purge it or wait for expiry
+    remove: before-bad.bin removed from meal-images (approved by local-harness); verified via the authenticated API
+    remove: before-bad.gif removed from meal-images (approved by local-harness); verified via the authenticated API
+    remove: before-bad.html removed from meal-images (approved by local-harness); verified via the authenticated API
+    remove: before-customer-new.png removed from meal-images (approved by local-harness); verified via the authenticated API
+    remove: before-flagged.png removed from meal-images (approved by local-harness); verified via the authenticated API
+    remove: before-ok.png removed from meal-images (approved by local-harness); verified via the authenticated API
+    remove: before-over.png removed from meal-images (approved by local-harness); verified via the authenticated API
+    remove: seed-bomb.png removed from meal-images (approved by local-harness); verified via the authenticated API
+    remove: seed-customer.png removed from meal-images (approved by local-harness); verified via the authenticated API
+    remove: seed-jpeg-as-png.png removed from meal-images (approved by local-harness); verified via the authenticated API
+    remove: seed-polyglot.png removed from meal-images (approved by local-harness); verified via the authenticated API
+    remove: seed-svg-as-png.png removed from meal-images (approved by local-harness); verified via the authenticated API
+    remove: seed-truncated.png removed from meal-images (approved by local-harness); verified via the authenticated API
+    remove: seed?q.png removed from meal-images (approved by local-harness); verified via the authenticated API
+    restore: seed-customer.png: restored (sha256 verified via the authenticated API)
+    restore: before-bad.svg: refused_by_bucket_limits (Storage API 415; copy kept in quarantine)
+    restore: seed-customer.png: failed (an object already exists at this path (Storage API 409); not overwritten)
+    restore: seed-truncated.png: restored (sha256 verified via the authenticated API)
+    restore: no-such-object.png: failed (path is not an entry of the quarantine manifest)
+  pass: containment_violations() still 0 rows with the private quarantine bucket present
+  pass: storage migration re-apply clean
+  pass: re-apply changed nothing (bucket unchanged, no second audit record)
+  pass: rollback failing in its core part: storage policies, bucket limits and everything else unchanged (one transaction)
+NOTICE:  drop cascades to view p1c_dep.v
+  pass: supported rollback procedure (storage + core, one transaction): committed and verified
+  pass: rollback restores the exact original bucket settings (public; file_size_limit IS NULL; allowed_mime_types IS NULL)
+  pass: every existing Storage object row is unchanged by the rollback
+  pass: storage rollback restores the verbatim staging storage policies
+  pass: preflight bucket check matches the evidence again after rollback
+  pass: full rollback restores the exact BEFORE matrix (incl. storage policies and bucket settings)
+
+RESULT: ALL PHASE 1C LOCAL CHECKS PASSED
+exit=0
