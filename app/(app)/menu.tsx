@@ -8,11 +8,11 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { theme } from '../../src/theme';
 import { MealCard } from '../../src/components/ui/MealCard';
+import { Chip, EmptyState, Screen, ScreenHeader } from '../../src/components/v2';
 import { supabase } from '../../src/lib/supabase';
 import { useCartStore } from '../../src/stores/cartStore';
 import { useUserStore } from '../../src/stores/userStore';
@@ -32,12 +32,12 @@ interface Meal {
 }
 
 const categories = [
-  { id: 'all', name: 'All', icon: 'grid-outline' },
-  { id: 'popular', name: 'Popular', icon: 'flame-outline' },
-  { id: 'high_protein', name: 'High Protein', icon: 'fitness-outline' },
-  { id: 'low_calorie', name: 'Low Calorie', icon: 'leaf-outline' },
-  { id: 'balanced', name: 'Balanced', icon: 'nutrition-outline' },
-  { id: 'drinks', name: 'Drinks', icon: 'cafe-outline' },
+  { id: 'all', name: 'Tout', icon: 'grid-outline' },
+  { id: 'popular', name: 'Populaires', icon: 'flame-outline' },
+  { id: 'high_protein', name: 'Riche en protéines', icon: 'fitness-outline' },
+  { id: 'low_calorie', name: 'Faible en calories', icon: 'leaf-outline' },
+  { id: 'balanced', name: 'Équilibré', icon: 'nutrition-outline' },
+  { id: 'drinks', name: 'Boissons', icon: 'cafe-outline' },
   { id: 'desserts', name: 'Desserts', icon: 'ice-cream-outline' },
 ];
 
@@ -74,7 +74,7 @@ export default function MenuScreen() {
       
       if (error) {
         console.error('Error fetching meals:', error);
-        Alert.alert('Error', 'Failed to load meals. Please try again.');
+        Alert.alert('Erreur', 'Impossible de charger les repas. Veuillez réessayer.');
         setMeals([]);
       } else if (data) {
         let filteredMeals = data;
@@ -116,9 +116,9 @@ export default function MenuScreen() {
   const getSmartFilterLabel = () => {
     if (!profile?.goal) return '';
     switch (profile.goal) {
-      case 'lose_fat': return 'Under 500 cal';
-      case 'gain_muscle': return 'High Protein';
-      case 'maintain': return 'Balanced';
+      case 'lose_fat': return 'moins de 500 kcal';
+      case 'gain_muscle': return 'riche en protéines';
+      case 'maintain': return 'équilibré';
       default: return '';
     }
   };
@@ -126,21 +126,25 @@ export default function MenuScreen() {
   const cartItemCount = getItemCount();
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Menu</Text>
-        <TouchableOpacity
-          style={styles.cartButton}
-          onPress={() => router.push('/(app)/cart')}
-        >
-          <Ionicons name="cart-outline" size={24} color={theme.colors.textDark} />
-          {cartItemCount > 0 && (
-            <View style={styles.cartBadge}>
-              <Text style={styles.cartBadgeText}>{cartItemCount}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      </View>
+    <Screen>
+      <ScreenHeader
+        subtitle="Menu"
+        title="Nos repas"
+        right={
+          <TouchableOpacity
+            style={styles.cartButton}
+            onPress={() => router.push('/(app)/cart')}
+            accessibilityLabel="Panier"
+          >
+            <Ionicons name="cart-outline" size={22} color={theme.colors.ink} />
+            {cartItemCount > 0 && (
+              <View style={styles.cartBadge}>
+                <Text style={styles.cartBadgeText}>{cartItemCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        }
+      />
 
       {/* Smart Filter Toggle - Only show if user has a goal set */}
       {profile?.goal && (
@@ -151,25 +155,26 @@ export default function MenuScreen() {
           ]}
           onPress={() => setSmartFilterEnabled(!smartFilterEnabled)}
         >
-          <Ionicons 
-            name={smartFilterEnabled ? "flash" : "flash-outline"} 
-            size={16} 
-            color={smartFilterEnabled ? theme.colors.gold : theme.colors.textLight} 
+          <Ionicons
+            name={smartFilterEnabled ? "flash" : "flash-outline"}
+            size={16}
+            color={smartFilterEnabled ? theme.colors.textWhite : theme.colors.brand}
           />
           <Text
             style={[
               styles.smartFilterText,
               smartFilterEnabled && styles.smartFilterTextActive,
             ]}
+            numberOfLines={1}
           >
-            {smartFilterEnabled 
-              ? `Smart Filter: ${getSmartFilterLabel()} ON` 
-              : 'Show recommended meals'}
+            {smartFilterEnabled
+              ? `Filtre intelligent : ${getSmartFilterLabel()}`
+              : 'Afficher les repas recommandés'}
           </Text>
-          <Ionicons 
-            name={smartFilterEnabled ? "checkmark-circle" : "help-circle-outline"} 
-            size={16} 
-            color={smartFilterEnabled ? theme.colors.gold : theme.colors.textLight} 
+          <Ionicons
+            name={smartFilterEnabled ? "checkmark-circle" : "chevron-forward"}
+            size={16}
+            color={smartFilterEnabled ? theme.colors.textWhite : theme.colors.brand}
           />
         </TouchableOpacity>
       )}
@@ -181,45 +186,28 @@ export default function MenuScreen() {
         contentContainerStyle={styles.categoriesContent}
       >
         {categories.map((cat) => (
-          <TouchableOpacity
+          <Chip
             key={cat.id}
-            style={[
-              styles.categoryItem,
-              selectedCategory === cat.id && styles.categoryActive,
-            ]}
+            label={cat.name}
+            icon={cat.icon as any}
+            active={selectedCategory === cat.id}
             onPress={() => setSelectedCategory(cat.id)}
-          >
-            <Ionicons
-              name={cat.icon as any}
-              size={20}
-              color={selectedCategory === cat.id ? theme.colors.gold : theme.colors.textLight}
-            />
-            <Text
-              style={[
-                styles.categoryName,
-                selectedCategory === cat.id && styles.categoryNameActive,
-              ]}
-            >
-              {cat.name}
-            </Text>
-          </TouchableOpacity>
+          />
         ))}
       </ScrollView>
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.gold} />
+          <ActivityIndicator size="large" color={theme.colors.brand} />
         </View>
       ) : meals.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="restaurant-outline" size={64} color={theme.colors.textLight} />
-          <Text style={styles.emptyText}>No meals found</Text>
-          <Text style={styles.emptySubtext}>
-            {smartFilterEnabled 
-              ? 'Try turning off smart filter to see all meals' 
-              : 'Check back later or try another category'}
-          </Text>
-        </View>
+        <EmptyState
+          icon="restaurant-outline"
+          title="Aucun repas trouvé"
+          message={smartFilterEnabled
+            ? 'Désactivez le filtre intelligent pour voir tous les repas'
+            : 'Revenez plus tard ou essayez une autre catégorie'}
+        />
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -243,125 +231,74 @@ export default function MenuScreen() {
           ))}
         </ScrollView>
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.xl,
-    paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.md,
-  },
-  title: {
-    fontSize: theme.typography.sizes['3xl'],
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textDark,
-  },
   cartButton: {
-    position: 'relative',
-    padding: theme.spacing.sm,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.hairline,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cartBadge: {
     position: 'absolute',
     top: 4,
-    right: 4,
-    backgroundColor: theme.colors.gold,
+    right: 2,
+    backgroundColor: theme.colors.brand,
     borderRadius: 10,
-    minWidth: 18,
-    height: 18,
+    minWidth: 20,
+    height: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 5,
+    borderWidth: 2,
+    borderColor: theme.colors.surface,
   },
   cartBadgeText: {
     fontSize: 10,
     fontWeight: theme.typography.weights.bold,
-    color: theme.colors.dark,
+    color: theme.colors.textWhite,
   },
   smartFilterButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     marginHorizontal: theme.spacing.xl,
-    marginBottom: theme.spacing.sm,
-    paddingVertical: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
+    height: 48,
     paddingHorizontal: theme.spacing.lg,
-    backgroundColor: theme.colors.backgroundDark,
-    borderRadius: 12,
+    backgroundColor: theme.colors.brandSoft,
+    borderRadius: theme.radii.pill,
     gap: theme.spacing.sm,
-    borderWidth: 1,
-    borderColor: 'transparent',
   },
   smartFilterActive: {
-    backgroundColor: theme.colors.gold + '15',
-    borderColor: theme.colors.gold + '40',
+    backgroundColor: theme.colors.brand,
   },
   smartFilterText: {
+    flex: 1,
     fontSize: theme.typography.sizes.sm,
-    color: theme.colors.textLight,
-    fontWeight: theme.typography.weights.medium,
+    color: theme.colors.brand,
+    fontWeight: theme.typography.weights.bold,
   },
   smartFilterTextActive: {
-    color: theme.colors.gold,
+    color: theme.colors.textWhite,
   },
   categoriesContainer: {
-    maxHeight: 80,
+    flexGrow: 0,
   },
   categoriesContent: {
     paddingHorizontal: theme.spacing.xl,
     gap: theme.spacing.sm,
   },
-  categoryItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.sm,
-    backgroundColor: theme.colors.backgroundDark,
-    borderRadius: 24,
-    gap: theme.spacing.xs,
-  },
-  categoryActive: {
-    backgroundColor: theme.colors.gold + '20',
-    borderWidth: 1,
-    borderColor: theme.colors.gold,
-  },
-  categoryName: {
-    fontSize: theme.typography.sizes.sm,
-    color: theme.colors.textLight,
-  },
-  categoryNameActive: {
-    color: theme.colors.gold,
-    fontWeight: theme.typography.weights.medium,
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.xl,
-  },
-  emptyText: {
-    fontSize: theme.typography.sizes.md,
-    color: theme.colors.textLight,
-    marginTop: theme.spacing.md,
-  },
-  emptySubtext: {
-    fontSize: theme.typography.sizes.sm,
-    color: theme.colors.textLight,
-    marginTop: theme.spacing.sm,
-    textAlign: 'center',
   },
   mealsContainer: {
     padding: theme.spacing.xl,

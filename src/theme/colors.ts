@@ -40,4 +40,20 @@ export const colors = {
   // Overlays
   overlay: 'rgba(0,0,0,0.5)',
   overlayLight: 'rgba(0,0,0,0.3)',
+
+  // Redesign v2 ("Raffiné"): indigo surfaces, gold used sparingly
+  brand: '#4F46E5',
+  brandDeep: '#3B32C4',
+  brandSoft: '#EEEDFD',
+  brandOnDark: 'rgba(255,255,255,0.72)',
+  brandTrack: 'rgba(255,255,255,0.18)',
+  brandRingTrack: '#3A31B8',
+  highlight: '#FFB224',
+  coral: '#FF7A6B',
+  canvas: '#F5F5FA',
+  surface: '#ffffff',
+  ink: '#14132B',
+  inkMuted: '#6B6A85',
+  inkFaint: '#A3A2B8',
+  hairline: '#E9E8F2',
 } as const;

@@ -5,19 +5,16 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Dimensions,
   Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../../src/theme';
 import { AdminAuthModal } from '../../src/components/admin/AdminAuthModal';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useUserStore } from '../../src/stores/userStore';
 import { useSubscriptionStore } from '../../src/stores/subscriptionStore';
-
-const { width } = Dimensions.get('window');
+import { IconBadge, Screen, SectionHeader, SurfaceCard, formatPrice } from '../../src/components/v2';
 
 export default function ProfileScreen() {
   const { user, signOut, role } = useAuthStore();
@@ -29,7 +26,7 @@ export default function ProfileScreen() {
   const streakDays = 7;
   const weightChange = -2.4;
   const completionPercent = 65;
-  const nextDelivery = 'Today, 6:00 PM';
+  const nextDelivery = "Aujourd'hui, 18h00";
   const lastOrder = {
     name: 'Grilled Chicken Bowl',
     price: 69,
@@ -52,20 +49,20 @@ export default function ProfileScreen() {
   const getProgramName = () => {
     if (subscription?.status === 'active') {
       switch (subscription.tier) {
-        case 'meals_only': return 'Meals Only';
-        case 'coaching': return 'Coaching Program';
-        case 'transformation': return 'Transformation Program';
+        case 'meals_only': return 'Repas uniquement';
+        case 'coaching': return 'Programme Coaching';
+        case 'transformation': return 'Programme Transformation';
         case 'premium': return 'Premium Plus';
         case 'ultimate': return 'Ultimate Athlete';
-        default: return 'Active Plan';
+        default: return 'Plan actif';
       }
     }
     
     switch (profile?.program) {
-      case 'meals_only': return 'Meals Only';
-      case 'coaching': return 'Coaching Program';
-      case 'transformation': return 'Transformation Program';
-      default: return 'No Active Plan';
+      case 'meals_only': return 'Repas uniquement';
+      case 'coaching': return 'Programme Coaching';
+      case 'transformation': return 'Programme Transformation';
+      default: return 'Aucun plan actif';
     }
   };
 
@@ -74,12 +71,12 @@ export default function ProfileScreen() {
 
   const handleSignOut = () => {
     Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
+      'Se déconnecter',
+      'Voulez-vous vraiment vous déconnecter ?',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'Annuler', style: 'cancel' },
         { 
-          text: 'Sign Out', 
+          text: 'Se déconnecter', 
           style: 'destructive',
           onPress: async () => {
             await signOut();
@@ -91,15 +88,15 @@ export default function ProfileScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <Screen scroll>
       {/* Header - Identity Section */}
       <View style={styles.header}>
         <View style={styles.identity}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{getInitials()}</Text>
           </View>
-          <View>
-            <Text style={styles.name}>{user?.email?.split('@')[0] || 'User'}</Text>
+          <View style={styles.identityText}>
+            <Text style={styles.name} numberOfLines={1}>{user?.email?.split('@')[0] || 'Utilisateur'}</Text>
             <View style={[styles.programBadge, hasActiveSubscription && styles.activeProgramBadge]}>
               <Text style={[styles.programText, hasActiveSubscription && styles.activeProgramText]}>
                 {getProgramName()}
@@ -107,202 +104,175 @@ export default function ProfileScreen() {
             </View>
           </View>
         </View>
-        
+
         {/* Progress Stats */}
-        <View style={styles.progressStats}>
+        <SurfaceCard style={styles.progressStats}>
           <View style={styles.statItem}>
             <Text style={[styles.statValue, weightChange < 0 && styles.statSuccess]}>
-              {weightChange > 0 ? `+${Math.abs(weightChange)}` : `-${Math.abs(weightChange)}`} kg
+              {`${weightChange > 0 ? '+' : '-'}${String(Math.abs(weightChange)).replace('.', ',')}\u00A0kg`}
             </Text>
-            <Text style={styles.statLabel}>weight change</Text>
+            <Text style={styles.statLabel}>évolution du poids</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{completionPercent}%</Text>
-            <Text style={styles.statLabel}>plan complete</Text>
+            <Text style={styles.statValue}>{completionPercent}{'\u00A0'}%</Text>
+            <Text style={styles.statLabel}>plan accompli</Text>
           </View>
-        </View>
+        </SurfaceCard>
       </View>
 
       {/* Primary Actions - Revenue Drivers */}
-      <View style={styles.actionsContainer}>
+      <View style={styles.stack}>
         {/* My Plan - Daily engagement driver */}
-        <TouchableOpacity 
-          style={styles.actionCard}
-          onPress={() => router.push('/(app)/my-plan')}
-        >
-          <LinearGradient
-            colors={['#1e293b', '#0f172a']}
-            style={styles.actionGradient}
-          >
-            <Ionicons name="calendar" size={28} color={theme.colors.accent} />
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>MY PLAN</Text>
-              <Text style={styles.actionSubtitle}>Next delivery: {nextDelivery}</Text>
-              <Text style={styles.actionDetail}>3 meals remaining today</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={theme.colors.textLight} />
-          </LinearGradient>
-        </TouchableOpacity>
+        <SurfaceCard style={styles.row} onPress={() => router.push('/(app)/my-plan')}>
+          <IconBadge icon="calendar-outline" />
+          <View style={styles.rowContent}>
+            <Text style={styles.rowTitle}>Mon plan</Text>
+            <Text style={styles.rowSubtitle} numberOfLines={1}>Prochaine livraison : {nextDelivery}</Text>
+            <Text style={styles.rowDetail}>3 repas restants aujourd'hui</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.inkFaint} />
+        </SurfaceCard>
 
         {/* Reorder - Conversion driver */}
-        <TouchableOpacity 
-          style={styles.actionCard}
-          onPress={() => router.push('/(app)/reorder')}
-        >
-          <View style={styles.actionRow}>
-            <Ionicons name="repeat" size={24} color={theme.colors.accent} />
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>REORDER</Text>
-              <Text style={styles.actionSubtitle}>Last: {lastOrder.name}</Text>
-            </View>
-            <TouchableOpacity style={styles.oneTapButton}>
-              <Text style={styles.oneTapText}>1-TAP</Text>
-            </TouchableOpacity>
+        <SurfaceCard style={styles.row} onPress={() => router.push('/(app)/reorder')}>
+          <IconBadge icon="repeat" />
+          <View style={styles.rowContent}>
+            <Text style={styles.rowTitle}>Recommander</Text>
+            <Text style={styles.rowSubtitle} numberOfLines={1}>Dernier : {lastOrder.name}</Text>
           </View>
-        </TouchableOpacity>
+          <TouchableOpacity style={styles.oneTapButton}>
+            <Text style={styles.oneTapText}>1 clic</Text>
+          </TouchableOpacity>
+        </SurfaceCard>
 
-        {/* Upgrade Plan - AOV driver (GOLD - premium trigger) */}
-        <TouchableOpacity 
+        {/* Upgrade Plan - AOV driver */}
+        <TouchableOpacity
+          activeOpacity={0.85}
           style={styles.upgradeCard}
           onPress={() => router.push('/(app)/upgrade')}
         >
-          <LinearGradient
-            colors={theme.gradients.gold}
-            style={styles.upgradeGradient}
-          >
-            <Ionicons name="flash" size={24} color={theme.colors.dark} />
-            <View style={styles.upgradeContent}>
-              <Text style={styles.upgradeTitle}>UPGRADE PLAN</Text>
-              <Text style={styles.upgradeSubtitle}>Higher Protein • Premium Meals</Text>
-            </View>
-            <Ionicons name="arrow-forward" size={20} color={theme.colors.dark} />
-          </LinearGradient>
+          <View style={styles.upgradeGlow} />
+          <View style={styles.upgradeIcon}>
+            <Ionicons name="flash" size={22} color={theme.colors.textWhite} />
+          </View>
+          <View style={styles.rowContent}>
+            <Text style={styles.upgradeTitle}>Passer au plan supérieur</Text>
+            <Text style={styles.upgradeSubtitle} numberOfLines={1}>Plus de protéines · Repas premium</Text>
+          </View>
+          <Ionicons name="arrow-forward" size={20} color={theme.colors.textWhite} />
         </TouchableOpacity>
       </View>
 
       {/* Retention Section - Streak & Progress */}
-      <View style={styles.retentionContainer}>
+      <View style={styles.stack}>
         {/* Streak Card */}
-        <View style={styles.streakCard}>
-          <View style={styles.streakIcon}>
-            <Ionicons name="flame" size={32} color={theme.colors.gold} />
+        <SurfaceCard style={styles.row}>
+          <IconBadge icon="flame" />
+          <View style={styles.rowContent}>
+            <Text style={styles.rowTitle}>{streakDays} jours d'affilée</Text>
+            <Text style={styles.rowSubtitle}>Ne cassez pas votre série !</Text>
+            <Text style={styles.rowDetail}>
+              Encore {10 - streakDays} jours pour la récompense des 10 jours
+            </Text>
           </View>
-          <View style={styles.streakInfo}>
-            <Text style={styles.streakValue}>{streakDays} DAY STREAK</Text>
-            <Text style={styles.streakLabel}>Don't break your streak!</Text>
-            <Text style={styles.streakWarning}>⚠️ {10 - streakDays} days to reach 10-day reward</Text>
+          <View style={styles.rewardPill}>
+            <Text style={styles.rewardText}>+50 pts</Text>
           </View>
-          <View style={styles.streakReward}>
-            <Text style={styles.rewardText}>🏆 +50 pts</Text>
-          </View>
-        </View>
+        </SurfaceCard>
 
         {/* Progress Card */}
-        <View style={styles.progressCard}>
+        <SurfaceCard>
           <View style={styles.progressHeader}>
-            <Text style={styles.progressTitle}>Goal Progress</Text>
-            <Text style={styles.progressPercent}>{completionPercent}%</Text>
+            <Text style={styles.rowTitle}>Progression de l'objectif</Text>
+            <Text style={styles.progressPercent}>{completionPercent}{'\u00A0'}%</Text>
           </View>
           <View style={styles.progressBar}>
             <View style={[styles.progressFill, { width: `${completionPercent}%` }]} />
           </View>
-          <Text style={styles.progressHint}>Complete your plan to unlock rewards</Text>
-        </View>
+          <Text style={styles.progressHint}>Terminez votre plan pour débloquer des récompenses</Text>
+        </SurfaceCard>
       </View>
 
       {/* Exclusive Offers - High perceived value */}
       <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>✨ EXCLUSIVE OFFERS</Text>
-          <Text style={styles.sectionBadge}>LIMITED</Text>
-        </View>
-        <TouchableOpacity style={styles.offerCard}>
-          <LinearGradient
-            colors={['#1e293b', '#0f172a']}
-            style={styles.offerGradient}
-          >
-            <View>
-              <Text style={styles.offerTitle}>Summer Shred Box</Text>
-              <Text style={styles.offerDescription}>5 premium meals • 40g protein each</Text>
-              <View style={styles.offerPriceRow}>
-                <Text style={styles.offerPrice}>299 MAD</Text>
-                <Text style={styles.offerOriginal}>399 MAD</Text>
-                <View style={styles.saveBadge}>
-                  <Text style={styles.saveBadgeText}>SAVE 100 MAD</Text>
-                </View>
-              </View>
-            </View>
+        <SectionHeader title="Offres exclusives" />
+        <TouchableOpacity activeOpacity={0.85} style={styles.offerCard}>
+          <View style={styles.offerTop}>
+            <Text style={styles.offerTitle}>Summer Shred Box</Text>
             <View style={styles.offerBadge}>
-              <Text style={styles.offerBadgeText}>BEST SELLER</Text>
+              <Text style={styles.offerBadgeText}>Meilleure vente</Text>
             </View>
-          </LinearGradient>
+          </View>
+          <Text style={styles.offerDescription}>5 repas premium · 40{'\u00A0'}g de protéines chacun</Text>
+          <View style={styles.offerPriceRow}>
+            <Text style={styles.offerPrice}>{formatPrice(299)}</Text>
+            <Text style={styles.offerOriginal}>{formatPrice(399)}</Text>
+            <View style={styles.saveBadge}>
+              <Text style={styles.saveBadgeText}>-{formatPrice(100)}</Text>
+            </View>
+          </View>
         </TouchableOpacity>
       </View>
 
       {/* Add-ons - High-margin upsells */}
       <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>➕ ADD TO ORDER</Text>
-          <TouchableOpacity>
-            <Text style={styles.seeAllLink}>View All</Text>
-          </TouchableOpacity>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.addonsContainer}>
-          <TouchableOpacity style={styles.addonCard}>
-            <View style={styles.addonImage} />
-            <Text style={styles.addonName}>Protein Smoothie</Text>
-            <Text style={styles.addonMacro}>+25g protein</Text>
-            <Text style={styles.addonPrice}>39 MAD</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.addonCard}>
-            <View style={styles.addonImage} />
-            <Text style={styles.addonName}>Keto Snack Box</Text>
-            <Text style={styles.addonMacro}>Low carb • 15g protein</Text>
-            <Text style={styles.addonPrice}>49 MAD</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.addonCard}>
-            <View style={styles.addonImage} />
-            <Text style={styles.addonName}>Protein Dessert</Text>
-            <Text style={styles.addonMacro}>20g protein • 280 cal</Text>
-            <Text style={styles.addonPrice}>29 MAD</Text>
-          </TouchableOpacity>
+        <SectionHeader title="Ajouter à la commande" actionLabel="Voir tout" onAction={() => {}} />
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.addonsContainer}
+        >
+          {[
+            { name: 'Smoothie protéiné', macro: '+25\u00A0g de protéines', price: 39 },
+            { name: 'Box snack céto', macro: 'Faible en glucides · 15\u00A0g de protéines', price: 49 },
+            { name: 'Dessert protéiné', macro: '20\u00A0g de protéines · 280\u00A0kcal', price: 29 },
+          ].map((addon) => (
+            <SurfaceCard key={addon.name} style={styles.addonCard} onPress={() => {}}>
+              <View style={styles.addonImage}>
+                <Ionicons name="nutrition-outline" size={26} color={theme.colors.brand} />
+              </View>
+              <Text style={styles.addonName} numberOfLines={1}>{addon.name}</Text>
+              <Text style={styles.addonMacro} numberOfLines={2}>{addon.macro}</Text>
+              <Text style={styles.addonPrice}>{formatPrice(addon.price)}</Text>
+            </SurfaceCard>
+          ))}
         </ScrollView>
       </View>
 
       {/* Admin Dashboard - Only visible to admin users */}
       {isAdmin && (
-        <TouchableOpacity 
+        <TouchableOpacity
+          activeOpacity={0.85}
           style={styles.adminCard}
           onPress={() => setShowAdminModal(true)}
         >
-          <LinearGradient
-            colors={['#1e293b', '#0f172a']}
-            style={styles.adminGradient}
-          >
-            <View style={styles.adminIcon}>
-              <Ionicons name="shield-checkmark" size={28} color="#D4A757" />
-            </View>
-            <View style={styles.adminContent}>
-              <Text style={styles.adminTitle}>Admin Dashboard</Text>
-              <Text style={styles.adminSubtitle}>Manage orders, drivers, meals</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#D4A757" />
-          </LinearGradient>
+          <View style={styles.adminIcon}>
+            <Ionicons name="shield-checkmark" size={24} color={theme.colors.textWhite} />
+          </View>
+          <View style={styles.rowContent}>
+            <Text style={styles.adminTitle}>Tableau de bord admin</Text>
+            <Text style={styles.adminSubtitle}>Gérer commandes, livreurs, repas</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.inkFaint} />
         </TouchableOpacity>
       )}
 
       {/* Settings Section */}
       <View style={styles.settingsContainer}>
-        <Text style={styles.settingsLabel}>SETTINGS</Text>
-        <TouchableOpacity style={styles.settingsItem}>
-          <Ionicons name="help-circle-outline" size={20} color={theme.colors.textLight} />
-          <Text style={styles.settingsText}>Help Center</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.settingsItem} onPress={handleSignOut}>
-          <Ionicons name="log-out-outline" size={20} color={theme.colors.error} />
-          <Text style={[styles.settingsText, styles.signOutText]}>Sign Out</Text>
-        </TouchableOpacity>
+        <Text style={styles.settingsLabel}>PARAMÈTRES</Text>
+        <SurfaceCard style={styles.settingsCard}>
+          <TouchableOpacity style={styles.settingsItem}>
+            <Ionicons name="help-circle-outline" size={20} color={theme.colors.inkMuted} />
+            <Text style={styles.settingsText}>Centre d'aide</Text>
+            <Ionicons name="chevron-forward" size={18} color={theme.colors.inkFaint} />
+          </TouchableOpacity>
+          <View style={styles.settingsDivider} />
+          <TouchableOpacity style={styles.settingsItem} onPress={handleSignOut}>
+            <Ionicons name="log-out-outline" size={20} color={theme.colors.error} />
+            <Text style={[styles.settingsText, styles.signOutText]}>Se déconnecter</Text>
+          </TouchableOpacity>
+        </SurfaceCard>
       </View>
 
       {/* Admin Auth Modal */}
@@ -311,18 +281,14 @@ export default function ProfileScreen() {
         onClose={() => setShowAdminModal(false)}
         onSuccess={() => router.push('./(admin)')}
       />
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
   header: {
     paddingHorizontal: theme.spacing.xl,
-    paddingTop: theme.spacing.xl,
+    paddingTop: theme.spacing.lg,
     paddingBottom: theme.spacing.lg,
   },
   identity: {
@@ -331,312 +297,234 @@ const styles = StyleSheet.create({
     gap: theme.spacing.lg,
     marginBottom: theme.spacing.xl,
   },
+  identityText: {
+    flex: 1,
+  },
   avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: theme.colors.accent,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: theme.colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
     fontSize: theme.typography.sizes['2xl'],
-    fontWeight: theme.typography.weights.bold,
+    fontWeight: theme.typography.weights.extrabold,
     color: theme.colors.textWhite,
   },
   name: {
-    fontSize: theme.typography.sizes.xl,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textDark,
+    fontSize: theme.typography.sizes['2xl'],
+    lineHeight: theme.typography.lineHeights.lg,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.ink,
+    letterSpacing: -0.4,
   },
   programBadge: {
-    backgroundColor: theme.colors.accent + '20',
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 2,
-    borderRadius: theme.spacing.sm,
-    marginTop: 4,
+    backgroundColor: theme.colors.brandSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: theme.radii.pill,
+    marginTop: 6,
     alignSelf: 'flex-start',
   },
   activeProgramBadge: {
-    backgroundColor: theme.colors.gold + '20',
+    backgroundColor: theme.colors.brand,
   },
   programText: {
     fontSize: theme.typography.sizes.xs,
-    color: theme.colors.accent,
-    fontWeight: theme.typography.weights.medium,
+    color: theme.colors.brand,
+    fontWeight: theme.typography.weights.bold,
   },
   activeProgramText: {
-    color: theme.colors.gold,
+    color: theme.colors.textWhite,
   },
   progressStats: {
     flexDirection: 'row',
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.spacing.lg,
-    padding: theme.spacing.lg,
-    ...theme.shadows?.sm || {},
   },
   statItem: {
     flex: 1,
     alignItems: 'center',
   },
   statValue: {
-    fontSize: theme.typography.sizes.xl,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textDark,
+    fontSize: theme.typography.sizes['2xl'],
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.ink,
   },
   statSuccess: {
     color: theme.colors.success,
   },
   statLabel: {
     fontSize: theme.typography.sizes.xs,
-    color: theme.colors.textLight,
+    color: theme.colors.inkMuted,
     marginTop: 2,
   },
   statDivider: {
     width: 1,
-    backgroundColor: theme.colors.border,
+    backgroundColor: theme.colors.hairline,
   },
-  actionsContainer: {
+  stack: {
     paddingHorizontal: theme.spacing.xl,
     gap: theme.spacing.md,
     marginBottom: theme.spacing.xl,
   },
-  actionCard: {
-    borderRadius: theme.spacing.lg,
-    overflow: 'hidden',
-  },
-  actionGradient: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: theme.spacing.lg,
     gap: theme.spacing.md,
   },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.card,
-    padding: theme.spacing.lg,
-    borderRadius: theme.spacing.lg,
-    gap: theme.spacing.md,
-    ...theme.shadows?.sm || {},
-  },
-  actionContent: {
+  rowContent: {
     flex: 1,
   },
-  actionTitle: {
+  rowTitle: {
     fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textDark,
-    letterSpacing: 1,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.ink,
   },
-  actionSubtitle: {
+  rowSubtitle: {
     fontSize: theme.typography.sizes.xs,
-    color: theme.colors.textLight,
+    color: theme.colors.inkMuted,
     marginTop: 2,
   },
-  actionDetail: {
+  rowDetail: {
     fontSize: theme.typography.sizes.xs,
-    color: theme.colors.accent,
+    fontWeight: theme.typography.weights.semibold,
+    color: theme.colors.brand,
     marginTop: 2,
   },
   oneTapButton: {
-    backgroundColor: theme.colors.accent,
+    backgroundColor: theme.colors.brand,
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.xs,
-    borderRadius: theme.spacing.md,
+    paddingVertical: 6,
+    borderRadius: theme.radii.pill,
   },
   oneTapText: {
     fontSize: theme.typography.sizes.xs,
-    fontWeight: theme.typography.weights.bold,
+    fontWeight: theme.typography.weights.extrabold,
     color: theme.colors.textWhite,
   },
   upgradeCard: {
-    borderRadius: theme.spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    padding: theme.spacing.lg,
+    borderRadius: theme.radii.lg,
+    backgroundColor: theme.colors.brand,
     overflow: 'hidden',
   },
-  upgradeGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: theme.spacing.lg,
-    gap: theme.spacing.md,
+  upgradeGlow: {
+    position: 'absolute',
+    top: -60,
+    right: -40,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
-  upgradeContent: {
-    flex: 1,
-  },
-  upgradeTitle: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.dark,
-    letterSpacing: 1,
-  },
-  upgradeSubtitle: {
-    fontSize: theme.typography.sizes.xs,
-    color: theme.colors.dark,
-    opacity: 0.8,
-    marginTop: 2,
-  },
-  retentionContainer: {
-    paddingHorizontal: theme.spacing.xl,
-    gap: theme.spacing.md,
-    marginBottom: theme.spacing.xl,
-  },
-  streakCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.card,
-    padding: theme.spacing.lg,
-    borderRadius: theme.spacing.lg,
-    gap: theme.spacing.md,
-    ...theme.shadows?.sm || {},
-  },
-  streakIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: theme.colors.gold + '20',
+  upgradeIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.16)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  streakInfo: {
-    flex: 1,
-  },
-  streakValue: {
+  upgradeTitle: {
     fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.gold,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.textWhite,
   },
-  streakLabel: {
+  upgradeSubtitle: {
     fontSize: theme.typography.sizes.xs,
-    color: theme.colors.textLight,
+    color: theme.colors.brandOnDark,
     marginTop: 2,
   },
-  streakWarning: {
-    fontSize: theme.typography.sizes.xs,
-    color: theme.colors.gold,
-    marginTop: 2,
-  },
-  streakReward: {
-    backgroundColor: theme.colors.gold + '20',
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 4,
-    borderRadius: theme.spacing.sm,
+  rewardPill: {
+    backgroundColor: theme.colors.brandSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: theme.radii.pill,
   },
   rewardText: {
     fontSize: theme.typography.sizes.xs,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.gold,
-  },
-  progressCard: {
-    backgroundColor: theme.colors.card,
-    padding: theme.spacing.lg,
-    borderRadius: theme.spacing.lg,
-    ...theme.shadows?.sm || {},
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.brand,
   },
   progressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: theme.spacing.sm,
-  },
-  progressTitle: {
-    fontSize: theme.typography.sizes.sm,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textDark,
+    marginBottom: theme.spacing.md,
   },
   progressPercent: {
-    fontSize: theme.typography.sizes.sm,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.accent,
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.brand,
   },
   progressBar: {
     height: 8,
-    backgroundColor: theme.colors.backgroundDark,
+    backgroundColor: theme.colors.brandSoft,
     borderRadius: 4,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: theme.colors.accent,
+    backgroundColor: theme.colors.brand,
     borderRadius: 4,
   },
   progressHint: {
     fontSize: theme.typography.sizes.xs,
-    color: theme.colors.textLight,
+    color: theme.colors.inkMuted,
     marginTop: theme.spacing.sm,
   },
   section: {
     marginBottom: theme.spacing.xl,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.xl,
-    marginBottom: theme.spacing.md,
-  },
-  sectionTitle: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textDark,
-    letterSpacing: 0.5,
-  },
-  sectionBadge: {
-    fontSize: theme.typography.sizes.xs,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.gold,
-    backgroundColor: theme.colors.gold + '20',
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 2,
-    borderRadius: theme.spacing.sm,
-  },
-  seeAllLink: {
-    fontSize: theme.typography.sizes.xs,
-    color: theme.colors.accent,
-  },
   offerCard: {
     marginHorizontal: theme.spacing.xl,
-    borderRadius: theme.spacing.lg,
-    overflow: 'hidden',
+    borderRadius: theme.radii.lg,
+    padding: theme.spacing.xl,
+    backgroundColor: theme.colors.ink,
   },
-  offerGradient: {
+  offerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: theme.spacing.lg,
+    gap: theme.spacing.sm,
   },
   offerTitle: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.bold,
+    flex: 1,
+    fontSize: theme.typography.sizes.lg,
+    fontWeight: theme.typography.weights.extrabold,
     color: theme.colors.textWhite,
   },
   offerDescription: {
-    fontSize: theme.typography.sizes.xs,
-    color: theme.colors.textWhite,
-    opacity: 0.8,
-    marginTop: 2,
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 4,
   },
   offerPriceRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: theme.spacing.sm,
-    marginTop: theme.spacing.sm,
+    marginTop: theme.spacing.md,
   },
   offerPrice: {
-    fontSize: theme.typography.sizes.lg,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.gold,
+    fontSize: theme.typography.sizes.xl,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.textWhite,
   },
   offerOriginal: {
-    fontSize: theme.typography.sizes.xs,
+    fontSize: theme.typography.sizes.sm,
     textDecorationLine: 'line-through',
-    color: theme.colors.textLight,
-    fontWeight: theme.typography.weights.normal,
+    color: 'rgba(255,255,255,0.5)',
   },
   saveBadge: {
     backgroundColor: theme.colors.success,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 2,
-    borderRadius: theme.spacing.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: theme.radii.pill,
   },
   saveBadgeText: {
     fontSize: theme.typography.sizes.xs,
@@ -644,95 +532,94 @@ const styles = StyleSheet.create({
     color: theme.colors.textWhite,
   },
   offerBadge: {
-    backgroundColor: theme.colors.gold,
-    paddingHorizontal: theme.spacing.sm,
+    backgroundColor: theme.colors.brand,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: theme.spacing.sm,
+    borderRadius: theme.radii.pill,
   },
   offerBadgeText: {
     fontSize: theme.typography.sizes.xs,
     fontWeight: theme.typography.weights.bold,
-    color: theme.colors.dark,
+    color: theme.colors.textWhite,
   },
   addonsContainer: {
-    paddingLeft: theme.spacing.xl,
+    paddingHorizontal: theme.spacing.xl,
+    gap: theme.spacing.md,
   },
   addonCard: {
-    width: 140,
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.spacing.lg,
-    marginRight: theme.spacing.md,
-    padding: theme.spacing.md,
-    ...theme.shadows?.sm || {},
+    width: 156,
+    padding: theme.spacing.sm,
+    paddingBottom: theme.spacing.md,
   },
   addonImage: {
-    width: '100%',
-    height: 100,
-    backgroundColor: theme.colors.backgroundDark,
-    borderRadius: theme.spacing.md,
+    height: 92,
+    borderRadius: theme.radii.md,
+    backgroundColor: theme.colors.brandSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: theme.spacing.sm,
   },
   addonName: {
     fontSize: theme.typography.sizes.sm,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textDark,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.ink,
+    paddingHorizontal: 4,
   },
   addonMacro: {
     fontSize: theme.typography.sizes.xs,
-    color: theme.colors.textLight,
+    color: theme.colors.inkMuted,
     marginTop: 2,
+    paddingHorizontal: 4,
   },
   addonPrice: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.accent,
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.brand,
     marginTop: theme.spacing.sm,
+    paddingHorizontal: 4,
   },
   adminCard: {
     marginHorizontal: theme.spacing.xl,
     marginBottom: theme.spacing.lg,
-    borderRadius: theme.spacing.lg,
-    overflow: 'hidden',
-  },
-  adminGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: theme.spacing.lg,
     gap: theme.spacing.md,
+    padding: theme.spacing.lg,
+    borderRadius: theme.radii.lg,
+    backgroundColor: theme.colors.ink,
   },
   adminIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(212,167,87,0.1)',
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: theme.colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  adminContent: {
-    flex: 1,
-  },
   adminTitle: {
     fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.bold,
-    color: '#D4A757',
-    letterSpacing: 1,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.textWhite,
   },
   adminSubtitle: {
     fontSize: theme.typography.sizes.xs,
-    color: '#9CA3AF',
+    color: 'rgba(255,255,255,0.6)',
     marginTop: 2,
   },
   settingsContainer: {
     paddingHorizontal: theme.spacing.xl,
-    paddingBottom: theme.spacing.xl,
-    marginTop: theme.spacing.md,
+    marginTop: theme.spacing.xs,
   },
   settingsLabel: {
     fontSize: theme.typography.sizes.xs,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textLight,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.inkMuted,
     letterSpacing: 1,
     marginBottom: theme.spacing.sm,
+    marginLeft: theme.spacing.xs,
+  },
+  settingsCard: {
+    paddingVertical: theme.spacing.xs,
   },
   settingsItem: {
     flexDirection: 'row',
@@ -740,9 +627,15 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md,
     paddingVertical: theme.spacing.md,
   },
+  settingsDivider: {
+    height: 1,
+    backgroundColor: theme.colors.hairline,
+  },
   settingsText: {
-    fontSize: theme.typography.sizes.sm,
-    color: theme.colors.textLight,
+    flex: 1,
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.semibold,
+    color: theme.colors.ink,
   },
   signOutText: {
     color: theme.colors.error,

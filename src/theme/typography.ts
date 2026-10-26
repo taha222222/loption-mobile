@@ -16,6 +16,7 @@ export const typography = {
     '4xl': 32,
     '5xl': 40,
     '6xl': 48,
+    display: 52,
   },
   lineHeights: {
     xs: 16,
@@ -28,11 +29,13 @@ export const typography = {
     '4xl': 48,
     '5xl': 56,
     '6xl': 64,
+    display: 60,
   },
   weights: {
     normal: '400' as const,
     medium: '500' as const,
     semibold: '600' as const,
     bold: '700' as const,
+    extrabold: '800' as const,
   },
 } as const;

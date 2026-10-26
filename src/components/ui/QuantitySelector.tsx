@@ -28,7 +28,7 @@ export const QuantitySelector: React.FC<QuantitySelectorProps> = ({
         <Ionicons
           name="remove"
           size={20}
-          color={quantity <= min ? theme.colors.textLight : theme.colors.textDark}
+          color={quantity <= min ? theme.colors.textLight : theme.colors.ink}
         />
       </TouchableOpacity>
       <Text style={styles.quantity}>{quantity}</Text>
@@ -40,7 +40,7 @@ export const QuantitySelector: React.FC<QuantitySelectorProps> = ({
         <Ionicons
           name="add"
           size={20}
-          color={quantity >= max ? theme.colors.textLight : theme.colors.textDark}
+          color={quantity >= max ? theme.colors.textLight : theme.colors.ink}
         />
       </TouchableOpacity>
     </View>
@@ -51,13 +51,16 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.spacing.md,
+    gap: theme.spacing.xs,
+    backgroundColor: theme.colors.canvas,
+    borderRadius: theme.radii.pill,
+    padding: 4,
   },
   button: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: theme.colors.backgroundDark,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: theme.colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -65,10 +68,10 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   quantity: {
-    fontSize: theme.typography.sizes.lg,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textDark,
-    minWidth: 30,
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.ink,
+    minWidth: 28,
     textAlign: 'center',
   },
 });
