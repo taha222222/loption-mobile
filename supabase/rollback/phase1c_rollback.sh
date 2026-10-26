@@ -8,12 +8,20 @@
 # Usage:
 #   supabase/rollback/phase1c_rollback.sh \
 #     --target staging|local \
-#     --db-url 'postgresql://postgres:<password>@db.<ref>.supabase.co:5432/postgres' \
+#     --db-url 'postgresql://postgres@db.<ref>.supabase.co:5432/postgres' \
 #     --expected-admin <auth.users id of the seeded initial admin> \
 #     --approved-by '<CTO name, as in the written approval>' \
 #     --backup-ref '<backup / PITR point newer than the change window>' \
 #     --export-dir <new directory OUTSIDE the repository> \
 #     --confirm 'ROLLBACK PHASE 1C ON <staging ref | local>'
+#
+# Credentials (review 2026-10-26 L8): --db-url must NOT contain a password
+# (it would be visible in the process list, shell history and logs). psql
+# takes it from a password file: PGPASSFILE=<file, mode 600> or ~/.pgpass
+# (line: host:port:database:user:password). PGPASSWORD in the environment
+# also works but is discouraged (the environment of a process is readable
+# by the same OS user). The script never prompts (psql -w) and never prints
+# the URL's userinfo or any password.
 #
 # What it does, in order (any failure stops it; steps 1-4 change nothing):
 #   1. Target: --target staging accepts ONLY the staging project
@@ -61,11 +69,20 @@ done
 
 # ---- 1. target -------------------------------------------------------
 [ -n "$DB_URL" ] || die "--db-url is required"
-read -r URL_HOST URL_USER < <(python3 -I -c '
+URL_CHECK="$(python3 -I -c '
 import sys, urllib.parse
 u = urllib.parse.urlsplit(sys.argv[1])
-if u.scheme not in ("postgres", "postgresql") or not u.hostname: sys.exit(1)
-print(u.hostname.lower(), urllib.parse.unquote(u.username or "-"))' "$DB_URL") || die "--db-url is not a postgresql:// URL with a host"
+if u.scheme not in ("postgres", "postgresql") or not u.hostname:
+    print("bad"); sys.exit()
+q = {k.lower() for k, _ in urllib.parse.parse_qsl(u.query, keep_blank_values=True)}
+if u.password is not None or "password" in q or "passfile" in q:
+    print("password"); sys.exit()
+print("ok", u.hostname.lower(), urllib.parse.unquote(u.username or "-"))' "$DB_URL")"
+case "$URL_CHECK" in
+  password) die "--db-url must not contain a password (use PGPASSFILE or ~/.pgpass; see the header)" ;;
+  ok\ *) read -r _ URL_HOST URL_USER <<<"$URL_CHECK" ;;
+  *) die "--db-url is not a postgresql:// URL with a host" ;;
+esac
 case "$TARGET" in
   staging)
     TARGET_ID="$STAGING_REF"
@@ -92,13 +109,13 @@ REPO_TOP="$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null || (cd "$HERE/.
 case "$EXPORT_PARENT/" in "$REPO_TOP/"*) die "--export-dir must be outside the repository (it will hold user ids)" ;; esac
 [ -f "$SQL" ] || die "$SQL missing"
 
-PSQL=(psql "$DB_URL" -X -q -v ON_ERROR_STOP=1)
+PSQL=(psql "$DB_URL" -X -q -w -v ON_ERROR_STOP=1)   # -w: never prompt for a password
 ro() { "${PSQL[@]}" -At -c "begin transaction read only" -c "$1" -c "commit"; }   # one statement, read-only transaction
 
 # ---- 2. read-only identification -------------------------------------
 echo "phase1c_rollback: target $TARGET ($TARGET_ID), host $URL_HOST"
 WHO="$(ro "select current_user || ' ' || session_user || ' ' || current_database() || ' ' || current_setting('server_version')")" \
-  || die "cannot connect read-only"
+  || die "cannot connect read-only (password from PGPASSFILE, ~/.pgpass or PGPASSWORD; the script never prompts)"
 echo "  connected: current_user session_user database version = $WHO"
 [ "${WHO%% *}" = "postgres" ] || die "must connect as role postgres (current_user is ${WHO%% *})"
 APPLIED="$(ro "select to_regclass('public.staff_roles') is not null and to_regclass('public.security_audit_log') is not null and to_regprocedure('public.containment_violations()') is not null")"

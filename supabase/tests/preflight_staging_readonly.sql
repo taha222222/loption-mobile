@@ -133,6 +133,15 @@ checks(check_name, ok, detail) as (
      and to_regclass('public.security_audit_log') is null,
          'staff_roles=' || coalesce(to_regclass('public.staff_roles')::text, 'absent')
   union all
+  -- Review 2026-10-26 L4: a monitor that already exists must be the reviewed
+  -- one (md5 of its body; same value as postdeploy_verify_readonly.sql, see
+  -- there for how it is changed). Absent before deployment.
+  select 'containment_monitor_absent_or_reviewed (L4)',
+         coalesce((select 'PHASE1C_MONITOR_MD5:' || md5(p.prosrc) = 'PHASE1C_MONITOR_MD5:86b0dca96f9664cccf571684bb03562c' and not p.prosecdef
+                     from pg_proc p where p.oid = to_regprocedure('public.containment_violations()')), true),
+         coalesce((select 'md5(prosrc)=' || md5(p.prosrc) || ' definer=' || p.prosecdef
+                     from pg_proc p where p.oid = to_regprocedure('public.containment_violations()')), 'absent (expected before deployment)')
+  union all
   select 'public_table_set_matches_evidence',
          (select count(*) from pg_tables where schemaname = 'public') = 24,
          (select string_agg(tablename, ',' order by tablename) from pg_tables where schemaname = 'public')
