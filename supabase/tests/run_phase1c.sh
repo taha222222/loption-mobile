@@ -66,6 +66,7 @@ CATALOG_Q="$ROOT/supabase/evidence/phase1b_catalog_query.sql"
 BOOT="$HERE/bootstrap_hosted_auth.sql"; FIX="$HERE/fixtures_staging_like.sql"
 TESTS="$HERE/phase1c_security_tests.sql"; MATRIX="$HERE/phase1c_matrix.sql"
 PREFLIGHT="$HERE/preflight_staging_readonly.sql"; STORAGE_TESTS="$HERE/storage_api_tests.sh"
+POSTDEPLOY="$HERE/postdeploy_verify_readonly.sql"; HOSTED_SHAPE="$HERE/staff_account_checks_hosted_shape.sql"
 INVENTORY="$ROOT/supabase/evidence/meal_images_inventory_readonly.sql"; SCAN="$ROOT/supabase/tools/meal_images_scan.py"
 QUARANTINE="$ROOT/supabase/tools/meal_images_quarantine.py"; BROWSER_TESTS="$HERE/browser_serving_tests.js"
 OUT="$(mktemp -d /tmp/phase1c-run.XXXXXX)"
@@ -186,7 +187,7 @@ rollback_run() {
 }
 rb_args() {   # default, valid arguments (each test overrides one)
   RB_EXPORT="$OUT/export_$1"
-  RB=(--target local --db-url "postgresql://postgres:postgres@127.0.0.1:$PORT/postgres" --expected-admin "$INITIAL_ADMIN"
+  RB=(--target local --db-url "postgresql://postgres@127.0.0.1:$PORT/postgres" --expected-admin "$INITIAL_ADMIN"
       --approved-by "local harness" --backup-ref "local-disposable" --export-dir "$RB_EXPORT" --confirm "ROLLBACK PHASE 1C ON local")
 }
 with_admin "$INITIAL_ADMIN" "$MIG_T"
@@ -235,6 +236,24 @@ PY
 then pass "every pre-existing policy the migration keeps is unchanged from the staging evidence ($(cat "$OUT/kept_policies.txt"))"
 else fail "kept policies differ from the evidence: $(cat "$OUT/kept_policies.txt")"; fi
 [ "$(preflight phase1c_not_yet_applied\ \(U9\))" = "False" ] && pass "preflight reports the migration as already applied" || fail "preflight did not detect applied migration"
+# Review 2026-10-26 L4: the reviewed monitor fingerprint, written in the
+# preflight, the post-deployment check and the plan, equals md5(prosrc) of
+# a clean application.
+MON_MD5="$(qa "select md5(prosrc) from pg_proc where oid = 'public.containment_violations()'::regprocedure")"
+MON_FILES=("$PREFLIGHT" "$POSTDEPLOY" "$ROOT/docs/v1/PHASE1C_DATABASE_SECURITY_PLAN.md")
+MON_TOKENS="$(grep -ho 'PHASE1C_MONITOR_MD5:[0-9a-f]\{32\}' "${MON_FILES[@]}" | sort -u | tr '\n' ' ')"
+[ "$MON_TOKENS" = "PHASE1C_MONITOR_MD5:$MON_MD5 " ] && grep -q "PHASE1C_MONITOR_MD5:$MON_MD5" "$PREFLIGHT" && grep -q "PHASE1C_MONITOR_MD5:$MON_MD5" "$POSTDEPLOY" \
+  && grep -q "PHASE1C_MONITOR_MD5:$MON_MD5" "$ROOT/docs/v1/PHASE1C_DATABASE_SECURITY_PLAN.md" \
+  && pass "monitor fingerprint PHASE1C_MONITOR_MD5:$MON_MD5 is the same in the preflight, the post-deployment check and the plan, and equals the clean application" \
+  || fail "monitor fingerprint copies ($MON_TOKENS) differ from the clean application ($MON_MD5)"
+[ "$(preflight containment_monitor_absent_or_reviewed\ \(L4\))" = "True" ] && pass "preflight accepts the reviewed monitor" || fail "preflight rejects the reviewed monitor"
+# Review 2026-10-26 L2: account checks with the hosted Auth columns (one transaction, rolled back)
+q supabase_admin -f "$HOSTED_SHAPE" > "$OUT/b_hosted_shape.txt" 2>&1 || true
+if [ "$(grep -c '| PASS ' "$OUT/b_hosted_shape.txt")" = "10" ] && ! grep -q '| FAIL ' "$OUT/b_hosted_shape.txt" \
+   && [ "$(qa "select count(*) from information_schema.columns where table_schema = 'auth' and table_name = 'users' and column_name in ('deleted_at', 'banned_until', 'is_anonymous', 'email_confirmed_at')")" = "0" ]; then
+  pass "assign_staff_role account checks with the hosted Auth columns: 10/10 (eligible, expired ban and support-without-confirmation granted; unconfirmed, deleted, banned, anonymous refused with nothing written; no confirmation column -> refused); all rolled back"
+else fail "hosted-shape account checks"; cat "$OUT/b_hosted_shape.txt"; fi
+grep -E '^ H[0-9]+ ' "$OUT/b_hosted_shape.txt" | sed 's/^/    /'
 # the reviewed new-table definition embedded in the migration (section 0a2)
 # must be exactly what a clean application produces
 python3 -I - "$MIG" > "$OUT/describe_helpers.sql" <<'PY'
@@ -479,10 +498,16 @@ xguard changed_policy postgres "alter policy staff_roles_self_read on public.sta
   "policy staff_roles.staff_roles_self_read" "alter policy staff_roles_self_read on public.staff_roles using (user_id = (select auth.uid()))"
 xguard unaudited_admin postgres "insert into public.staff_roles (user_id, role) values ('$E1', 'admin')" \
   "has no seed or assign audit record (unknown provenance)" "delete from public.staff_roles where user_id = '$E1'"
-xguard audited_flagged_admin postgres "$(echo "set role authenticated; select set_config('request.jwt.claims', '{\"sub\":\"$INITIAL_ADMIN\",\"role\":\"authenticated\"}', false);") select public.assign_staff_role('$E1', 'admin')" \
+# assign_staff_role now refuses the flagged account (review L2, scenario B
+# T26b), so this admin row and its assign record are written directly, as an
+# older version of the function or an operator could have done.
+xguard audited_flagged_admin postgres "insert into public.staff_roles (user_id, role) values ('$E1', 'admin');
+  insert into public.security_audit_log (actor_id, action, target_user_id, details) values ('$INITIAL_ADMIN', 'staff_role.assign', '$E1', '{\"role\": \"admin\"}')" \
   "illegitimate profile pattern" "delete from public.staff_roles where user_id = '$E1'"
 xguard kitchen_a_changed postgres "update public.kitchens set is_active = false where code = 'A'" \
   "Kitchen A is missing or differs" "update public.kitchens set is_active = true where code = 'A'"
+xguard audit_rule postgres "create rule p1c_drop_audit as on insert to public.security_audit_log do instead nothing" \
+  "rule security_audit_log.p1c_drop_audit" "drop rule p1c_drop_audit on public.security_audit_log"
 xguard seed_record_removed supabase_admin "set session_replication_role = replica; delete from public.security_audit_log where action = 'staff_role.seed_initial_admin'" \
   "0 initial-admin seed records" ""
 
@@ -544,6 +569,24 @@ mon L3_unapproved_online supabase_admin "set session_replication_role = replica;
 mon P2_nullable_status postgres "alter table public.drivers alter column status drop not null" "drivers.status allows NULL" \
   "alter table public.drivers alter column status set not null"
 
+# Review 2026-10-26 L3: a rewrite rule that discards audit records. The
+# rule is shown to work (an audited grant writes no audit row), the monitor
+# must report it, and it is removed again whatever the outcome.
+C1=00000000-0000-0000-0000-0000000000c1
+q postgres -c "create rule p1c_drop_audit as on insert to public.security_audit_log do instead nothing" >/dev/null
+N_AUD0="$(qa "select count(*) from public.security_audit_log")"
+q postgres -c "set role authenticated; select set_config('request.jwt.claims', '{\"sub\":\"$INITIAL_ADMIN\",\"role\":\"authenticated\"}', false); select public.assign_staff_role('$C1', 'support')" >/dev/null 2>"$OUT/mon_L3_rule.err" || true
+N_AUD1="$(qa "select count(*) from public.security_audit_log")"
+HITS="$(qa "select count(*) from public.containment_violations() where object = 'rule security_audit_log.p1c_drop_audit' and problem = 'unexpected rewrite rule'")"
+q postgres -c "drop rule p1c_drop_audit on public.security_audit_log" >/dev/null
+q postgres -c "set role authenticated; select set_config('request.jwt.claims', '{\"sub\":\"$INITIAL_ADMIN\",\"role\":\"authenticated\"}', false); select public.revoke_staff_role('$C1', 'support')" >/dev/null 2>>"$OUT/mon_L3_rule.err" || true
+if [ "$N_AUD1" = "$N_AUD0" ] && [ "$HITS" = "1" ]; then
+  pass "monitor L3_rule_drops_audit: a DO INSTEAD NOTHING rule silently discarded the audit record of a grant ($N_AUD0 -> $N_AUD1 rows) and is reported ('unexpected rewrite rule')"
+else fail "monitor L3_rule_drops_audit: audit rows $N_AUD0 -> $N_AUD1, reported $HITS"; cat "$OUT/mon_L3_rule.err"; fi
+clean_m || { fail "monitor L3_rule_drops_audit: not clean after removing the rule"; qa "select * from public.containment_violations() where category <> 'storage'"; }
+mon L3_rule_staff_roles postgres "create rule p1c_redirect as on update to public.staff_roles do instead nothing" "unexpected rewrite rule" \
+  "drop rule p1c_redirect on public.staff_roles"
+
 # concurrent administrator changes (L2 / rev6 M1): every write path at every
 # isolation level, committed state asserted (supabase/tests/admin_concurrency_tests.sh)
 as_user() { echo "set role authenticated; select set_config('request.jwt.claims', '{\"sub\":\"$1\",\"role\":\"authenticated\"}', false) is not null;"; }
@@ -579,6 +622,22 @@ migrate g || { fail "migration failed"; cat "$OUT/g.log"; }
 record_history 20261016170000
 [ "$(qa "select d.status = 'offline' and exists (select 1 from public.security_audit_log l where l.action = 'drivers.status.normalised' and l.target_user_id = d.id and l.details -> 'old_status' = 'null'::jsonb) from public.drivers d where d.id = '$D4'")" = "t" ] \
   && pass "a NULL drivers.status is normalised to offline and its previous value (NULL) is audited" || fail "NULL driver status not normalised/audited"
+# Review 2026-10-26 L7: d2 (legacy 'pending', normalised to offline) is
+# approved, goes online, goes offline again and is revoked. Its status
+# changed after the migration even though it reads 'offline' again, so the
+# rollback must keep 'offline' and list d2 for reconciliation, not put
+# 'pending' back.
+D2=00000000-0000-0000-0000-0000000000d2
+jwt() { echo "set role authenticated; select set_config('request.jwt.claims', '{\"sub\":\"$1\",\"role\":\"authenticated\"}', false);"; }
+q postgres -c "$(jwt "$INITIAL_ADMIN") select public.assign_staff_role('$D2', 'driver');" >/dev/null
+q postgres -c "$(jwt "$D2") select public.set_driver_availability(true);" >/dev/null
+D2_ONLINE="$(qa "select status from public.drivers where id = '$D2'")"
+q postgres -c "$(jwt "$D2") select public.set_driver_availability(false);" >/dev/null
+q postgres -c "$(jwt "$INITIAL_ADMIN") select public.revoke_staff_role('$D2', 'driver');" >/dev/null
+[ "$D2_ONLINE" = "online" ] && [ "$(qa "select status from public.drivers where id = '$D2'")" = "offline" ] \
+  && pass "L7 setup: normalised driver d2 was approved, went online and offline, and was revoked (status 'offline' again)" \
+  || fail "L7 setup: d2 online=$D2_ONLINE now=$(qa "select status from public.drivers where id = '$D2'")"
+DRV_EXPECTED="$(echo "$DRV_BEFORE" | sed "s/$D2=pending/$D2=offline/")"
 N_AUD="$(qa 'select count(*) from public.security_audit_log')"; N_SR="$(qa 'select count(*) from public.staff_roles')"; N_K="$(qa 'select count(*) from public.kitchens')"
 D_G="$(state_digest)"
 # refused NAME FRAGMENT [args to change]: the procedure must refuse with the
@@ -591,7 +650,7 @@ refused() {
   else fail "rollback $name: exit $rc, expected refusal '$frag' with no change"; tail -5 "$OUT/rb_$name.log"; fi
 }
 rb_args t1; refused wrong_target_staging "target staging accepts only project" "${RB[@]}" --target staging --confirm "ROLLBACK PHASE 1C ON teppcfnpkoxkudajnvad"
-rb_args t2; refused wrong_target_remote_host "target local accepts only 127.0.0.1" "${RB[@]}" --db-url "postgresql://postgres:x@db.otherproject.supabase.co:5432/postgres"
+rb_args t2; refused wrong_target_remote_host "target local accepts only 127.0.0.1" "${RB[@]}" --db-url "postgresql://postgres@db.otherproject.supabase.co:5432/postgres"
 rb_args t3; refused wrong_target_kind "--target must be staging or local" "${RB[@]}" --target production
 rb_args t4; refused missing_confirmation "--confirm must be exactly" "${RB[@]}" --confirm "yes"
 rb_args t5; refused unexpected_database "unexpected database" "${RB[@]}" --expected-admin 00000000-0000-0000-0000-0000000000f1
@@ -600,7 +659,25 @@ rb_args t7; refused missing_approval "--approved-by is required" "${RB[@]}" --ap
 rb_args t8; mkdir -p "$RB_EXPORT"; refused export_dir_exists "already exists" "${RB[@]}"
 rb_args t9; refused export_dir_in_repo "outside the repository" "${RB[@]}" --export-dir "$ROOT/supabase/p1c-export-should-not-exist"
 q supabase_admin -c "create role cli_login_postgres login password 'postgres' in role postgres" >/dev/null
-rb_args t10; refused wrong_role "must connect as role postgres" "${RB[@]}" --db-url "postgresql://cli_login_postgres:postgres@127.0.0.1:$PORT/postgres"
+rb_args t10; refused wrong_role "must connect as role postgres" "${RB[@]}" --db-url "postgresql://cli_login_postgres@127.0.0.1:$PORT/postgres"
+# Review 2026-10-26 L8: no password in the arguments. The harness password
+# is the throw-away container's 'postgres'; it never appears in any output.
+rb_args t14; refused password_in_url "must not contain a password" "${RB[@]}" --db-url "postgresql://postgres:postgres@127.0.0.1:$PORT/postgres"
+rb_args t15; refused password_encoded "must not contain a password" "${RB[@]}" --db-url "postgresql://postgres:%70ostgres@127.0.0.1:$PORT/postgres"
+rb_args t16; refused password_in_query "must not contain a password" "${RB[@]}" --db-url "postgresql://postgres@127.0.0.1:$PORT/postgres?password=postgres"
+rb_args t17; refused empty_password "must not contain a password" "${RB[@]}" --db-url "postgresql://postgres:@127.0.0.1:$PORT/postgres"
+! grep -h "postgres:postgres\|password=postgres\|%70ostgres" "$OUT"/rb_password_*.log "$OUT"/rb_empty_password.log \
+  && pass "rollback refusals for a password in the URL never echo it" || fail "a refusal printed the password"
+printf '127.0.0.1:%s:postgres:postgres:postgres\n' "$PORT" > "$OUT/pgpass"; chmod 600 "$OUT/pgpass"
+rb_args t18
+RC="$(env -u PGPASSWORD PGPASSFILE="$OUT/pgpass" "$RB_SH" "${RB[@]}" --expected-admin 00000000-0000-0000-0000-0000000000f1 > "$OUT/rb_pgpass.log" 2>&1; echo $?)"
+[ "$RC" = "2" ] && grep -q "connected: current_user" "$OUT/rb_pgpass.log" && grep -q "unexpected database" "$OUT/rb_pgpass.log" && [ "$(state_digest)" = "$D_G" ] \
+  && pass "password-free URL with PGPASSFILE (PGPASSWORD unset): connects and identifies the database (then refuses the wrong --expected-admin); unchanged" \
+  || { fail "PGPASSFILE connection (exit $RC)"; tail -5 "$OUT/rb_pgpass.log"; }
+rb_args t19
+RC="$(timeout 60 env -u PGPASSWORD PGPASSFILE=/nonexistent "$RB_SH" "${RB[@]}" > "$OUT/rb_nopass.log" 2>&1 < /dev/null; echo $?)"
+[ "$RC" = "2" ] && grep -q "cannot connect read-only" "$OUT/rb_nopass.log" && [ "$(state_digest)" = "$D_G" ] \
+  && pass "no password available: refused without prompting (psql -w); unchanged" || { fail "no-password case (exit $RC)"; tail -5 "$OUT/rb_nopass.log"; }
 q postgres -c "delete from supabase_migrations.schema_migrations" >/dev/null; D_G="$(state_digest)"
 rb_args t11; refused missing_history "migration history must end with the Phase 1C versions" "${RB[@]}"
 record_history 20261016170000 20261016180000; D_G="$(state_digest)"
@@ -631,7 +708,7 @@ psql -h 127.0.0.1 -p "$PORT" -U postgres -d postgres -X -q -v ON_ERROR_ROLLBACK=
 q postgres -c "drop schema p1c_dep cascade" >/dev/null
 DATA_BEFORE_RB="$(qa "select md5(string_agg(to_jsonb(o)::text, ',' order by o.id)) from public.orders o") $(qa "select md5(string_agg(to_jsonb(k)::text, ',' order by k.id)) from public.kiosks k")"
 rb_args ok
-RC="$(rollback_run rb_ok "${RB[@]}")"
+RC="$(env -u PGPASSWORD PGPASSFILE="$OUT/pgpass" "$RB_SH" "${RB[@]}" > "$OUT/rb_ok.log" 2>&1; echo $?)"   # the documented credential path
 [ "$RC" = "0" ] && grep -q "COMMITTED and verified" "$OUT/rb_ok.log" && pass "supported rollback procedure: committed and verified (exit 0)" \
   || { fail "rollback procedure failed (exit $RC)"; cat "$OUT/rb_ok.log"; }
 [ -f "$RB_EXPORT/SHA256SUMS" ] && (cd "$RB_EXPORT" && sha256sum -c --quiet SHA256SUMS) \
@@ -655,7 +732,14 @@ diff -q "$OUT/matrix_g_before.txt" "$OUT/matrix_rollback.txt" >/dev/null \
   && pass "rollback restores the exact BEFORE policy/grant/function/default-privilege matrix" \
   || { fail "rollback matrix differs"; diff "$OUT/matrix_g_before.txt" "$OUT/matrix_rollback.txt" || true; }
 DRV_AFTER="$(qa "select string_agg(id || '=' || coalesce(status, '<null>'), ',' order by id) from public.drivers")"
-[ "$DRV_BEFORE" = "$DRV_AFTER" ] && pass "legacy drivers.status values (incl. NULL) restored from the audit log" || fail "driver statuses not restored: $DRV_AFTER"
+[ "$DRV_EXPECTED" = "$DRV_AFTER" ] && [ "$DRV_EXPECTED" != "$DRV_BEFORE" ] \
+  && pass "legacy drivers.status values (incl. NULL) restored only for drivers without a later approval; d2's later change (offline) is kept, not overwritten with 'pending'" \
+  || fail "driver statuses after rollback: $DRV_AFTER (expected $DRV_EXPECTED)"
+[ "$(qa "select string_agg(driver_id || ':' || coalesce(legacy_status, 'NULL') || ':' || status_at_rollback || ':' || restored, ',' order by driver_id) from $ARCH.drivers_status_reconciliation")" \
+  = "$D2:pending:offline:false,00000000-0000-0000-0000-0000000000d3:online:offline:true,$D4:NULL:offline:true" ] \
+  && [ "$(qa "select reason from $ARCH.drivers_status_reconciliation where driver_id = '$D2'")" = "not restored: held a driver approval after the migration (staff_roles row)" ] \
+  && pass "the archive lists every normalised driver with its legacy value and why it was or was not restored (d2: held a driver approval)" \
+  || { fail "reconciliation list"; qa "select * from $ARCH.drivers_status_reconciliation"; }
 [ "$(qa "select md5(string_agg(to_jsonb(o)::text, ',' order by o.id)) from public.orders o") $(qa "select md5(string_agg(to_jsonb(k)::text, ',' order by k.id)) from public.kiosks k")" = "$DATA_BEFORE_RB" ] \
   && pass "historical orders and kiosk records unchanged by the rollback" || fail "orders or kiosks changed by the rollback"
 diff -q "$OUT/matrix_before.txt" "$OUT/matrix_g_before.txt" >/dev/null && pass "BEFORE matrices of A and G identical (deterministic setup)" || fail "A/G before matrices differ"
@@ -674,8 +758,6 @@ if ! docker image inspect "$STORAGE_IMAGE" >/dev/null 2>&1 && ! docker pull -q "
   fail "BLOCKED: storage-api image $STORAGE_IMAGE unavailable; storage containment NOT verified"
 else
   docker network create "$NET" >/dev/null
-  start_db s "$NET"
-  q supabase_admin -c "alter role supabase_storage_admin password 'postgres'" >/dev/null   # local container only
   eval "$(python3 -I - <<'PY'
 import base64, hashlib, hmac, json, secrets, time
 sec = secrets.token_hex(32)
@@ -687,22 +769,31 @@ exp = int(time.time()) + 3600
 print(f"export JWT_SECRET={sec} ANON_KEY={jwt({'role': 'anon', 'exp': exp})} SERVICE_KEY={jwt({'role': 'service_role', 'exp': exp})}")
 PY
 )"
-  SAPI="p1c-sapi-$$"
-  docker run -d --name "$SAPI" --network "$NET" -p 127.0.0.1::5000 \
-    -e ANON_KEY="$ANON_KEY" -e SERVICE_KEY="$SERVICE_KEY" -e AUTH_JWT_SECRET="$JWT_SECRET" -e PGRST_JWT_SECRET="$JWT_SECRET" \
-    -e AUTH_JWT_ALGORITHM=HS256 -e DATABASE_URL="postgres://supabase_storage_admin:postgres@$DBNAME:5432/postgres" \
-    -e STORAGE_BACKEND=file -e FILE_STORAGE_BACKEND_PATH=/var/lib/storage -e TENANT_ID=stub -e REGION=local \
-    -e GLOBAL_S3_BUCKET=stub -e FILE_SIZE_LIMIT=52428800 -e ENABLE_IMAGE_TRANSFORMATION=false -e SERVER_PORT=5000 \
-    "$STORAGE_IMAGE" >/dev/null
-  CONTAINERS+=("$SAPI")
-  export STORAGE_URL="http://127.0.0.1:$(docker port "$SAPI" 5000/tcp | head -1 | sed 's/.*://')"
-  for _ in $(seq 1 60); do curl -sf "$STORAGE_URL/status" >/dev/null 2>&1 && break; sleep 1; done
-  curl -sf "$STORAGE_URL/status" >/dev/null && pass "storage-api up; its own migrations created the storage schema ($(qa 'select count(*) from storage.migrations') migrations)" \
-    || fail "storage-api did not start"
-  setup   # baseline now also creates the 4 staging storage.objects policies verbatim
-  for b in '{"id":"meal-images","name":"meal-images","public":true}' '{"id":"src","name":"src","public":false}'; do
-    curl -s -o /dev/null -X POST "$STORAGE_URL/bucket" -H "Authorization: Bearer $SERVICE_KEY" -H 'Content-Type: application/json' -d "$b"
-  done
+  # storage_stack NAME: database NAME in $NET with its own real Storage API
+  # container (the API's migrations create the storage schema), then the
+  # baseline, fixtures and the two staging buckets. Sets PORT, DBNAME, SAPI,
+  # STORAGE_URL.
+  storage_stack() {
+    start_db "$1" "$NET"
+    q supabase_admin -c "alter role supabase_storage_admin password 'postgres'" >/dev/null   # local container only
+    SAPI="p1c-sapi-$1-$$"
+    docker run -d --name "$SAPI" --network "$NET" -p 127.0.0.1::5000 \
+      -e ANON_KEY="$ANON_KEY" -e SERVICE_KEY="$SERVICE_KEY" -e AUTH_JWT_SECRET="$JWT_SECRET" -e PGRST_JWT_SECRET="$JWT_SECRET" \
+      -e AUTH_JWT_ALGORITHM=HS256 -e DATABASE_URL="postgres://supabase_storage_admin:postgres@$DBNAME:5432/postgres" \
+      -e STORAGE_BACKEND=file -e FILE_STORAGE_BACKEND_PATH=/var/lib/storage -e TENANT_ID=stub -e REGION=local \
+      -e GLOBAL_S3_BUCKET=stub -e FILE_SIZE_LIMIT=52428800 -e ENABLE_IMAGE_TRANSFORMATION=false -e SERVER_PORT=5000 \
+      "$STORAGE_IMAGE" >/dev/null
+    CONTAINERS+=("$SAPI")
+    export STORAGE_URL="http://127.0.0.1:$(docker port "$SAPI" 5000/tcp | head -1 | sed 's/.*://')"
+    for _ in $(seq 1 60); do curl -sf "$STORAGE_URL/status" >/dev/null 2>&1 && break; sleep 1; done
+    curl -sf "$STORAGE_URL/status" >/dev/null && pass "storage-api up ($1); its own migrations created the storage schema ($(qa 'select count(*) from storage.migrations') migrations)" \
+      || fail "storage-api did not start"
+    setup   # baseline now also creates the 4 staging storage.objects policies verbatim
+    for b in '{"id":"meal-images","name":"meal-images","public":true}' '{"id":"src","name":"src","public":false}'; do
+      curl -s -o /dev/null -X POST "$STORAGE_URL/bucket" -H "Authorization: Bearer $SERVICE_KEY" -H 'Content-Type: application/json' -d "$b"
+    done
+  }
+  storage_stack s
   [ "$(preflight ALL)" = "True" ] && pass "read-only preflight incl. storage checks: all required checks ok (staging storage reproduced)" \
     || { fail "full preflight not ok in storage scenario"; cat "$OUT/preflight.json"; }
   q postgres -f "$MATRIX" > "$OUT/matrix_s_before.txt"
@@ -947,6 +1038,99 @@ PY
   q postgres -f "$MATRIX" > "$OUT/matrix_s_rollback.txt"
   diff -q "$OUT/matrix_s_before.txt" "$OUT/matrix_s_rollback.txt" >/dev/null && pass "full rollback restores the exact BEFORE matrix (incl. storage policies and bucket settings)" \
     || { fail "storage-scenario rollback matrix differs"; diff "$OUT/matrix_s_before.txt" "$OUT/matrix_s_rollback.txt" || true; }
+
+  echo; echo "=== L. supported deployment path: Supabase CLI db push of BOTH migration files (review 2026-10-26 L6)"
+  # Each file is atomic on its own; the pair is NOT all-or-nothing. These
+  # cases run the documented command (db push) against LOCAL containers with
+  # the real Storage API, as the CLI's hosted login role would connect.
+  if [ -n "$CLI" ] && [ -x "$CLI" ]; then
+    CLIP="$OUT/cliproj_stack"; mkdir -p "$CLIP/supabase/migrations"; touch "$CLIP/supabase/config.toml"
+    cp "$MIG_T" "$CLIP/supabase/migrations/20261016170000_phase1c_security_containment.sql"
+    cp "$MIG_S" "$CLIP/supabase/migrations/20261016171000_phase1c_storage_meal_images.sql"
+    cli_push() { (cd "$CLIP" && "$CLI" db push --db-url "$1" --yes) > "$OUT/$2.log" 2>&1; }
+    hist() { qa "select case when to_regclass('supabase_migrations.schema_migrations') is null then 'none' else (select coalesce(string_agg(version, ',' order by version), 'none') from supabase_migrations.schema_migrations where version like '2026101617%') end"; }
+    meal_policies() { qa "select count(*) from pg_policies where schemaname = 'storage' and policyname like 'staff_admin_%_meal_images'"; }
+    login_role() { q supabase_admin -c "create role $1 login password 'clipw' in role postgres" >/dev/null; }
+
+    # L1: clean push of both files. The CLI (2.122.0) connects as a
+    # cli_login_* role and runs SET SESSION ROLE postgres, as against hosted.
+    storage_stack l1; login_role cli_login_postgres
+    if cli_push "postgresql://cli_login_postgres:clipw@127.0.0.1:$PORT/postgres?sslmode=disable" l1_push \
+       && [ "$(hist)" = "20261016170000,20261016171000" ] && [ "$(qa "select count(*) from public.containment_violations()")" = "0" ] \
+       && [ "$(bucket_state)" = "true:5242880:{image/jpeg,image/png,image/webp}" ] && [ "$(meal_policies)" = "4" ] \
+       && [ "$(qa "select pg_get_userbyid(relowner) from pg_class where oid = 'public.staff_roles'::regclass")" = "postgres" ]; then
+      pass "L1 clean CLI push of both files as cli_login_postgres (CLI switches to postgres): both applied and recorded, 0 violations incl. storage, objects owned by postgres"
+    else fail "L1 clean two-file CLI push: history $(hist)"; tail -8 "$OUT/l1_push.log"; fi
+    # Review 2026-10-26 L4: the post-deployment check verifies the monitor
+    # from pg_proc before trusting it.
+    postdeploy_ok() { python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); c={x["check"]: x["ok"] for x in d["checks"]}; print(d["all_required_checks_ok"], c.get(sys.argv[2]))' "$1" "$2"; }
+    q postgres -At -f "$POSTDEPLOY" > "$OUT/l1_postdeploy.json" 2>&1
+    [ "$(postdeploy_ok "$OUT/l1_postdeploy.json" containment_violations_zero_rows)" = "True True" ] \
+      && pass "post-deployment check after the CLI push: monitor fingerprint, invoker/search_path/owner/grants, both migrations recorded, 0 violations" \
+      || { fail "post-deployment check"; cat "$OUT/l1_postdeploy.json"; }
+    # a weakened monitor (returns nothing) inside a transaction that is rolled back
+    printf '%s\n' "begin;" \
+      "create or replace function public.containment_violations() returns table (category text, object text, problem text) language sql stable set search_path = '' as \$x\$ select null::text, null::text, null::text where false \$x\$;" \
+      "select 'monitor rows: ' || count(*) from public.containment_violations();" "\\pset tuples_only on" "\\i $POSTDEPLOY" "\\i $PREFLIGHT" "rollback;" > "$OUT/l1_weak_monitor.sql"
+    q postgres -At -f "$OUT/l1_weak_monitor.sql" > "$OUT/l1_weak_monitor.out" 2>&1
+    python3 -I - "$OUT/l1_weak_monitor.out" > "$OUT/l1_weak_monitor.res" <<'PY'
+import json, re, sys
+t = open(sys.argv[1]).read()
+docs = [json.loads(m) for m in re.findall(r'^\{.*?^\}', t, re.S | re.M)]
+post = next(d for d in docs if 'phase1c_postdeploy' in json.dumps(d) or any(c['check'] == 'monitor_fingerprint_matches_review' for c in d['checks']))
+pre = next(d for d in docs if any(c['check'].startswith('containment_monitor_absent_or_reviewed') for c in d['checks']))
+pc = {c['check']: c for c in post['checks']}; prc = {c['check']: c for c in pre['checks']}
+print('monitor rows: 0' in t, post['all_required_checks_ok'], pc['monitor_fingerprint_matches_review']['ok'],
+      pc['containment_violations_zero_rows']['detail'], prc['containment_monitor_absent_or_reviewed (L4)']['ok'])
+PY
+    [ "$(cat "$OUT/l1_weak_monitor.res")" = "True False False rows=not run (monitor not verified) False" ] \
+      && [ "$(qa "select md5(prosrc) from pg_proc where oid = 'public.containment_violations()'::regprocedure")" = "$MON_MD5" ] \
+      && pass "a replaced monitor that returns 0 rows is caught independently: post-deployment check and preflight report the fingerprint mismatch and do not trust it (rolled back)" \
+      || { fail "weakened monitor not detected: $(cat "$OUT/l1_weak_monitor.res")"; tail -20 "$OUT/l1_weak_monitor.out"; }
+
+    # L5: a login role the CLI does NOT switch (name not cli_login_*): the
+    # current-user guard refuses; nothing applied, nothing recorded.
+    storage_stack l2; login_role deploy_login; login_role cli_login_postgres
+    cli_push "postgresql://deploy_login:clipw@127.0.0.1:$PORT/postgres?sslmode=disable" l5_push && fail "L5 push as a non-switching login role succeeded"
+    [ "$(hist)" = "none" ] && [ "$(qa "select to_regclass('public.staff_roles') is null")" = "t" ] && grep -q "must run as role postgres" "$OUT/l5_push.log" \
+      && pass "L5 CLI push as a login role that stays itself (deploy_login, member of postgres): refused by the current-user guard; nothing applied or recorded" \
+      || { fail "L5 guard under the CLI"; tail -8 "$OUT/l5_push.log"; }
+    # The CLI creates its history table before the migration runs, so it is
+    # owned by the refused login. Hand it to postgres before dropping the
+    # role (an unknown login role is itself reported as drift).
+    echo "  info: supabase_migrations owner after the refused push: $(qa "select pg_get_userbyid(nspowner) from pg_namespace where nspname = 'supabase_migrations'")"
+    q supabase_admin -c "reassign owned by deploy_login to postgres; drop owned by deploy_login; drop role deploy_login" >/dev/null
+
+    # L2: storage migration fails AFTER the core migration committed. The
+    # cause is injected locally: the bucket limits differ from the evidence.
+    q postgres -c "update storage.buckets set file_size_limit = 1048576 where id = 'meal-images'" >/dev/null
+    URL_L="postgresql://cli_login_postgres:clipw@127.0.0.1:$PORT/postgres?sslmode=disable"
+    cli_push "$URL_L" l2_push && fail "L2 push succeeded although the storage guard must fail"
+    [ "$(hist)" = "20261016170000" ] && [ "$(qa "select count(*) from public.staff_roles where role = 'admin' and is_active")" = "1" ] \
+      && [ "$(meal_policies)" = "0" ] && [ "$(qa "select file_size_limit from storage.buckets where id = 'meal-images'")" = "1048576" ] \
+      && grep -q "unexpected limits" "$OUT/l2_push.log" \
+      && pass "L2 storage failure after core: core stays applied and recorded (20261016170000 only); storage part not applied (no reviewed meal-images policy, bucket untouched); the CLI reports the storage guard" \
+      || { fail "L2 partial stack state: history $(hist)"; tail -8 "$OUT/l2_push.log"; }
+
+    # L3: the runbook's read-only diagnosis on that state.
+    [ "$(qa "select count(*) from public.containment_violations() where category = 'storage'")" -ge 1 ] \
+      && [ "$(qa "select count(*) from public.containment_violations() where category <> 'storage'")" = "0" ] \
+      && [ "$(qa "select count(*) from pg_policies where schemaname = 'public' and tablename = 'orders' and cmd in ('INSERT', 'UPDATE') and policyname <> 'staff_admin_all_orders' and policyname <> 'Service role full access'")" = "0" ] \
+      && pass "L3 diagnosis: history shows core only; containment_violations() reports only storage problems; checkout stays blocked (no client order write policy)" \
+      || { fail "L3 diagnosis output"; qa "select * from public.containment_violations()"; }
+
+    # L4: after the cause is fixed (here: the injected limit reverted), the
+    # same command applies only the pending storage file.
+    q postgres -c "update storage.buckets set file_size_limit = null where id = 'meal-images'" >/dev/null
+    if cli_push "$URL_L" l4_push && [ "$(hist)" = "20261016170000,20261016171000" ] \
+       && grep -q "20261016171000_phase1c_storage_meal_images.sql" "$OUT/l4_push.log" && ! grep -q "Applying migration 20261016170000" "$OUT/l4_push.log" \
+       && [ "$(qa "select count(*) from public.security_audit_log where action = 'staff_role.seed_initial_admin'")" = "1" ] \
+       && [ "$(qa "select count(*) from public.containment_violations()")" = "0" ] && [ "$(meal_policies)" = "4" ]; then
+      pass "L4 rerun after the cause is fixed: only the storage file is applied (core not re-run, one seed record), both recorded, 0 violations"
+    else fail "L4 rerun: history $(hist)"; tail -8 "$OUT/l4_push.log"; fi
+  else
+    echo "  SKIPPED: two-file Supabase CLI deployment cases (PHASE1C_SUPABASE_CLI not set) - NOT verified in this run"
+  fi
 fi
 
 echo

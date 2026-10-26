@@ -33,9 +33,14 @@
 --     payment and partner row is unchanged (checked by the postcondition);
 --   * every Storage object is unchanged (objects uploaded or removed after
 --     deployment stay as they are);
---   * driver statuses: drivers the migration set offline get their legacy
---     value back from the audit log (including NULL) only if they are still
---     'offline'; any other later change is kept;
+--   * driver statuses are NOT restored in general: a driver the migration
+--     set offline gets its legacy value back (including NULL) only when it
+--     never held a driver approval afterwards (then it cannot have gone
+--     online). Every other one keeps its current status and is listed in
+--     <archive>.drivers_status_reconciliation for manual reconciliation
+--     against the audit export. Residual gap: an approval row inserted and
+--     deleted directly (not through assign/revoke_staff_role) while the
+--     driver was offline leaves no record;
 --   * the Phase 1C migration-history rows are deleted (so `db push` can
 --     apply the migrations again). Hosted settings are not touched.
 -- =====================================================================
@@ -220,17 +225,44 @@ $storage_policies$;
 -- PART 2: core (20261016170000_phase1c_security_containment).
 -- =====================================================================
 
--- 1. Driver availability: remove the invariant, restore legacy values.
-drop trigger if exists trg_enforce_driver_availability on public.drivers;
-alter table public.drivers drop constraint if exists drivers_status_availability_check;
-alter table public.drivers alter column status drop not null;
-update public.drivers d
-   set status = x.old_status
+-- 1. Driver availability: remove the invariant. A legacy value is put back
+--    only where the evidence shows the status cannot have changed since the
+--    migration set it offline: the driver never held a driver approval
+--    afterwards (no staff_roles 'driver' row in any state, no audited driver
+--    assign/revoke, no forced-offline record), and without an approval the
+--    availability trigger refuses 'online' to every writer, so the status
+--    stayed 'offline'. Every other normalised driver keeps its current
+--    status and is listed for manual reconciliation against the audit
+--    export (archived as drivers_status_reconciliation, step 7).
+create temp table phase1c_rb_drivers (
+  driver_id uuid primary key, legacy_status text, status_at_rollback text, restored boolean, reason text
+) on commit drop;
+insert into pg_temp.phase1c_rb_drivers
+select x.target_user_id, x.old_status, d.status, e.reason is null,
+       coalesce(e.reason, 'restored: no driver approval since the migration, status still offline')
   from (select distinct on (target_user_id) target_user_id, details ->> 'old_status' as old_status
           from public.security_audit_log
          where action = 'drivers.status.normalised'
          order by target_user_id, id desc) x
- where d.id = x.target_user_id and d.status = 'offline';
+  join public.drivers d on d.id = x.target_user_id
+  cross join lateral (
+    select case
+      when d.status is distinct from 'offline' then 'not restored: status is ' || coalesce(d.status, 'NULL') || ' now'
+      when exists (select 1 from public.staff_roles s where s.user_id = d.id and s.role = 'driver')
+        then 'not restored: held a driver approval after the migration (staff_roles row)'
+      when exists (select 1 from public.security_audit_log l
+                    where l.target_user_id = d.id
+                      and (l.action = 'drivers.status.forced_offline'
+                           or (l.action in ('staff_role.assign', 'staff_role.revoke') and l.details ->> 'role' = 'driver')))
+        then 'not restored: audited driver approval or forced-offline record after the migration'
+    end as reason) e;
+drop trigger if exists trg_enforce_driver_availability on public.drivers;
+alter table public.drivers drop constraint if exists drivers_status_availability_check;
+alter table public.drivers alter column status drop not null;
+update public.drivers d
+   set status = r.legacy_status
+  from pg_temp.phase1c_rb_drivers r
+ where d.id = r.driver_id and r.restored;
 
 -- 2. Drop the policies the migration created on existing tables.
 drop policy if exists "staff_admin_all_orders" on public."orders";
@@ -240,6 +272,7 @@ drop policy if exists "staff_admin_all_collaborators" on public."collaborators";
 drop policy if exists "staff_admin_all_collaborator_orders" on public."collaborator_orders";
 drop policy if exists "staff_admin_all_collaborator_payouts" on public."collaborator_payouts";
 drop policy if exists "staff_admin_all_collaborator_analytics" on public."collaborator_analytics";
+drop policy if exists "drivers_read_assigned_orders" on public."orders";
 drop policy if exists "order_owner_read_status" on public."order_status_updates";
 drop policy if exists "staff_admin_read_status" on public."order_status_updates";
 drop policy if exists "drivers_self_update_profile_location" on public."drivers";
@@ -333,6 +366,9 @@ create policy "kitchen_update_orders" on public."orders" as permissive for updat
 drop policy if exists "staff_read_orders" on public."orders";
 create policy "staff_read_orders" on public."orders" as permissive for select to public
   using (((auth.jwt() ->> 'role'::text) = ANY (ARRAY['kitchen'::text, 'cashier'::text, 'ceo'::text])));
+drop policy if exists "Drivers can view assigned orders" on public."orders";
+create policy "Drivers can view assigned orders" on public."orders" as permissive for select to public
+  using ((driver_id = auth.uid()));
 drop policy if exists "Allow all on daily_closings" on public."daily_closings";
 create policy "Allow all on daily_closings" on public."daily_closings" as permissive for all to public
   using (true);
@@ -440,8 +476,11 @@ begin
     execute format('revoke all on public.%I from public, anon, authenticated, service_role', t);
     execute format('alter table public.%I set schema %I', t, arch);
   end loop;
+  execute format('create table %I.drivers_status_reconciliation as select * from pg_temp.phase1c_rb_drivers', arch);
   insert into pg_temp.phase1c_rb_archive values (arch);
   raise notice 'Phase 1C rollback: kitchens, staff_roles and security_audit_log archived in schema %', arch;
+  raise notice 'Phase 1C rollback: % normalised driver(s) restored to their legacy status, % left for manual reconciliation (%.drivers_status_reconciliation)',
+    (select count(*) from pg_temp.phase1c_rb_drivers where restored), (select count(*) from pg_temp.phase1c_rb_drivers where not restored), arch;
 end
 $archive$;
 drop function public.containment_violations();

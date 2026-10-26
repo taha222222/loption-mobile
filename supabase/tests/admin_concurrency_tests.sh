@@ -114,6 +114,27 @@ for iso in "read committed" "repeatable read"; do
   else fail "auth_user_delete_cascade_vs_update ($iso): committed=$r, active admins: $admins"; sed 's/[[:space:]]*$//; s/^./      &/' "$OUT/cascade_$tag.t1" "$OUT/cascade_$tag.t2"; fi
 done
 
+# Lock order (review 2026-10-26 L5). Without the statement-level lock
+# (trg_staff_roles_serialize) two writers can each hold one admin row and
+# then wait for the other's row in the last-admin check: T1 updates f1 and
+# its AFTER trigger only runs at the end of the statement (after the sleep
+# in the same statement); meanwhile T2 updates a1 and its check waits for
+# f1; T1's check then waits for a1 -> deadlock (40P01). With the lock, T2
+# waits before touching any row and is refused by the invariant (or gets a
+# serialization failure under REPEATABLE READ). Deadlock is a failure here.
+for iso in "read committed" "repeatable read"; do
+  tag="${iso// /_}"; reset
+  r="$(overlap "lock_order_$tag" "$iso" "$(as_service)" \
+       "with u as (update public.staff_roles set is_active = false where user_id = '$F1' and role = 'admin' returning 1) select pg_sleep(2) from u" \
+       "$(as_service)" "update public.staff_roles set is_active = false where user_id = '$A1' and role = 'admin'")"
+  admins="$(active_admins)"
+  if [ "$r" = "1:0" ] && [ "$admins" = "$A1" ] && ! grep -q "deadlock detected" "$OUT/lock_order_$tag.t1" "$OUT/lock_order_$tag.t2" \
+     && grep -q -E "at least one active admin must remain|could not serialize access" "$OUT/lock_order_$tag.t2"; then
+    pass "lock_order ($iso): the second writer waits for the first before locking any row; no deadlock; refused by $(grep -o -E 'at least one active admin must remain|could not serialize access' "$OUT/lock_order_$tag.t2" | head -1); 1 active admin"
+  else fail "lock_order ($iso): committed=$r, active admins: $admins$(grep -q 'deadlock detected' "$OUT/lock_order_$tag.t1" "$OUT/lock_order_$tag.t2" && echo ', DEADLOCK')"
+       sed 's/[[:space:]]*$//; s/^./      &/' "$OUT/lock_order_$tag.t1" "$OUT/lock_order_$tag.t2"; fi
+done
+
 # A failed (rolled back) removal must not block or count: T1 removes f1 and
 # then fails; T2's removal of a1 waits for T1 and then commits; f1 remains.
 for iso in "read committed" "repeatable read"; do

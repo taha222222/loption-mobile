@@ -1,0 +1,28 @@
+# Phase 1C revision 7 — mutation tests
+# Code commit: b48c65c7feed569f3dc3d2dc23de9be8a3d2624e (branch phase-1c-revision-6, PR #3)
+# Source: clean `git archive b48c65c7feed569f3dc3d2dc23de9be8a3d2624e` export in /var/tmp/export7 (no working-tree files)
+# Command: supabase/tests/mutation_tests.sh
+# Exit code: 0. Totals: 6 control checks pass; 9 detections across mutations m1-m7; 0 survived
+# Local disposable Docker containers only. No hosted Supabase, staging or production was contacted.
+# Output below is exact and unedited.
+# ---------------------------------------------------------------------
+### clean export of b48c65c7feed569f3dc3d2dc23de9be8a3d2624e
+Mon Oct 26 12:00:50 UTC 2026
+  -- mutation tests: each weakening must make its test fail
+  pass: m0 control: SQL tests T25a-d, T26a-d, T27 passes on the unmodified migration
+  pass: m0 control: hosted-shape account checks (10) passes on the unmodified migration
+  pass: m0 control: rule reported by the monitor passes on the unmodified migration
+  pass: m0 control: post-deployment monitor fingerprint passes on the unmodified migration
+  pass: m0 control: concurrency lock_order and REPEATABLE READ cases passes on the unmodified migration
+  pass: m0 control: rollback refuses a password in --db-url passes on the unmodified migration
+  pass: m1_driver_read detected: M1: assigned-order read without the active driver role (legacy rule) -> failing: T25b,T25c
+  pass: m2_assign_checks detected: L2: assign_staff_role without the account checks (SQL tests) -> failing: T26a,T26b
+  pass: m2_assign_checks detected: L2: assign_staff_role without the account checks (hosted shape) -> H2 H3 H4 H6 H7 H8 H10 
+  pass: m3_profile_guard detected: L5: profile guard without its UPDATE branch -> failing: T27
+  pass: m4_serialize_lock detected: L5: statement-level advisory lock removed -> lock_order lock_order 
+  pass: m5_last_admin_for_share detected: rev6 M1: last-admin check without FOR SHARE -> direct_update_each_other_repeatable_read delete_vs_update_repeatable_read role_change_vs_delete_repeatable_read fn_revoke_vs_direct_update_repeatable_read 
+  pass: m6_monitor_rules detected: L3: monitor without the rewrite-rule check -> rule not reported
+  pass: m6_monitor_rules detected: L4: the post-deployment check notices the replaced monitor -> monitor fingerprint mismatch
+  pass: m7_rb_password detected: L8: rollback wrapper without the password refusal -> phase1c_rollback: REFUSED: cannot connect read-only (password from PGPASSFILE, ~/.pgpass or PGPASSWORD; the script never prompts)
+  mutation tests: every weakening detected, control clean
+MUTATION_EXIT=0

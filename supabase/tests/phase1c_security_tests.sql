@@ -231,6 +231,26 @@ do $$ declare n_bad int; n_logged int; has_check boolean; begin
     n_bad = 0 and n_logged = 3 and has_check, 'unapproved_not_offline=' || n_bad || ' audited=' || n_logged || ' check=' || has_check);
 end $$;
 
+-- Review 2026-10-26 M1: assigned-order reads require an active driver role.
+-- D-1 is assigned to d1. Each block adds D-2 (assigned to d3) as the owner
+-- and removes it again in the same transaction.
+do $$ declare n_all int; n_d1 int; begin
+  -- d1 has no active driver role yet (every legacy driver is unapproved)
+  insert into public.orders (id, order_number, total, subtotal, delivery_fee, status, payment_method, user_id, driver_id)
+    values ('00000000-0000-0000-0000-00000000d002', 'D-2', 40, 25, 15, 'confirmed', 'cash',
+            '00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000d3');
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000d1');
+  n_all := tests.visible('select 1 from public.orders');
+  n_d1 := tests.visible($q$select 1 from public.orders where order_number = 'D-1'$q$);
+  perform tests.reset();
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000d3');
+  n_all := n_all + greatest(tests.visible($q$select 1 from public.orders where order_number = 'D-2'$q$), 0);
+  perform tests.reset();
+  delete from public.orders where id = '00000000-0000-0000-0000-00000000d002';
+  perform tests.rec('T25b', 'M1-rev', 'unapproved drivers cannot read orders assigned to them (d1: D-1, d3: D-2)',
+    n_all = 0 and n_d1 = 0, format('visible to d1=%s (D-1 %s) + D-2 to d3', n_all, n_d1));
+end $$;
+
 do $$ declare r_admin text; r_on text; r_direct text; r_off text; v_on text; v_off text; begin
   -- admin approves d1, d1 goes online and offline through the function
   perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000a1');
@@ -248,6 +268,21 @@ do $$ declare r_admin text; r_on text; r_direct text; r_off text; v_on text; v_o
   perform tests.rec('T06e', 'positive', 'approved driver can go online/offline via set_driver_availability; direct status write denied',
     r_admin like 'ok:%' and r_on like 'ok:%' and v_on = 'online' and r_direct like 'err:%' and r_off like 'ok:%' and v_off = 'offline',
     'approve ' || r_admin || ' on ' || r_on || '=' || coalesce(v_on, '?') || ' direct ' || r_direct || ' off ' || r_off || '=' || coalesce(v_off, '?'));
+end $$;
+
+do $$ declare n_all int; n_d1 int; n_d2 int; begin
+  -- d1 approved in T06e: reads its own assigned order and nothing else
+  insert into public.orders (id, order_number, total, subtotal, delivery_fee, status, payment_method, user_id, driver_id)
+    values ('00000000-0000-0000-0000-00000000d002', 'D-2', 40, 25, 15, 'confirmed', 'cash',
+            '00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000d3');
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000d1');
+  n_all := tests.visible('select 1 from public.orders');
+  n_d1 := tests.visible($q$select 1 from public.orders where order_number = 'D-1'$q$);
+  n_d2 := tests.visible($q$select 1 from public.orders where order_number = 'D-2'$q$);
+  perform tests.reset();
+  delete from public.orders where id = '00000000-0000-0000-0000-00000000d002';
+  perform tests.rec('T25a', 'M1-rev', 'approved driver reads its assigned order and not another driver''s order',
+    n_all = 1 and n_d1 = 1 and n_d2 = 0, format('visible=%s D-1=%s D-2(d3)=%s', n_all, n_d1, n_d2));
 end $$;
 
 do $$ declare r text; v numeric; begin
@@ -484,6 +519,31 @@ do $$ declare r_on text; r_rev text; r_again text; v text; begin
     format('online %s revoke %s again %s status=%s', r_on, r_rev, r_again, v));
 end $$;
 
+do $$ declare n int; v text; begin
+  -- d1 revoked in T13b: no assigned-order read any more, still offline
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000d1');
+  n := tests.visible('select 1 from public.orders');
+  perform tests.reset();
+  select status into v from public.drivers where id = '00000000-0000-0000-0000-0000000000d1';
+  perform tests.rec('T25c', 'M1-rev', 'a driver whose role was revoked cannot read the previously assigned order; stays offline',
+    n = 0 and v = 'offline', format('visible=%s status=%s', n, v));
+end $$;
+
+do $$ declare n_admin int; n_c2 int; n_c2_d1 int; n_total int; begin
+  -- legitimate access unchanged: the admin reads every order, the customer reads own orders incl. the driver-assigned one
+  select count(*) into n_total from public.orders;
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000a1');
+  n_admin := tests.visible('select 1 from public.orders');
+  perform tests.reset();
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000c2');
+  n_c2 := tests.visible('select 1 from public.orders');
+  n_c2_d1 := tests.visible($q$select 1 from public.orders where order_number = 'D-1'$q$);
+  perform tests.reset();
+  perform tests.rec('T25d', 'positive', 'admin still reads every order; customer still reads own orders incl. one assigned to a driver',
+    n_admin = n_total and n_c2 = (select count(*) from public.orders where user_id = '00000000-0000-0000-0000-0000000000c2') and n_c2_d1 = 1,
+    format('admin=%s/%s c2=%s D-1=%s', n_admin, n_total, n_c2, n_c2_d1));
+end $$;
+
 -- ======================= partner model retired =======================
 do $$ declare r1 text; r2 text; co record; begin
   -- b1 is linked to collaborators row c0b01 (legacy partner)
@@ -673,6 +733,78 @@ do $$ declare r text; nn boolean; begin
   select attnotnull into nn from pg_attribute where attrelid = 'public.drivers'::regclass and attname = 'status';
   perform tests.rec('T24', 'H3', 'drivers.status is NOT NULL and only online/offline (even for service_role)',
     r like 'err:%' and nn, format('set null %s not_null=%s', r, nn));
+end $$;
+
+-- ======================= review 2026-10-26 L2: staff-role grants check the account ==========
+-- (bare image auth.users: confirmed_at only; the hosted-shape states deleted,
+-- banned and anonymous are tested by staff_account_checks_hosted_shape.sql)
+create or replace function tests.grant_leaves_nothing(p_user uuid) returns boolean language plpgsql as $$
+declare n int := 0; m int := 0;
+begin
+  if to_regclass('public.staff_roles') is not null then
+    execute 'select count(*) from public.staff_roles where user_id = $1' into n using p_user;
+    execute $q$select count(*) from public.security_audit_log where action = 'staff_role.assign' and target_user_id = $1$q$ into m using p_user;
+  end if;
+  return n = 0 and m = 0;
+end $$;
+
+do $$ declare r1 text; r2 text; r3 text; has_fn boolean; begin
+  has_fn := to_regprocedure('public.assign_staff_role(uuid,text,uuid)') is not null;
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000a1');
+  r1 := tests.attempt($q$select public.assign_staff_role('00000000-0000-0000-0000-0000000000c3', 'admin')$q$);  -- unconfirmed
+  r2 := tests.attempt($q$select public.assign_staff_role('00000000-0000-0000-0000-0000000000e1', 'admin')$q$);  -- customer + is_admin
+  r3 := tests.attempt($q$select public.assign_staff_role('00000000-0000-0000-0000-00000000dead', 'support')$q$);  -- no account
+  perform tests.reset();
+  perform tests.rec('T26a', 'L2-rev', 'admin cannot grant admin to an unconfirmed account; no role row, no assign audit record',
+    has_fn and r1 = 'err:22023' and tests.grant_leaves_nothing('00000000-0000-0000-0000-0000000000c3'), r1);
+  perform tests.rec('T26b', 'L2-rev', 'admin cannot grant admin to the flagged role=customer/is_admin account; nothing written',
+    has_fn and r2 = 'err:22023' and tests.grant_leaves_nothing('00000000-0000-0000-0000-0000000000e1'), r2);
+  perform tests.rec('T26c', 'L2-rev', 'admin cannot grant any staff role to an account that does not exist; nothing written',
+    has_fn and r3 = 'err:22023' and tests.grant_leaves_nothing('00000000-0000-0000-0000-00000000dead'), r3);
+end $$;
+
+do $$ declare r1 text; r2 text; n_audit int := 0; act boolean; begin
+  -- eligible: confirmed customer account without the flagged pattern
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000a1');
+  r1 := tests.attempt($q$select public.assign_staff_role('00000000-0000-0000-0000-0000000000c1', 'admin')$q$);
+  perform tests.reset();
+  if to_regclass('public.staff_roles') is not null then
+    execute $q$select bool_or(is_active) from public.staff_roles where user_id = '00000000-0000-0000-0000-0000000000c1' and role = 'admin'$q$ into act;
+    execute $q$select count(*) from public.security_audit_log where action = 'staff_role.assign'
+                and target_user_id = '00000000-0000-0000-0000-0000000000c1'$q$ into n_audit;
+  end if;
+  perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000a1');
+  r2 := tests.attempt($q$select public.revoke_staff_role('00000000-0000-0000-0000-0000000000c1', 'admin')$q$);
+  perform tests.reset();
+  perform tests.rec('T26d', 'positive', 'admin can grant admin to an eligible confirmed account (role active, assign audited) and revoke it again',
+    r1 like 'ok:%' and act and n_audit = 1 and r2 like 'ok:%', format('grant %s active=%s audit=%s revoke %s', r1, act, n_audit, r2));
+end $$;
+
+-- ======================= review 2026-10-26 L5: profile guard without the column grant ==========
+-- The column-level grant hides the trigger's UPDATE branch. Grant UPDATE on
+-- the protected columns for the duration of one subtransaction, attempt the
+-- changes, then raise to roll the grant (and anything else) back, so the
+-- privileges are restored even when an assertion fails.
+do $$ declare r1 text; r2 text; r3 text; r_ok text; v record; restored boolean; begin
+  begin
+    grant update (role, is_admin, user_id) on public.user_profiles to authenticated;
+    perform tests.act('authenticated', '00000000-0000-0000-0000-0000000000c1');
+    r1 := tests.attempt($q$update public.user_profiles set is_admin = true where user_id = '00000000-0000-0000-0000-0000000000c1'$q$);
+    r2 := tests.attempt($q$update public.user_profiles set role = 'admin' where user_id = '00000000-0000-0000-0000-0000000000c1'$q$);
+    r3 := tests.attempt($q$update public.user_profiles set user_id = '00000000-0000-0000-0000-0000000000c3' where user_id = '00000000-0000-0000-0000-0000000000c1'$q$);
+    r_ok := tests.attempt($q$update public.user_profiles set full_name = 'Customer A2' where user_id = '00000000-0000-0000-0000-0000000000c1'$q$);
+    perform tests.reset();
+    select role, is_admin into v from public.user_profiles where user_id = '00000000-0000-0000-0000-0000000000c1';
+    raise exception using errcode = 'P0099', message = 'roll back the temporary grant';
+  exception when sqlstate 'P0099' then
+    null;
+  end;
+  restored := not has_column_privilege('authenticated', 'public.user_profiles', 'is_admin', 'UPDATE')
+          and not has_column_privilege('authenticated', 'public.user_profiles', 'role', 'UPDATE')
+          and (select full_name from public.user_profiles where user_id = '00000000-0000-0000-0000-0000000000c1') = 'Customer A';
+  perform tests.rec('T27', 'L5-rev', 'with UPDATE(role, is_admin, user_id) granted, the trigger alone still refuses a client changing them (own row writable); grant rolled back',
+    r1 = 'err:42501' and r2 = 'err:42501' and r3 = 'err:42501' and r_ok = 'ok:1' and v.role = 'customer' and not v.is_admin and restored,
+    format('is_admin %s role %s user_id %s full_name %s -> %s/%s restored=%s', r1, r2, r3, r_ok, v.role, v.is_admin, restored));
 end $$;
 
 \pset footer off

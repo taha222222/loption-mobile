@@ -10,7 +10,7 @@ The inputs come from scenario S of `supabase/tests/run_phase1c.sh`: BEFORE is ba
 
 ## 1. Row-level security policies (public schema)
 
-Before: 56 policies. After: 33. Removed: 38. Added: 15. Unchanged: 18.
+Before: 56 policies. After: 33. Removed: 39. Added: 16. Unchanged: 17.
 
 ### Removed
 | Table | Policy | Cmd | Roles | USING | WITH CHECK |
@@ -36,6 +36,7 @@ Before: 56 policies. After: 33. Removed: 38. Added: 15. Unchanged: 18.
 | orders | Admins can view all orders | ALL | public | `(auth.uid() IN ( SELECT user_profiles.user_id FROM user_profiles WHERE (user_profiles.is_admin = true)))` | `-` |
 | orders | Allow public insert orders | INSERT | public | `-` | `true` |
 | orders | Allow public update orders | UPDATE | public | `true` | `-` |
+| orders | Drivers can view assigned orders | SELECT | public | `(driver_id = auth.uid())` | `-` |
 | orders | Staff can update order status | UPDATE | public | `(auth.role() = ANY (ARRAY['kitchen'::text, 'cashier'::text, 'ceo'::text]))` | `-` |
 | orders | Users can insert orders | INSERT | public | `-` | `(auth.uid() = user_id)` |
 | orders | Users can insert their own orders | INSERT | public | `-` | `(auth.uid() = user_id)` |
@@ -68,6 +69,7 @@ Before: 56 policies. After: 33. Removed: 38. Added: 15. Unchanged: 18.
 | order_items | staff_admin_all_order_items | ALL | authenticated | `( SELECT has_staff_role('admin'::text) AS has_staff_role)` | `( SELECT has_staff_role('admin'::text) AS has_staff_role)` |
 | order_status_updates | order_owner_read_status | SELECT | authenticated | `(EXISTS ( SELECT 1 FROM orders o WHERE ((o.id = order_status_updates.order_id) AND (o.user_id = ( SELECT auth.uid() AS uid)))))` | `-` |
 | order_status_updates | staff_admin_read_status | SELECT | authenticated | `( SELECT has_staff_role('admin'::text) AS has_staff_role)` | `-` |
+| orders | drivers_read_assigned_orders | SELECT | authenticated | `((driver_id = ( SELECT auth.uid() AS uid)) AND ( SELECT has_staff_role('driver'::text) AS has_staff_role))` | `-` |
 | orders | staff_admin_all_orders | ALL | authenticated | `( SELECT has_staff_role('admin'::text) AS has_staff_role)` | `( SELECT has_staff_role('admin'::text) AS has_staff_role)` |
 | security_audit_log | security_audit_log_admin_read | SELECT | authenticated | `( SELECT has_staff_role('admin'::text) AS has_staff_role)` | `-` |
 | staff_roles | staff_roles_admin_read | SELECT | authenticated | `( SELECT has_staff_role('admin'::text) AS has_staff_role)` | `-` |
@@ -85,7 +87,6 @@ Before: 56 policies. After: 33. Removed: 38. Added: 15. Unchanged: 18.
 | meals | Enable read access for all users | SELECT | `true` | `-` |
 | order_items | Service role full access order_items | ALL | `(auth.role() = 'service_role'::text)` | `-` |
 | order_items | Users can view their own order items | SELECT | `(EXISTS ( SELECT 1 FROM orders WHERE ((orders.id = order_items.order_id) AND (orders.user_id = auth.uid()))))` | `-` |
-| orders | Drivers can view assigned orders | SELECT | `(driver_id = auth.uid())` | `-` |
 | orders | Service role full access | ALL | `(auth.role() = 'service_role'::text)` | `-` |
 | orders | Users can view their own orders | SELECT | `(auth.uid() = user_id)` | `-` |
 | user_profiles | Service role has full access | ALL | `(auth.role() = 'service_role'::text)` | `-` |

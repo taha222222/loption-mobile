@@ -129,6 +129,7 @@ returns table (kind text, name text, descr text) language sql stable set search_
     ('order_items', 'staff_admin_all_order_items'),
     ('order_status_updates', 'order_owner_read_status'),
     ('order_status_updates', 'staff_admin_read_status'),
+    ('orders', 'drivers_read_assigned_orders'),
     ('orders', 'staff_admin_all_orders')),
   own_functions(n) as (values ('containment_violations'), ('has_staff_role'), ('assign_staff_role'),
     ('revoke_staff_role'), ('set_driver_availability'), ('enforce_driver_availability'),
@@ -167,6 +168,10 @@ returns table (kind text, name text, descr text) language sql stable set search_
   union all
   select 'trigger', o.t || '.' || g.tgname, pg_get_triggerdef(g.oid) || '|enabled=' || g.tgenabled::text
     from own_triggers o join pg_trigger g on g.tgrelid = to_regclass('public.' || o.t) and g.tgname = o.n
+  union all
+  select 'rule', r.t || '.' || w.rulename, pg_get_ruledef(w.oid)
+    from rel r join pg_rewrite w on w.ev_class = r.oid
+   where w.rulename <> '_RETURN'
   union all
   select 'policy', p.tablename || '.' || p.policyname,
          p.permissive || '|' || p.roles::text || '|' || p.cmd || '|' || coalesce(p.qual, '-') || '|' || coalesce(p.with_check, '-')
@@ -445,7 +450,7 @@ declare
     'order_items|staff_admin_all_order_items|PERMISSIVE|{authenticated}|ALL|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)',
     'order_status_updates|order_owner_read_status|PERMISSIVE|{authenticated}|SELECT|(EXISTS ( SELECT 1 FROM public.orders o WHERE ((o.id = order_status_updates.order_id) AND (o.user_id = ( SELECT auth.uid() AS uid)))))|-',
     'order_status_updates|staff_admin_read_status|PERMISSIVE|{authenticated}|SELECT|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|-',
-    'orders|Drivers can view assigned orders|PERMISSIVE|{public}|SELECT|(driver_id = auth.uid())|-',
+    'orders|drivers_read_assigned_orders|PERMISSIVE|{authenticated}|SELECT|((driver_id = ( SELECT auth.uid() AS uid)) AND ( SELECT public.has_staff_role(''driver''::text) AS has_staff_role))|-',
     'orders|Service role full access|PERMISSIVE|{public}|ALL|(auth.role() = ''service_role''::text)|-',
     'orders|Users can view their own orders|PERMISSIVE|{public}|SELECT|(auth.uid() = user_id)|-',
     'orders|staff_admin_all_orders|PERMISSIVE|{authenticated}|ALL|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)',
@@ -471,7 +476,7 @@ declare
   --   signature|security definer|configuration|md5(body)
   -- so a CREATE OR REPLACE that weakens one is reported.
   reviewed_functions text[] := array[
-    'public.assign_staff_role(uuid,text,uuid)|true|search_path=""|42c8afcf7cff114d86aa6f105724c9a0',
+    'public.assign_staff_role(uuid,text,uuid)|true|search_path=""|554f8a3f6bba9e6a3bc9c4ced7938cca',
     'public.enforce_driver_availability()|true|search_path=""|da0e53b932e051e9a371cb9fb2e64ce0',
     'public.enforce_profile_privilege_guard()|false|search_path=""|777cbb1b279b251dbb5380675638c1eb',
     'public.has_staff_role(text)|true|search_path=""|f44b74472038a40e54a5875a1ad1a835',
@@ -646,6 +651,13 @@ begin
     join pg_proc p on replace(p.oid::regprocedure::text, ' ', '') = split_part(r, '|', 1)
    where (replace(p.oid::regprocedure::text, ' ', '') || '|' || p.prosecdef::text || '|'
           || coalesce(array_to_string(p.proconfig, ','), '-') || '|' || md5(p.prosrc)) <> r;
+  -- Rewrite rules (review 2026-10-26 L3): no table in public has a reviewed
+  -- rule. A rule can silently discard or redirect writes (for example
+  -- DO INSTEAD NOTHING on security_audit_log), which no policy, grant or
+  -- trigger check would show. A view's own _RETURN rule is not a rule here.
+  return query select 'containment', 'rule ' || c.relname || '.' || w.rulename, 'unexpected rewrite rule'
+    from pg_rewrite w join pg_class c on c.oid = w.ev_class
+   where c.relnamespace = 'public'::regnamespace and w.rulename <> '_RETURN';
   -- Guard triggers and constraints
   return query select 'containment', 'trigger ' || x.t || '.' || x.g, 'required guard trigger missing or disabled'
     from (values ('user_profiles','trg_enforce_profile_privilege_guard'),
@@ -801,6 +813,7 @@ declare
     'order_items.staff_admin_all_order_items',
     'order_status_updates.order_owner_read_status',
     'order_status_updates.staff_admin_read_status',
+    'orders.drivers_read_assigned_orders',
     'orders.staff_admin_all_orders'
   ];
   v record;
@@ -1152,6 +1165,7 @@ language plpgsql security definer set search_path = ''
 as $$
 declare
   v_id uuid;
+  v_user jsonb;
 begin
   -- Serialize all staff-role changes (same lock as trg_staff_roles_serialize).
   -- The authority check is a locking read after the lock: a caller whose
@@ -1167,8 +1181,41 @@ begin
   if p_role is null or p_role not in ('admin','support','cashier','kitchen_staff','driver') then
     raise exception 'unknown staff role %', p_role using errcode = '22023';
   end if;
-  if not exists (select 1 from auth.users u where u.id = p_user) then
+  -- Account checks (review 2026-10-26 L2). Optional Auth columns are read
+  -- through jsonb because they differ between Auth versions: a state the
+  -- schema cannot represent (no deleted_at, banned_until or is_anonymous
+  -- column) cannot apply. Any refusal raises before the role row and the
+  -- audit row are written, so nothing of the attempt is committed.
+  select to_jsonb(u) into v_user from auth.users u where u.id = p_user;
+  if v_user is null then
     raise exception 'user % does not exist', p_user using errcode = '22023';
+  end if;
+  if (v_user ->> 'deleted_at') is not null then
+    raise exception 'user % is deleted', p_user using errcode = '22023';
+  end if;
+  if (v_user ->> 'banned_until') is not null and (v_user ->> 'banned_until')::timestamptz > now() then
+    raise exception 'user % is banned', p_user using errcode = '22023';
+  end if;
+  if coalesce((v_user ->> 'is_anonymous')::boolean, false) then
+    raise exception 'user % is an anonymous account', p_user using errcode = '22023';
+  end if;
+  -- The admin role needs exactly the account checks of the initial admin
+  -- (section 0b): a confirmed e-mail and not the illegitimate profile
+  -- pattern. Without a confirmation column the check cannot be
+  -- established, so the grant is refused (fail closed).
+  if p_role = 'admin' then
+    if not (v_user ? 'email_confirmed_at' or v_user ? 'confirmed_at') then
+      raise exception 'cannot verify that user % is confirmed (auth.users has no confirmation column); admin not granted', p_user
+        using errcode = '22023';
+    end if;
+    if coalesce(v_user ->> 'email_confirmed_at', v_user ->> 'confirmed_at') is null then
+      raise exception 'user % has not confirmed its e-mail; admin not granted', p_user using errcode = '22023';
+    end if;
+    if exists (select 1 from public.user_profiles pr
+                where pr.user_id = p_user and pr.role = 'customer' and pr.is_admin is true) then
+      raise exception 'user % has the illegitimate profile pattern role=customer, is_admin=true; admin not granted', p_user
+        using errcode = '22023';
+    end if;
   end if;
   if p_kitchen is not null and not exists (select 1 from public.kitchens k where k.id = p_kitchen and k.is_active) then
     raise exception 'kitchen % does not exist or is not active', p_kitchen using errcode = '22023';
@@ -1381,8 +1428,17 @@ drop policy if exists "Staff can update order status"          on public.orders;
 drop policy if exists cashier_update_orders                    on public.orders;      -- jwt role cashier/ceo
 drop policy if exists kitchen_update_orders                    on public.orders;      -- jwt role kitchen/ceo
 drop policy if exists staff_read_orders                        on public.orders;      -- jwt role kitchen/cashier/ceo
--- Remaining on orders: owner SELECT, assigned-driver SELECT, service_role
--- ALL, staff admin ALL. On order_items: owner SELECT, service_role ALL,
+-- Review 2026-10-26 M1: the legacy assigned-driver read ("driver_id =
+-- auth.uid()", any role) let unapproved and revoked drivers keep reading
+-- every order ever assigned to them (customer name, address, totals).
+-- Replaced: an assigned order is readable only while the caller holds an
+-- active 'driver' staff role. No other order becomes visible.
+drop policy if exists "Drivers can view assigned orders"       on public.orders;      -- SELECT own assigned orders without approval
+drop policy if exists drivers_read_assigned_orders             on public.orders;
+create policy drivers_read_assigned_orders on public.orders for select to authenticated
+  using (driver_id = (select auth.uid()) and (select public.has_staff_role('driver')));
+-- Remaining on orders: owner SELECT, approved assigned-driver SELECT,
+-- service_role ALL, staff admin ALL. On order_items: owner SELECT, service_role ALL,
 -- staff admin ALL.
 
 -- ---------------------------------------------------------------------
