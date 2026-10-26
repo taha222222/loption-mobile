@@ -29,4 +29,12 @@ export const shadows = StyleSheet.create({
     shadowRadius: 24,
     elevation: 12,
   },
+  // Soft indigo-tinted lift used by v2 cards and the pill tab bar
+  soft: {
+    shadowColor: '#2A2470',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 3,
+  },
 });

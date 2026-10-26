@@ -8,12 +8,11 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { theme } from '../../src/theme';
-import { Button } from '../../src/components/ui/Button';
 import { QuantitySelector } from '../../src/components/ui/QuantitySelector';
+import { BrandButton, EmptyState, Screen, SurfaceCard, formatNumber, formatPrice } from '../../src/components/v2';
 import { useCartStore } from '../../src/stores/cartStore';
 
 export default function CartScreen() {
@@ -36,65 +35,74 @@ export default function CartScreen() {
 
   const handleCheckout = () => {
     if (items.length === 0) {
-      Alert.alert('Cart Empty', 'Please add items to your cart');
+      Alert.alert('Panier vide', 'Ajoutez des repas à votre panier');
       return;
     }
     router.push('/(app)/checkout');
   };
 
+  const header = (
+    <View style={styles.header}>
+      <TouchableOpacity onPress={() => router.back()} style={styles.iconButton} accessibilityLabel="Retour">
+        <Ionicons name="arrow-back" size={22} color={theme.colors.ink} />
+      </TouchableOpacity>
+      <Text style={styles.headerTitle} numberOfLines={1}>
+        {items.length === 0 ? 'Panier' : `Panier (${getItemCount()})`}
+      </Text>
+      {items.length === 0 ? (
+        <View style={styles.iconButtonSpacer} />
+      ) : (
+        <TouchableOpacity
+          style={styles.clearButton}
+          onPress={() => Alert.alert(
+            'Vider le panier',
+            'Voulez-vous vraiment vider votre panier ?',
+            [
+              { text: 'Annuler', style: 'cancel' },
+              { text: 'Vider', style: 'destructive', onPress: () => useCartStore.getState().clearCart() },
+            ]
+          )}
+        >
+          <Text style={styles.clearText}>Vider</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
   if (items.length === 0) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color={theme.colors.textDark} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Cart</Text>
-          <View style={{ width: 24 }} />
-        </View>
-        <View style={styles.emptyContainer}>
-          <Ionicons name="cart-outline" size={80} color={theme.colors.textLight} />
-          <Text style={styles.emptyTitle}>Your cart is empty</Text>
-          <Text style={styles.emptyText}>Add healthy meals to get started</Text>
-          <Button
-            title="Browse Menu"
-            variant="gold"
-            onPress={() => router.push('/(app)/menu')}
-            style={styles.browseButton}
-          />
-        </View>
-      </SafeAreaView>
+      <Screen>
+        {header}
+        <EmptyState
+          icon="cart-outline"
+          title="Votre panier est vide"
+          message="Ajoutez des repas sains pour commencer"
+          actionLabel="Voir le menu"
+          onAction={() => router.push('/(app)/menu')}
+        />
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={theme.colors.textDark} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Cart ({getItemCount()})</Text>
-        <TouchableOpacity onPress={() => Alert.alert(
-          'Clear Cart',
-          'Are you sure you want to clear your cart?',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Clear', style: 'destructive', onPress: () => useCartStore.getState().clearCart() },
-          ]
-        )}>
-          <Text style={styles.clearText}>Clear</Text>
-        </TouchableOpacity>
-      </View>
+    <Screen>
+      {header}
 
-      <ScrollView showsVerticalScrollIndicator={false} style={styles.content}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        style={styles.content}
+        contentContainerStyle={styles.contentInner}
+      >
         {items.map((item) => (
-          <View key={item.id} style={styles.cartItem}>
-            <View style={styles.itemInfo}>
-              <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemMacros}>
-                {item.calories} cal • {item.protein}g protein
-              </Text>
-              <Text style={styles.itemPrice}>{item.price} MAD</Text>
+          <SurfaceCard key={item.id} style={styles.cartItem}>
+            <View style={styles.itemTop}>
+              <View style={styles.itemInfo}>
+                <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
+                <Text style={styles.itemMacros}>
+                  {`${formatNumber(item.calories)}\u00A0kcal · ${item.protein}\u00A0g protéines`}
+                </Text>
+              </View>
+              <Text style={styles.itemPrice}>{formatPrice(item.price)}</Text>
             </View>
 
             <View style={styles.itemActions}>
@@ -106,159 +114,160 @@ export default function CartScreen() {
               <TouchableOpacity
                 onPress={() => removeItem(item.id)}
                 style={styles.removeButton}
+                accessibilityLabel="Retirer"
               >
-                <Ionicons name="trash-outline" size={20} color={theme.colors.error} />
+                <Ionicons name="trash-outline" size={18} color={theme.colors.error} />
               </TouchableOpacity>
             </View>
 
             <TextInput
               style={styles.notesInput}
-              placeholder="Special instructions..."
-              placeholderTextColor={theme.colors.textLight}
+              placeholder="Instructions spéciales..."
+              placeholderTextColor={theme.colors.inkFaint}
               value={notes[item.id] || ''}
               onChangeText={(text) => handleUpdateNotes(item.id, text)}
             />
-          </View>
+          </SurfaceCard>
         ))}
 
-        <View style={styles.summary}>
-          <Text style={styles.summaryTitle}>Order Summary</Text>
+        <SurfaceCard style={styles.summary}>
+          <Text style={styles.summaryTitle}>Récapitulatif</Text>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Subtotal</Text>
-            <Text style={styles.summaryValue}>{getTotalPrice()} MAD</Text>
+            <Text style={styles.summaryLabel}>Sous-total</Text>
+            <Text style={styles.summaryValue}>{formatPrice(getTotalPrice())}</Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Delivery Fee</Text>
-            <Text style={styles.summaryValue}>15 MAD</Text>
+            <Text style={styles.summaryLabel}>Livraison</Text>
+            <Text style={styles.summaryValue}>{formatPrice(15)}</Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Total Calories</Text>
-            <Text style={styles.summaryValue}>{getTotalCalories()} cal</Text>
+            <Text style={styles.summaryLabel}>Calories totales</Text>
+            <Text style={styles.summaryValue}>{`${formatNumber(getTotalCalories())}\u00A0kcal`}</Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Total Protein</Text>
-            <Text style={styles.summaryValue}>{getTotalProtein()} g</Text>
+            <Text style={styles.summaryLabel}>Protéines totales</Text>
+            <Text style={styles.summaryValue}>{`${getTotalProtein()}\u00A0g`}</Text>
           </View>
           <View style={[styles.summaryRow, styles.totalRow]}>
             <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalValue}>{getTotalPrice() + 15} MAD</Text>
+            <Text style={styles.totalValue}>{formatPrice(getTotalPrice() + 15)}</Text>
           </View>
-        </View>
+        </SurfaceCard>
       </ScrollView>
 
       <View style={styles.footer}>
-        <Button
-          title={`Checkout • ${getTotalPrice() + 15} MAD`}
-          variant="gold"
+        <BrandButton
+          title={`Passer la commande · ${formatPrice(getTotalPrice() + 15)}`}
           onPress={handleCheckout}
-          size="lg"
         />
       </View>
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: theme.spacing.xl,
-    paddingVertical: theme.spacing.md,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.lg,
+    gap: theme.spacing.md,
+  },
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.hairline,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconButtonSpacer: {
+    width: 44,
   },
   headerTitle: {
-    fontSize: theme.typography.sizes.lg,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textDark,
+    flex: 1,
+    textAlign: 'center',
+    fontSize: theme.typography.sizes.xl,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.ink,
+  },
+  clearButton: {
+    height: 44,
+    justifyContent: 'center',
+    paddingHorizontal: theme.spacing.sm,
   },
   clearText: {
     fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.bold,
     color: theme.colors.error,
   },
   content: {
     flex: 1,
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  contentInner: {
     paddingHorizontal: theme.spacing.xl,
-  },
-  emptyTitle: {
-    fontSize: theme.typography.sizes.xl,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textDark,
-    marginTop: theme.spacing.lg,
-  },
-  emptyText: {
-    fontSize: theme.typography.sizes.md,
-    color: theme.colors.textLight,
-    marginTop: theme.spacing.sm,
-    textAlign: 'center',
-  },
-  browseButton: {
-    marginTop: theme.spacing.xl,
+    paddingBottom: theme.spacing.lg,
+    gap: theme.spacing.md,
   },
   cartItem: {
-    backgroundColor: theme.colors.card,
-    marginHorizontal: theme.spacing.xl,
-    marginBottom: theme.spacing.md,
-    padding: theme.spacing.lg,
-    borderRadius: theme.spacing.lg,
-    ...theme.shadows.sm,
+    gap: theme.spacing.md,
+  },
+  itemTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: theme.spacing.md,
   },
   itemInfo: {
     flex: 1,
-    marginBottom: theme.spacing.md,
   },
   itemName: {
     fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textDark,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.ink,
   },
   itemMacros: {
-    fontSize: theme.typography.sizes.sm,
-    color: theme.colors.textLight,
-    marginTop: 2,
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.inkMuted,
+    marginTop: 4,
   },
   itemPrice: {
     fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.gold,
-    marginTop: 4,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.brand,
   },
   itemActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: theme.spacing.md,
   },
   removeButton: {
-    padding: theme.spacing.sm,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FDECEC',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   notesInput: {
-    backgroundColor: theme.colors.backgroundDark,
-    borderRadius: theme.spacing.md,
-    padding: theme.spacing.sm,
+    backgroundColor: theme.colors.canvas,
+    borderRadius: theme.radii.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm + 2,
     fontSize: theme.typography.sizes.sm,
-    color: theme.colors.textDark,
-    marginTop: theme.spacing.sm,
+    color: theme.colors.ink,
   },
   summary: {
-    backgroundColor: theme.colors.backgroundDark,
-    margin: theme.spacing.xl,
-    padding: theme.spacing.lg,
-    borderRadius: theme.spacing.lg,
+    marginTop: theme.spacing.xs,
   },
   summaryTitle: {
     fontSize: theme.typography.sizes.lg,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textDark,
-    marginBottom: theme.spacing.md,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.ink,
+    marginBottom: theme.spacing.sm,
   },
   summaryRow: {
     flexDirection: 'row',
@@ -267,31 +276,32 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: theme.typography.sizes.sm,
-    color: theme.colors.textLight,
+    color: theme.colors.inkMuted,
   },
   summaryValue: {
     fontSize: theme.typography.sizes.sm,
-    color: theme.colors.textDark,
+    fontWeight: theme.typography.weights.semibold,
+    color: theme.colors.ink,
   },
   totalRow: {
     borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
+    borderTopColor: theme.colors.hairline,
     marginTop: theme.spacing.sm,
     paddingTop: theme.spacing.md,
   },
   totalLabel: {
     fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textDark,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.ink,
   },
   totalValue: {
     fontSize: theme.typography.sizes.lg,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.gold,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.brand,
   },
   footer: {
-    padding: theme.spacing.xl,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
+    paddingHorizontal: theme.spacing.xl,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.xs,
   },
 });
