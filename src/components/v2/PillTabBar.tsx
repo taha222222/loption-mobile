@@ -19,7 +19,7 @@ export interface PillTab {
 // label. It is rendered in normal layout flow (not absolutely positioned) so it
 // never covers screen content.
 export const createPillTabBar = (tabs: PillTab[]) =>
-  function PillTabBar({ state, navigation }: TabBarProps) {
+  function PillTabBar({ state, emitter, navigateToTab }: TabBarProps) {
     const insets = useSafeAreaInsets();
     const activeName = state.routes[state.index]?.name;
 
@@ -32,13 +32,13 @@ export const createPillTabBar = (tabs: PillTab[]) =>
             const focused = activeName === tab.name;
 
             const onPress = () => {
-              const event = navigation.emit({
+              const event = emitter.emit({
                 type: 'tabPress',
                 target: route.key,
                 canPreventDefault: true,
               });
               if (!focused && !event.defaultPrevented) {
-                navigation.navigate(route.name, route.params);
+                navigateToTab(route.key);
               }
             };
 

@@ -7,17 +7,12 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "scheme": "loption",
-    "splash": {
-      "resizeMode": "contain",
-      "backgroundColor": "#111827"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.loption.app",
-      "jsEngine": "jsc",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "L'OPTION needs your location to track deliveries",
         "ITSAppUsesNonExemptEncryption": false
@@ -29,7 +24,6 @@
         "backgroundColor": "#111827"
       },
       "package": "com.loption.app",
-      "jsEngine": "jsc",
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
@@ -52,12 +46,19 @@
         }
       ],
       "expo-localization",
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#111827",
+          "resizeMode": "contain"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
     },
-    "newArchEnabled": true,
     "extra": {
       "router": {},
       "eas": {

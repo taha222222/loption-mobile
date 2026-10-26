@@ -26,7 +26,7 @@ export default function AdminLayout() {
         options={{
           title: 'Overview',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="stats-chart-outline" size={size} color={color} />
+            <Ionicons name="stats-chart-outline" size={size} color={color as string} />
           ),
         }}
       />
@@ -35,7 +35,7 @@ export default function AdminLayout() {
         options={{
           title: 'Orders',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="list-outline" size={size} color={color} />
+            <Ionicons name="list-outline" size={size} color={color as string} />
           ),
         }}
       />
@@ -44,7 +44,7 @@ export default function AdminLayout() {
         options={{
           title: 'Drivers',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="people-outline" size={size} color={color} />
+            <Ionicons name="people-outline" size={size} color={color as string} />
           ),
         }}
       />
@@ -53,7 +53,7 @@ export default function AdminLayout() {
         options={{
           title: 'Partners',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="business-outline" size={size} color={color} />
+            <Ionicons name="business-outline" size={size} color={color as string} />
           ),
         }}
       />
@@ -62,7 +62,7 @@ export default function AdminLayout() {
         options={{
           title: 'Meals',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="restaurant-outline" size={size} color={color} />
+            <Ionicons name="restaurant-outline" size={size} color={color as string} />
           ),
         }}
       />
@@ -71,7 +71,7 @@ export default function AdminLayout() {
         options={{
           title: 'Earnings',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="wallet-outline" size={size} color={color} />
+            <Ionicons name="wallet-outline" size={size} color={color as string} />
           ),
         }}
       />
