@@ -186,7 +186,8 @@ RLS still applies on top of these grants. Where `authenticated` keeps a write gr
 | `set_driver_availability(boolean)` | t | (absent) → search_path="" | - → f | - → t |
 | `staff_roles_driver_offline()` | t | (absent) → search_path="" | - → f | - → f |
 | `staff_roles_no_truncate()` | f | (absent) → search_path="" | - → f | - → f |
-| `staff_roles_require_admin()` | f | (absent) → search_path="" | - → f | - → f |
+| `staff_roles_require_admin()` | t | (absent) → search_path="" | - → f | - → f |
+| `staff_roles_serialize()` | f | (absent) → search_path="" | - → f | - → f |
 | `update_collaborator_analytics()` | f | - → - | t → f | t → f |
 
 ## 5. Triggers (public)
@@ -206,6 +207,7 @@ security_audit_log | security_audit_log_no_truncate | CREATE TRIGGER security_au
 staff_roles | trg_staff_roles_driver_offline | CREATE TRIGGER trg_staff_roles_driver_offline AFTER DELETE OR UPDATE ON public.staff_roles FOR EACH ROW EXECUTE FUNCTION staff_roles_driver_offline()
 staff_roles | trg_staff_roles_no_truncate | CREATE TRIGGER trg_staff_roles_no_truncate BEFORE TRUNCATE ON public.staff_roles FOR EACH STATEMENT EXECUTE FUNCTION staff_roles_no_truncate()
 staff_roles | trg_staff_roles_require_admin | CREATE TRIGGER trg_staff_roles_require_admin AFTER DELETE OR UPDATE ON public.staff_roles FOR EACH ROW EXECUTE FUNCTION staff_roles_require_admin()
+staff_roles | trg_staff_roles_serialize | CREATE TRIGGER trg_staff_roles_serialize BEFORE INSERT OR DELETE OR UPDATE ON public.staff_roles FOR EACH STATEMENT EXECUTE FUNCTION staff_roles_serialize()
 user_profiles | trg_enforce_profile_privilege_guard | CREATE TRIGGER trg_enforce_profile_privilege_guard BEFORE INSERT OR UPDATE ON public.user_profiles FOR EACH ROW EXECUTE FUNCTION enforce_profile_privilege_guard()
 ```
 

@@ -1,6 +1,6 @@
-# L'OPTION V1 — Phase 1C (amended, revision 5): Database Security Containment
+# L'OPTION V1 — Phase 1C (amended, revision 6): Database Security Containment
 
-**Status: implementation package for CTO review. CTO verdict of 2026-10-25: NOT READY FOR STAGING.** Revision 5 implements the remediation the CTO required after the adversarial self-review; it does not change that verdict by itself.
+**Status: implementation package for CTO review. CTO verdict of 2026-10-25: NOT READY FOR STAGING.** Revision 6 fixes the three medium findings of the 2026-10-25 review of revision 5 (section 0e), as assigned by the CTO on 2026-10-26. It does not change that verdict by itself; deployment stays blocked pending separate approval.
 - **Not applied** to any remote database. Nothing was sent to Supabase.
 - **No production change.**
 - **No pricing or fee rule** was implemented.
@@ -11,12 +11,40 @@
 2. The CTO approves a staging compatibility test plan for the app flows that stop working (section 7). A proposal is in section 7b.
 3. The read-only staging preflight passes, and the CTO approves PR #1.
 
-Branch: `claude/phase-1c-amended-containment`, cut from `main` (`0cb0fe0`). It contains only this package. Review PR: taha222222/loption-mobile#1 (draft).
+Branch: `claude/phase-1c-amended-containment`, cut from `main` (`0cb0fe0`). It contains only this package. Review PR: taha222222/loption-mobile#1 (draft). Revisions 5 and 6 are on `phase-1c-revision-5-review` (draft PR #2, based on that branch).
 
 ## Review status
 - **Not independently reviewed.** Codex never responded on PR #1.
 - 2026-10-25: **adversarial self-review by the implementing engineer** of commit `e781bc9` (the PR head at that time; `f62d0e7` was an earlier head and is an ancestor of it). It is not an independent review. Its findings M1–M3, L1–L6 and P2 items are remediated in revision 5 (section 0d).
 - After the remediation, the final commit was re-reviewed adversarially by the same engineer. **That is again a self-review, not an independent approval.** The result is recorded in the PR update for revision 5.
+- 2026-10-25: **review of revision 5 (`855b96f`)** in the project thread (findings only). Three medium findings: the last-admin protection fails under REPEATABLE READ (reproduced), no supported way to run the rollback, a pre-existing `staff_roles` skips the initial-admin check. Revision 6 remediates them (section 0e). The low-severity findings of that review are not part of this assignment and remain open (section 11).
+- 2026-10-26: revision 6 re-reviewed adversarially by the implementing engineer: **a self-review, not an independent approval** (section 0f).
+
+## 0e. Revision 6: remediation of the medium review findings (CTO assignment of 2026-10-26)
+Starting point verified: `phase-1c-revision-5-review` at `855b96f085108ec356fb65843ca2edef0111d848`, clean working tree; the unchanged revision-5 harness was re-run first and passed (same pinned image digests). Each failure below was reproduced on disposable PostgreSQL 17.6 **before** the fix; the regression tests now run in every harness run.
+
+| Finding | Root cause | Remediation | Regression evidence (local, `run_phase1c.sh`) |
+|---|---|---|---|
+| **M1** Concurrent administrator revocation can leave zero admins | `trg_staff_roles_require_admin` re-checked "an active admin remains" with a plain `SELECT`. Under REPEATABLE READ (and for the functions' authority check, also SERIALIZABLE) that read comes from the transaction snapshot, so two overlapping removals each saw the other admin as active. The rev-5 test only used READ COMMITTED. | Every write statement on `staff_roles` first takes one advisory lock (`trg_staff_roles_serialize`, BEFORE … FOR EACH STATEMENT, all writers; same lock and order as the functions, so no deadlock). After a row stops being an active admin, `staff_roles_require_admin()` (now SECURITY DEFINER, so RLS never hides a row) reads the remaining active admins **`FOR SHARE`**: READ COMMITTED sees the latest committed rows; REPEATABLE READ / SERIALIZABLE get a serialization failure (40001) instead of a stale read. `assign_staff_role`/`revoke_staff_role` check the caller's own admin row the same way, so a just-revoked admin cannot act on a stale snapshot. Paths inspected: the two functions, `service_role`/operator INSERT/UPDATE/DELETE (incl. role change and `INSERT … ON CONFLICT DO UPDATE`), `ON DELETE CASCADE` from `auth.users`, TRUNCATE (blocked). | **Before the fix (rev-5 code, PG 17.6):** 6 of 22 cases committed both removals and left **0 active admins** (functions, direct UPDATE, DELETE vs UPDATE, role change vs DELETE, function vs direct UPDATE, auth-user cascade, all REPEATABLE READ), and a revoked admin assigned a role from a stale snapshot. **After:** `admin_concurrency_tests.sh`, run twice per harness run: two admins revoking each other and every delete/update/role-change/cascade combination under READ COMMITTED, REPEATABLE READ and SERIALIZABLE; a failed (rolled-back) removal; removing every admin in one statement or one transaction; stale authority. Each case asserts the **committed** state (exactly one transaction committed, exactly one active admin, and which one). |
+| **M2** No supported way to run the rollback | The two `.down.sql` files were outside `supabase/migrations/` (so `db push` never runs them), the SQL Editor was prohibited, psql was "not a supported procedure", the files had no commit gate, and storage and core were two separate transactions. | One generated file `supabase/rollback/phase1c_rollback.sql` (storage part, then core part) in **one** transaction with role check, preflight, postcondition and deferred commit gate (the role check is itself a gate step and is repeated in the preflight and postcondition: a revision-6 harness run showed that a separate role check skipped under `ON_ERROR_ROLLBACK=on` let a login role inheriting `postgres` commit; the same binding was added to both migrations), run only by `supabase/rollback/phase1c_rollback.sh` (section 9): target allowlist (staging project or local only), confirmation phrase, role `postgres`, database identity (seed record = `--expected-admin`), migration history, 0 violations, approval and backup references, audit export with checksums before any change, archive with an approval record, history rows removed, preserved data proven unchanged. | Scenario G: wrong targets (other project, remote host for `local`, `production`), missing/incorrect confirmation, unexpected database, missing backup reference or approval, existing or in-repo export directory, wrong login role, missing or newer migration history, the SQL run directly without the procedure, as a wrong role, and under `ON_ERROR_ROLLBACK=on` — each refused with the **complete database state digest unchanged**. Injected failure at the very end of the core part (a dependent view blocks the last `DROP FUNCTION`): exit 1, database unchanged. Success: exit 0, export verified, archive complete with approval record, history rows removed, exact BEFORE matrix, legacy driver statuses restored, orders and kiosk records unchanged. Repeat invocation (procedure and SQL): refused, unchanged. Scenario S: a failure in the core part leaves the storage part unapplied too (one transaction); success restores bucket limits and storage policies; every Storage object row unchanged. |
+| **M3** An existing roles table skips a safety check | The preflight ran the initial-admin verification only when `staff_roles` had **no** admin row, and the seed returned early in the same case; `CREATE TABLE IF NOT EXISTS` accepted a table of any shape. Other conditional paths could also accept or overwrite unknown objects: `CREATE INDEX IF NOT EXISTS`, `CREATE OR REPLACE FUNCTION` (12), `DROP … IF EXISTS` + `CREATE` for triggers and policies (incl. 11 on existing tables and 4 storage policies), the availability constraint added only when absent, `INSERT … ON CONFLICT DO NOTHING` for Kitchen A. | Section 0a2: the state of every such object **before any change** is captured. The preflight validates pre-existing new tables against the reviewed definition (49 entries: columns, constraints, indexes, triggers incl. enabled state, policies, RLS, owner; no column ACLs; grants by rule) and refuses a partial set; on a re-run every admin row needs its seed or assign audit record, there must be exactly one seed record and an active admin, every active admin must pass the initial-admin account checks, and Kitchen A must be the reviewed row; an existing availability constraint must be the reviewed definition. The postcondition requires the new tables to be exactly the reviewed definition and **every pre-existing object to be byte-for-byte what the migration defines**; otherwise the whole migration aborts (never a silent repair). The storage migration does the same for its 4 policies. The embedded definition is checked against a clean application in every run. | Scenario X (25 cases): first application with malformed tables plus a flagged admin row, a partial table set, an unknown `has_staff_role`, an unknown trigger, constraint or policy of a migration name; re-run with a dropped or disabled trigger, RLS off, an extra column, a dropped constraint, an extra index, extra grants (authenticated INSERT, anon SELECT, service_role TRUNCATE, a column grant), an extra or altered policy, an unaudited admin row, an audited admin with the flagged profile pattern, a changed Kitchen A, a removed seed record — **each refused with the complete database state digest unchanged**. A valid re-run is accepted and changes nothing. Scenario M: re-applying over a weakened `has_staff_role` is refused instead of silently repairing it. Storage: a pre-existing `staff_admin_insert_meal_images` of another definition is refused. |
+
+## 0f. Revision 6: adversarial self-review (implementing engineer; **not an independent approval**)
+Written by the engineer who implemented revision 6, after the final harness run. It is a self-review only; it does not replace the CTO's independent review and does not change the deployment verdict.
+
+**What the self-review found and fixed before the commit:**
+- **Role check not bound to the commit gate.** The first full rev-6 run showed that the rollback SQL, run directly with `psql -v ON_ERROR_ROLLBACK=on` by a login role that merely inherits `postgres`, **committed**: the separate role-check block failed, the runner ignored the error, and the preflight and postcondition still marked the gate. The same pattern existed in both migrations. Fixed: the role check is a gate step of the rollback and is repeated next to every gate step of the rollback and both migrations. Regression tests: scenario P (migration, wrong role, `ON_ERROR_ROLLBACK=on`, nothing applied) and scenario G (rollback SQL, wrong role, state digest unchanged).
+- **State digest false positive.** The digest counted per-session `pg_temp_N` namespaces, so a valid re-run looked like a change. Excluded `pg_*` namespaces; the test would still catch any real schema, table, column, grant, policy, function or data change.
+
+**Residual risks the engineer could not close (also in section 11):**
+1. **M1, retries:** under REPEATABLE READ or SERIALIZABLE the losing admin change now fails with SQLSTATE 40001 instead of committing. A client that does not retry shows an error; no client uses those levels today. Admin writes are serialised by one advisory lock key (`hashtextextended('phase1c.staff_roles.admin', 0)`); unrelated code using the same key would wait, not corrupt.
+2. **M1, privileged bypass:** a role that can disable triggers (table owner `ALTER TABLE … DISABLE TRIGGER`, or `session_replication_role = replica`) can still remove every admin. `containment_violations()` reports a disabled trigger, not a one-off replica session. This is outside the API roles' reach and is unchanged from revision 5.
+3. **M2, local validation only:** the procedure was never run against hosted staging (by instruction). The pooler host form, `\copy` over the network and the hosted `postgres` login are unverified. The audit export is taken before the rollback transaction, so rows written in between are in the archive schema but not in the CSV export; the archive keeps every row.
+4. **M2, not a complete restoration:** the rollback intentionally keeps the audit data (archived, not deleted), Storage objects, orders, kiosk records and any later driver status change; it does not touch hosted settings or Auth. It re-opens C1-C4, H2-H4 and the upload/listing holes. Forward recovery remains the preferred path.
+5. **M3, fail-closed on platform drift:** the reviewed definition (49 entries) and the 12 function fingerprints come from the local 17.6 image and the evidence. Different default privileges, owners or policy text on staging make the migration abort (never repair). That is safe but could block deployment until the definition is re-reviewed.
+6. **Low findings of the 2026-10-25 review** are not part of this assignment and remain open (section 11, item 15).
+
+**Checked and not found:** no new SECURITY DEFINER function without `search_path = ''`; the new definer function `staff_roles_require_admin()` has EXECUTE revoked from `public`, `anon` and `authenticated`, returns `trigger` (PostgreSQL refuses a direct call) and is in the reviewed-function list with its fingerprint; no change to fee policy, kitchen rules, checkout (still disabled), historical orders, kiosk records or Storage objects; the initial-admin UUID is still the placeholder.
 
 ## 0d. Revision 5: remediation of the self-review findings (CTO decision of 2026-10-25)
 
@@ -56,9 +84,11 @@ Branch: `claude/phase-1c-amended-containment`, cut from `main` (`0cb0fe0`). It c
 - **Each file runs as one transaction by itself:** its own `BEGIN … COMMIT`, a role check, and the deferred commit gate.
   - Locally, plain `psql -f`, `psql -v ON_ERROR_STOP=1 -f`, `psql --single-transaction` and `psql -v ON_ERROR_ROLLBACK=on` were all shown to commit nothing when a guard or the postcondition fails.
   - These psql invocations are test evidence, **not a supported procedure for staging**.
+- **Rollback (supported, revision 6):** only `supabase/rollback/phase1c_rollback.sh`, with written CTO approval (section 9). It runs `supabase/rollback/phase1c_rollback.sql` with psql as **one** transaction for both migrations.
 - **Prohibited:**
   - the Dashboard SQL Editor: its transaction behaviour for these files is not verified;
   - splitting a file, or removing its `BEGIN`/`COMMIT`, role check or gate;
+  - running the rollback SQL in any other way than through `phase1c_rollback.sh` (run directly, it lacks the variables it requires and fails before any change; tested);
   - running the rollback without CTO approval.
 
 ## 1. Repository state
@@ -92,6 +122,8 @@ Branch: `claude/phase-1c-amended-containment`, cut from `main` (`0cb0fe0`). It c
 |---|---|---|---|
 | Execution role is `postgres` | yes (first statement) | yes | — |
 | Initial administrator | yes (preflight + seed): owner-supplied id, exists, confirmed, not deleted/banned/anonymous, not the illegitimate pattern | separate read-only check `verify_initial_admin_readonly.sql` | **owner's written confirmation of the id** |
+| Pre-existing `kitchens`/`staff_roles`/`security_audit_log` (rev 6) | yes: none or all three; exactly the reviewed definition (preflight and postcondition); admin rows with audit provenance, one seed record, active admins pass the account checks, Kitchen A as reviewed | `phase1c_not_yet_applied (U9)` | — |
+| Pre-existing objects with a migration name (functions, triggers, policies, availability constraint, storage policies) (rev 6) | yes: must be byte-for-byte what the migration defines, else abort (never overwritten) | no | — |
 | Table set; public policy names; public policy text (MD5 `d2cb0f4d…`) | names before the change; **exact definitions after** (postcondition) | yes (set + MD5) | — |
 | Policies the migration keeps are unchanged from the evidence | postcondition (exact definitions) | MD5 | — |
 | Required columns; `create_order_transaction` signature | yes | signature | — |
@@ -130,9 +162,9 @@ Branch: `claude/phase-1c-amended-containment`, cut from `main` (`0cb0fe0`). It c
   - unsafe or anon-executable functions;
   - client-executable `SECURITY DEFINER` functions (any schema) other than `has_staff_role`, `assign_staff_role`, `revoke_staff_role`, `set_driver_availability`;
   - definer functions without `search_path`;
-  - fingerprints of the 10 migration functions;
-  - 7 guard triggers present and enabled;
-  - driver availability CHECK and `NOT NULL`;
+  - fingerprints of the 11 migration functions (revision 6 adds `staff_roles_serialize`);
+  - 8 guard triggers present and enabled (revision 6 adds `trg_staff_roles_serialize`);
+  - driver availability CHECK (exact definition) and `NOT NULL`;
   - at least one active admin;
   - no online driver without approval;
   - default privileges of `postgres`.
@@ -145,7 +177,8 @@ Branch: `claude/phase-1c-amended-containment`, cut from `main` (`0cb0fe0`). It c
 - hosted configuration that SQL cannot see: Auth hook settings, PostgREST exposed schemas, JWT settings, Storage/CDN headers, Realtime authorization;
 - the bodies of functions it does not fingerprint (platform functions such as `auth.uid()`, and the pre-existing `create_order_transaction` and trigger functions, which are only checked for client EXECUTE);
 - grants and policies in platform schemas other than `storage` (`auth`, `extensions`, `graphql`, `realtime`, `vault`, …), including the platform's own client-readable views there (e.g. `extensions.pg_stat_statements`);
-- whether a reviewed policy is *semantically* right (it detects change, not correctness), data-level mistakes (e.g. a wrong person granted admin by a legitimate admin), and anything done by a superuser who also replaces this function;
+- whether a reviewed policy is *semantically* right (it detects change, not correctness), data-level mistakes (e.g. a wrong person granted admin by a legitimate admin), and anything done by a role that can replace this function (`postgres` or a superuser): `containment_violations()` does not fingerprint itself;
+- a reviewed function that was **dropped** (the fingerprint check only compares functions that exist; dropping one fails closed, e.g. `set_driver_availability` stops working);
 - reviewed definitions are compared as PostgreSQL 17 prints them. A different major version may print them differently, which fails closed (reports every policy).
 
 Run it after every deployment and regularly. Treat any row as an incident.
@@ -157,11 +190,12 @@ Run it after every deployment and regularly. Treat any row as an incident.
 |---|---|---|
 | — | `BEGIN`; `lock_timeout` | atomicity |
 | 0a | Role check (`postgres` only), deferred commit gate | M1, L6 |
+| 0a2 | State of every conditionally created object captured before any change; reviewed definition of the new tables (rev 6) | rev 6 M3 |
 | 0b | **Owner-supplied initial-admin id (placeholder: refuses)**; temporary verification helper | M1 |
 | 00 | `containment_violations()` (read-only; not client-executable) | monitoring |
 | 0 | Preflight: schema match, driver statuses, initial admin, **all drift rows**; marks the gate | drift, M1 |
 | 1 | Default privileges of `postgres` revoked from clients; no PUBLIC EXECUTE on new functions | M2 (orig.) |
-| 2–3 | `kitchens`; `staff_roles`; append-only, non-truncatable `security_audit_log`; `has_staff_role`; audited admin-only `assign_staff_role`/`revoke_staff_role` (serialized, last-admin protection); triggers on `staff_roles`: at least one active admin (every writer), driver offline on revoked/deleted approval, no TRUNCATE; seed of the **owner-supplied** admin | C1, L2, L3 |
+| 2–3 | `kitchens`; `staff_roles`; append-only, non-truncatable `security_audit_log`; `has_staff_role`; audited admin-only `assign_staff_role`/`revoke_staff_role` (serialized, locking authority check, last-admin protection); triggers on `staff_roles`: one advisory lock per write statement (every writer), at least one active admin with a locking read (every writer, every isolation level), driver offline on revoked/deleted approval, no TRUNCATE; seed of the **owner-supplied** admin | C1, L2, L3, rev 6 M1 |
 | 4 | `user_profiles` guard trigger (raises 42501); column-level UPDATE only on 10 profile columns | C1 |
 | 5 | 9 `is_admin` policies → `has_staff_role('admin')`. **No admin read of profiles.** | C1, least privilege |
 | 5b | `collaborators_update_own_orders` dropped (partner writes retired) | partner |
@@ -169,7 +203,7 @@ Run it after every deployment and regularly. Treat any row as an incident.
 | 9 | Driver approval = active `staff_roles` `driver` row; `drivers.status` availability only (CHECK, **NOT NULL**), set through `set_driver_availability()`, enforced for every writer; legacy values (incl. NULL) audited, then normalised to `offline` | H3, P2 |
 | 10 | `create_order_transaction` and `calculate_driver_weekly_earnings`: no client EXECUTE; `search_path=''` (not reactivated) | H4 |
 | 11–12 | 11 kiosk policies retired; `anon` keeps only SELECT on `meals`; `authenticated` loses kiosk and financial tables; **TRUNCATE/REFERENCES/TRIGGER/MAINTAIN revoked from clients** | defence in depth, L1 |
-| 13 | **Postcondition:** zero `drift` and zero `containment` rows; an active admin exists; marks the gate | — |
+| 13 | **Postcondition:** zero `drift` and zero `containment` rows; an active admin exists; new tables exactly as reviewed; Kitchen A as reviewed; every pre-existing object unchanged by the migration (rev 6); marks the gate | rev 6 M3 |
 | — | `COMMIT` (fails unless the gate is complete) | M1 |
 
 ### `20261016171000_phase1c_storage_meal_images.sql` (storage)
@@ -183,6 +217,7 @@ Run it after every deployment and regularly. Treat any row as an incident.
   - no drift.
 - **Change:**
   - drops the 3 staging write policies **and `Public Access`**;
+  - a pre-existing policy with one of its 4 names must already be the reviewed definition, otherwise the postcondition aborts (rev 6; never overwritten);
   - creates admin-staff-only SELECT, INSERT, UPDATE and DELETE policies for `meal-images`. Public object URLs keep working because they do not use RLS. Listing the bucket becomes admin-only;
   - sets `file_size_limit = 5242880` and `allowed_mime_types = {image/jpeg,image/png,image/webp}`. The previous values are logged first; `public` is untouched. A re-run on an approved bucket changes and logs nothing;
   - no object row is changed.
@@ -398,20 +433,22 @@ It reports every reason an object is suspicious:
 - Images: `supabase/postgres:17.6.1.178` (`sha256:c282d393…a570`) and `ghcr.io/supabase/storage-api:v1.79.30` (`sha256:bdd393f6…6eee`).
 - `PHASE1C_SUPABASE_CLI` is optional. Without it, the CLI checks print `SKIPPED … NOT verified in this run`.
 - The committed core migration refuses to run (placeholder). The harness applies a copy in which **only** the marked admin line is replaced by the fixture admin `a1`, and asserts that exactly one line differs.
-- Result of the revision-5 run: see `docs/v1/PHASE1C_TEST_RUN_2026-10-25_rev5.txt` (exact, unedited output) and the PR update.
+- Result of the revision-6 run: see `docs/v1/PHASE1C_TEST_RUN_2026-10-26_rev6.txt` (exact, unedited output of the harness run from a clean `git archive` export of the revision-6 code commit named in its header) and the PR update. The revision-5 output is kept for history.
+- Repository scripts: `package.json` defines only `start`, `android`, `ios` and `web` (Expo); there is no test, lint, typecheck or build script and no CI workflow, so the Phase 1C harness is the only applicable check.
 
 | Scenario | What it shows |
 |---|---|
 | A | Baseline identical to evidence in 13/13 sections; non-storage preflight ok; baseline refuses a second run; BEFORE SQL tests fail for every security test (documents the holes) |
 | B | Core migration applied from the test copy; the only active admin is the supplied id; every SQL security test passes; the policies the migration keeps are unchanged from the evidence; the storage migration refuses without a storage schema |
 | C | Re-apply: matrix and audit rows unchanged; tests still pass |
-| P | M1/L6 regressions (section 0d), incl. Supabase CLI `db push` when `PHASE1C_SUPABASE_CLI` is set |
+| P | M1/L6 regressions (section 0d), incl. Supabase CLI `db push` when `PHASE1C_SUPABASE_CLI` is set; rev 6: a wrong login role under `ON_ERROR_ROLLBACK=on` is refused by the commit gate |
 | E–F, H | 13 guards: 12 abort with nothing applied and fail their preflight check; H7 `safeupdate` is preflight-only |
-| M | Monitoring regressions P2–P7, L1–L3 (each reported, then clean after revert); weakened reviewed function; concurrent admin revocation |
-| G | Core rollback: NULL driver status normalised, audited and restored; new tables archived with every row; archive inaccessible; exact BEFORE matrix |
-| S | Offline URL-encoding unit tests; real Storage API: BEFORE holes incl. listing; storage guards; 25/25 HTTP checks; storage monitoring regressions; inventory, scan (21 objects incl. special names), browser test, per-object quarantine with refusals, CDN stand-in, restore outcomes; storage then core rollback restore the exact BEFORE matrix and bucket NULLs |
+| M | Monitoring regressions P2–P7, L1–L3 (each reported, then clean after revert); concurrency suite (rev 6 M1, 22 cases, twice); weakened reviewed function reported and not silently repaired by a re-run |
+| X | rev 6 M3: 25 pre-existing-object cases (first application and re-run), each refused with the complete state digest unchanged; valid re-run accepted unchanged |
+| G | Rollback through the supported procedure (rev 6 M2): every refusal and the injected mid-rollback failure leave the state digest unchanged; success archives every row, records the approval, removes the history rows, restores the exact BEFORE matrix and the NULL driver status; orders and kiosks unchanged; repeat refused |
+| S | Offline URL-encoding unit tests; real Storage API: BEFORE holes incl. listing; storage guards incl. a pre-existing policy of a migration name; 25/25 HTTP checks; storage monitoring regressions; inventory, scan (21 objects incl. special names), browser test, per-object quarantine with refusals, CDN stand-in, restore outcomes; one-transaction rollback: a core-part failure leaves storage unapplied too; success restores the exact BEFORE matrix and bucket NULLs, Storage objects unchanged |
 
-**Reproducibility:** `generate_baseline.py` and `generate_rollback.py` regenerate byte-identical files (SHA-256 checked for the revision-5 commit).
+**Reproducibility:** `generate_baseline.py` and `generate_rollback.py` regenerate byte-identical files (SHA-256 checked for the revision-6 commit).
 
 **Test-only stand-ins:**
 - hosted GoTrue `auth.uid/role/jwt` (`bootstrap_hosted_auth.sql`);
@@ -426,15 +463,58 @@ It reports every reason an object is suspicious:
   2. Add the narrowest permission needed as a new migration, with a test.
   3. Re-run the harness.
   4. Confirm `containment_violations()` still returns 0 rows.
-- **Full rollback is dangerous: it re-opens every hole.**
-  1. Run `supabase/rollback/20261016171000_phase1c_storage_meal_images.down.sql` first; the core rollback refuses to run otherwise.
-  2. Then run `…security_containment.down.sql`.
-  3. Use the supported procedure. Each file has its own `BEGIN … COMMIT` and role check. Only with CTO approval.
-- **Data:**
-  - no order, profile, payment, kiosk or closing row is changed;
-  - `kitchens`, `staff_roles` and `security_audit_log` are **archived, not dropped**, with every row, in `phase1c_archive_<UTC timestamp>`. No access for `anon`, `authenticated` or `service_role`. Deleting an archive needs a separate CTO decision;
-  - an export of `security_audit_log` is still recommended;
-  - driver statuses the migration changed (including NULL) are restored from the audit log if still `offline`; later changes are kept.
+- **Full rollback is dangerous: it re-opens every hole** (C1–C4, H2–H4, meal-images uploads and listing). Only with written CTO approval.
+
+### Supported rollback procedure (revision 6)
+One tool, one invocation, one transaction. Nothing else is supported.
+
+```
+supabase/rollback/phase1c_rollback.sh \
+  --target staging \
+  --db-url 'postgresql://postgres:<password>@db.teppcfnpkoxkudajnvad.supabase.co:5432/postgres' \
+  --expected-admin <auth.users id of the seeded initial administrator> \
+  --approved-by '<CTO name, as in the written approval>' \
+  --backup-ref '<backup or PITR point newer than the change window>' \
+  --export-dir <new directory outside the repository> \
+  --confirm 'ROLLBACK PHASE 1C ON teppcfnpkoxkudajnvad'
+```
+Requires `psql`, `python3` and `sha256sum` on the operator's machine. **Not run against hosted staging or production; validated only in disposable local containers** (scenarios G and S).
+
+**Prerequisites (the procedure refuses without them):**
+1. Written CTO approval; its author is passed as `--approved-by` and recorded in the database.
+2. A backup or PITR point newer than the change window, passed as `--backup-ref` and recorded (the procedure cannot verify a hosted backup; the operator confirms it).
+3. A new export directory outside the repository (the export holds user ids; store it securely).
+4. No migration newer than Phase 1C recorded in `supabase_migrations.schema_migrations` (roll those back first).
+5. Phase 1C in its reviewed state: `containment_violations()` returns 0 rows. Otherwise use forward recovery; the rollback would restore over an unreviewed state.
+
+**What it does, in order. Any failure stops it; steps 1–4 change nothing:**
+1. **Target:** `--target staging` accepts only project `teppcfnpkoxkudajnvad` (direct host `db.<ref>.supabase.co` as `postgres`, or the pooler as `postgres.<ref>`). `--target local` accepts only `127.0.0.1`/`localhost`. Every other target, production included, is refused before connecting. `--confirm` must name the target exactly.
+2. **Read-only identification:** the connected role must be `postgres`; the initial-admin seed record must be `--expected-admin`; the migration history must end with the Phase 1C versions; `containment_violations()` must return 0 rows.
+3. **Prerequisites** above.
+4. **Audit export (read-only):** `security_audit_log`, `staff_roles`, `kitchens` to CSV (directory mode 700), row counts compared with the database, SHA-256 manifest.
+5. **Rollback:** `phase1c_rollback.sql`, generated by `generate_rollback.py`, as **one** transaction: role check; preflight (repeats step 2, records digests of every preserved table and the archive row counts); storage part; core part; migration-history rows removed; postcondition; deferred commit gate. Any error, also in a runner that ignores errors (`ON_ERROR_ROLLBACK`), commits nothing (tested).
+6. **Verification (read-only):** Phase 1C absent, one archive schema present, history rows removed. Then compare `phase1c_matrix.sql` with the BEFORE side of `PHASE1C_POLICY_GRANT_MATRIX.md`.
+
+Exit codes: 0 committed and verified; 1 the rollback transaction failed (database unchanged); 2 refused before any change; 3 committed but the read-only verification failed (investigate immediately).
+
+**Expected effects (all in the one transaction):**
+- `meal-images` bucket limits back to the values the migration recorded (NULL in the evidence); the 4 staging storage policies restored verbatim, the 4 Phase 1C storage policies dropped;
+- the 38 staging policies the core migration dropped restored verbatim, the 11 it created dropped; grants, function privileges and default privileges as observed on 2026-10-15;
+- `drivers`: availability constraint and `NOT NULL` removed; statuses the migration set offline restored from the audit log (incl. NULL) where still `offline`;
+- `kitchens`, `staff_roles`, `security_audit_log` **archived** into `phase1c_archive_<UTC timestamp>` (rows unchanged, triggers/policies/auth FK removed, no access for `anon`, `authenticated`, `service_role`). The schema comment records time, approver, backup reference and the export checksum;
+- the Phase 1C functions dropped; the two migration-history rows deleted, so `supabase db push` can apply the migrations again.
+
+**Verified by the postcondition (otherwise nothing commits):** no Phase 1C table or function left in `public`; public policies equal the evidence (MD5 `d2cb0f4d…`, as in the read-only preflight); storage policies equal the evidence (MD5 `8aa1ab5d…`); archive row counts equal the counts before; the rows of 23 preserved tables (orders, order items, status updates, kiosks, products, stock movements, closings, profiles, meals, partner, payment and push-token tables), `drivers` except `status`, and every `storage.objects` row are byte-identical to before.
+
+**Not restored (the rollback does not claim a complete restoration):**
+- the archive schema stays (deleting it needs a separate CTO decision); the audit trail is no longer in `public`;
+- driver statuses changed after deployment (other than back to `offline`) are kept; drivers forced offline by a revoked approval are not put back online;
+- Storage objects uploaded, overwritten, quarantined or removed after deployment stay as they are; a quarantine copy is not restored by this procedure (use the quarantine tool's `restore`);
+- data written through the Phase 1C paths after deployment (orders changed by admin staff, meals, images) stays;
+- hosted settings (Auth hooks, exposed schemas, JWT) are not touched; nothing outside the database (CDN caches, app builds) is changed.
+
+**Recovery if it fails:** exit 1 means the transaction did not commit; read `rollback.log` in the export directory, fix the cause (for example an object that depends on a Phase 1C function), and run the procedure again with a new export directory. Exit 3 means it committed but verification disagrees: stop, keep the export, and investigate with the read-only queries in step 6 before any further change. To return to the contained state after a rollback, re-apply the migrations with the supported migration procedure.
+
 - **What "exact BEFORE matrix" covers** (`supabase/tests/phase1c_matrix.sql`):
   - `public` and `storage` policies (name, command, roles, `USING`, `WITH CHECK`);
   - effective privileges of `anon` and `authenticated` on `public` tables (select, insert, update, delete, truncate, references, trigger, maintain);
@@ -445,8 +525,8 @@ It reports every reason an object is suspicious:
   - default privileges of `postgres`;
   - `storage.buckets` (public, limits).
   
-  **Not compared:** raw ACL text and grantors, `service_role` and `PUBLIC` privileges, column privileges outside the 10, column nullability, sequences, indexes, data.
-- Both files are generated from the evidence and the migration text by `generate_rollback.py`. Tested in G and S.
+  **Not compared:** raw ACL text and grantors, `service_role` and `PUBLIC` privileges, column privileges outside the 10, column nullability, sequences, indexes, data (preserved data is compared separately by the postcondition).
+- The rollback SQL is generated from the evidence and the migration text by `generate_rollback.py`. The two separate `.down.sql` files of revision 5 are removed. Tested in G and S.
 
 ## 10. Staging deployment checklist (after CTO approval only)
 1. **Approval gate:** CTO approves PR #1 and the compatibility test plan (7b). The package is **not independently reviewed**; only self-reviews exist.
@@ -472,6 +552,7 @@ It reports every reason an object is suspicious:
    4. removal, **per object**, with the approval naming the object and its SHA-256;
    5. restore if needed.
 10. **After deployment:** approve legitimate drivers; ship the client changes (section 7); run `containment_violations()` regularly.
+11. **If a rollback is ever approved:** only `supabase/rollback/phase1c_rollback.sh` (section 9).
 
 ## 11. Remaining risks and evidence gaps
 1. **Live staging compatibility is unproven** until the preflight and manual gates pass. The guards cover only the items in section 4.
@@ -487,16 +568,21 @@ It reports every reason an object is suspicious:
 11. Policies not recreated here still target role `public` (M4); none allows writes beyond the reviewed set.
 12. **The client app must change** (section 7). Several flows fail silently and two admin screens are misleading.
 13. Still to confirm: partners keep read-only access to their history.
+14. **The rollback procedure is validated only locally** (rev 6). Against hosted staging the pooler/direct host forms, the `\copy` export over the network and the `postgres` login are unverified; a mismatch fails closed (refusal), it does not partially apply.
+15. **Low-severity findings of the 2026-10-25 review remain open** (not in the rev-6 assignment): the e-mail check accepts `confirmed_at` (phone confirmation); a few mid-file statements are not re-verified by the postcondition under `ON_ERROR_ROLLBACK`; section 7 lists cash collection and admin login logging as new breakages although they already fail on staging, and omits `logAdminAction`; deleting the last admin's Auth account fails (now by design: the last-admin trigger refuses the cascade); the rollback's driver-status restore wording.
+16. **Isolation levels:** staff-role changes are safe at every level (tested). RLS policies that call `has_staff_role()` still evaluate it with the statement's snapshot, as PostgreSQL does for every policy; PostgREST clients cannot choose their isolation level.
 
 ## 12. Files
 | Path | Purpose |
 |---|---|
 | `supabase/evidence/` | Catalog evidence and README; the owner's query; flagged-account investigation query; per-object `meal-images` inventory (all read-only) |
-| `supabase/baseline/` | `staging_schema_2026-10-15.sql` (test fixture, not a migration); `generate_baseline.py`, `compare_catalog.py`, `generate_rollback.py` |
+| `supabase/baseline/` | `staging_schema_2026-10-15.sql` (test fixture, not a migration); `generate_baseline.py`, `compare_catalog.py`, `generate_rollback.py` (generates `supabase/rollback/phase1c_rollback.sql`) |
 | `supabase/migrations/` | `20261016170000_phase1c_security_containment.sql` (refuses to run until the initial admin id is committed), `20261016171000_phase1c_storage_meal_images.sql` |
-| `supabase/rollback/` | Generated down scripts (storage first, then core; core archives the new tables) |
-| `supabase/tests/` | `run_phase1c.sh` (A–C, P, E–F, H, M, G, S); `phase1c_security_tests.sql` (49 tests); `storage_api_tests.sh` (25 HTTP checks + the recorded MIME limitation); `preflight_staging_readonly.sql`; `verify_initial_admin_readonly.sql`; `phase1c_matrix.sql` + `render_matrix_md.py`; `browser_serving_tests.js`; `tooling_unit_tests.py`; `caching_proxy.py` (CDN stand-in); fixtures and test-only auth bootstrap |
+| `supabase/rollback/` | `phase1c_rollback.sh` (the only supported rollback procedure) and the generated `phase1c_rollback.sql` (storage + core, one transaction; archives the new tables) |
+| `supabase/tests/` | `run_phase1c.sh` (A–C, P, E–F, H, X, M, G, S); `admin_concurrency_tests.sh` (22 concurrency cases); `phase1c_security_tests.sql` (49 tests); `storage_api_tests.sh` (25 HTTP checks + the recorded MIME limitation); `preflight_staging_readonly.sql`; `verify_initial_admin_readonly.sql`; `phase1c_matrix.sql` + `render_matrix_md.py`; `browser_serving_tests.js`; `tooling_unit_tests.py`; `caching_proxy.py` (CDN stand-in); fixtures and test-only auth bootstrap |
 | `supabase/tools/` | `meal_images_scan.py`, `meal_images_quarantine.py` |
 | `docs/v1/PHASE1C_POLICY_GRANT_MATRIX.md` | Generated before/after matrix, including storage |
-| `docs/v1/PHASE1C_TEST_RUN_2026-10-25_rev5.txt` | Exact, unedited harness output of the revision-5 run |
+| `docs/v1/PHASE1C_TEST_RUN_2026-10-26_rev6.txt` | Exact, unedited harness output of the revision-6 run |
+| `docs/v1/PHASE1C_TEST_RUN_2026-10-26_rev6_m1_before_fix.txt` | Exact output of the concurrency suite against the revision-5 migration (the M1 reproduction) |
+| `docs/v1/PHASE1C_TEST_RUN_2026-10-25_rev5.txt` | Historical: output of the revision-5 run |
 | `docs/v1/PHASE1C_TEST_RUN_2026-10-17_rev4.txt` | Historical: output of the revision-4 run (superseded; describes the earlier package) |

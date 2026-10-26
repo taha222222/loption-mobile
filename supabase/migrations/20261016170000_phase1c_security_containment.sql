@@ -24,6 +24,12 @@
 --         TRUNCATE/REFERENCES/TRIGGER/MAINTAIN (L1), at least one active
 --         admin for every writer (L2), revoked/deleted driver approval =>
 --         offline (L3), drivers.status NOT NULL.
+--         Revision 6 (review of revision 5): staff-role changes serialized
+--         per statement and the last-admin / authority checks made locking
+--         reads, so they hold at every isolation level (M1); conditionally
+--         created objects are validated and never accepted or overwritten
+--         when they already exist (section 0a2, M3). Rollback: only
+--         supabase/rollback/phase1c_rollback.sh (M2).
 --         Storage (meal-images) is closed by 20261016171000; containment
 --         is complete only when containment_violations() returns 0 rows.
 --
@@ -52,8 +58,10 @@
 --   partial migration (tested). Do not split this file or strip its
 --   BEGIN/COMMIT. The Dashboard SQL editor is NOT a supported runner.
 -- Role: must run as role postgres (checked first; aborts otherwise).
--- Re-runnable: yes. All DDL is IF [NOT] EXISTS / drop-then-create, seeds
---   and the driver normalisation are idempotent (tested).
+-- Re-runnable: yes, on its own result only. All DDL is IF [NOT] EXISTS /
+--   drop-then-create, seeds and the driver normalisation are idempotent
+--   (tested); any pre-existing object that differs from what this file
+--   defines makes it abort instead (section 0a2; tested).
 -- =====================================================================
 
 begin;
@@ -83,6 +91,203 @@ create temp table phase1c_gate (
   step text constraint phase1c_guard_did_not_pass references phase1c_gate_ok deferrable initially deferred
 ) on commit drop;
 insert into phase1c_gate values ('core preflight'), ('core postcondition');
+
+-- ---------------------------------------------------------------------
+-- 0a2. Objects this migration creates conditionally (CREATE TABLE / INDEX
+--      IF NOT EXISTS, CREATE OR REPLACE FUNCTION, DROP ... IF EXISTS then
+--      CREATE for triggers, policies and the drivers availability
+--      constraint, INSERT ... ON CONFLICT DO NOTHING for Kitchen A) must
+--      never silently accept or overwrite an unknown existing object.
+--      pg_temp.phase1c_describe() renders each of them as text; the state
+--      found BEFORE any change is kept in phase1c_pre. The preflight
+--      validates pre-existing new tables against the reviewed definition
+--      (section 0) and the postcondition (section 13) requires that every
+--      object that already existed is byte-for-byte what this migration
+--      defines (a re-run), otherwise the whole migration aborts.
+-- ---------------------------------------------------------------------
+create function pg_temp.phase1c_describe()
+returns table (kind text, name text, descr text) language sql stable set search_path = '' as $d$
+  with new_tables(t) as (values ('kitchens'), ('staff_roles'), ('security_audit_log')),
+  rel as (
+    select c.oid, c.relname::text as t, c.relowner, c.relrowsecurity, c.relforcerowsecurity, c.relacl
+      from pg_class c join new_tables n on n.t = c.relname
+     where c.relnamespace = 'public'::regnamespace
+  ),
+  -- names this migration gives to triggers, constraints and policies on
+  -- pre-existing tables
+  own_triggers(t, n) as (values ('user_profiles', 'trg_enforce_profile_privilege_guard'),
+                                ('drivers', 'trg_enforce_driver_availability')),
+  own_constraints(t, n) as (values ('drivers', 'drivers_status_availability_check')),
+  own_policies(t, n) as (values
+    ('collaborator_analytics', 'staff_admin_all_collaborator_analytics'),
+    ('collaborator_orders', 'staff_admin_all_collaborator_orders'),
+    ('collaborator_payouts', 'staff_admin_all_collaborator_payouts'),
+    ('collaborators', 'staff_admin_all_collaborators'),
+    ('drivers', 'drivers_self_update_profile_location'),
+    ('drivers', 'staff_admin_all_drivers'),
+    ('meals', 'staff_admin_write_meals'),
+    ('order_items', 'staff_admin_all_order_items'),
+    ('order_status_updates', 'order_owner_read_status'),
+    ('order_status_updates', 'staff_admin_read_status'),
+    ('orders', 'staff_admin_all_orders')),
+  own_functions(n) as (values ('containment_violations'), ('has_staff_role'), ('assign_staff_role'),
+    ('revoke_staff_role'), ('set_driver_availability'), ('enforce_driver_availability'),
+    ('enforce_profile_privilege_guard'), ('security_audit_log_append_only'), ('staff_roles_require_admin'),
+    ('staff_roles_serialize'), ('staff_roles_driver_offline'), ('staff_roles_no_truncate'))
+  select 'table', r.t, 'owner=' || r.relowner::regrole::text || ';rls=' || r.relrowsecurity || ';force=' || r.relforcerowsecurity
+    from rel r
+  union all
+  select 'column', r.t || '.' || a.attname,
+         format_type(a.atttypid, a.atttypmod) || '|notnull=' || a.attnotnull || '|default='
+         || coalesce(pg_get_expr(d.adbin, d.adrelid), '-') || '|identity=' || a.attidentity::text || '|generated=' || a.attgenerated::text
+    from rel r join pg_attribute a on a.attrelid = r.oid and a.attnum > 0 and not a.attisdropped
+    left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+  union all
+  select 'column_acl', r.t || '.' || a.attname, a.attacl::text
+    from rel r join pg_attribute a on a.attrelid = r.oid and a.attnum > 0 and not a.attisdropped
+   where a.attacl is not null
+  union all
+  select 'acl', r.t, coalesce((select string_agg(x, ',' order by x)
+                                 from (select case when e.grantee = 0 then 'PUBLIC' else e.grantee::regrole::text end
+                                              || '=' || e.privilege_type as x
+                                         from aclexplode(r.relacl) e) s), '(default)')
+    from rel r
+  union all
+  select 'constraint', r.t || '.' || k.conname, pg_get_constraintdef(k.oid)
+    from rel r join pg_constraint k on k.conrelid = r.oid
+  union all
+  select 'constraint', o.t || '.' || k.conname, pg_get_constraintdef(k.oid)
+    from own_constraints o join pg_constraint k on k.conrelid = to_regclass('public.' || o.t) and k.conname = o.n
+  union all
+  select 'index', r.t || '.' || i.relname, pg_get_indexdef(i.oid)
+    from rel r join pg_index x on x.indrelid = r.oid join pg_class i on i.oid = x.indexrelid
+  union all
+  select 'trigger', r.t || '.' || g.tgname, pg_get_triggerdef(g.oid) || '|enabled=' || g.tgenabled::text
+    from rel r join pg_trigger g on g.tgrelid = r.oid and not g.tgisinternal
+  union all
+  select 'trigger', o.t || '.' || g.tgname, pg_get_triggerdef(g.oid) || '|enabled=' || g.tgenabled::text
+    from own_triggers o join pg_trigger g on g.tgrelid = to_regclass('public.' || o.t) and g.tgname = o.n
+  union all
+  select 'policy', p.tablename || '.' || p.policyname,
+         p.permissive || '|' || p.roles::text || '|' || p.cmd || '|' || coalesce(p.qual, '-') || '|' || coalesce(p.with_check, '-')
+    from pg_policies p
+   where p.schemaname = 'public'
+     and (p.tablename in (select t from new_tables) or (p.tablename, p.policyname) in (select t, n from own_policies))
+  union all
+  select 'function', p.oid::regprocedure::text,
+         'definer=' || p.prosecdef || '|config=' || coalesce(array_to_string(p.proconfig, ','), '-')
+         || '|owner=' || p.proowner::regrole::text || '|acl=' || coalesce(p.proacl::text, '(default)')
+         || '|lang=' || l.lanname || '|body=' || md5(p.prosrc)
+    from pg_proc p join pg_language l on l.oid = p.prolang
+   where p.pronamespace = 'public'::regnamespace and p.proname in (select n from own_functions)
+$d$;
+create temp table phase1c_pre on commit drop as select * from pg_temp.phase1c_describe();
+
+-- Reviewed definition of the three new tables, exactly as PostgreSQL 17
+-- describes them after this migration (columns, constraints, indexes,
+-- triggers, policies, RLS, owner; no column ACLs). Table grants are checked
+-- by rule in phase1c_new_table_problems(): postgres any, authenticated
+-- exactly SELECT, service_role anything but TRUNCATE, nobody else.
+create function pg_temp.phase1c_expected_new_tables()
+returns table (kind text, name text, descr text) language sql immutable as $e$
+  select split_part(x, '#', 1), split_part(x, '#', 2), substr(x, length(split_part(x, '#', 1)) + length(split_part(x, '#', 2)) + 3)
+    from unnest(array[
+      -- PHASE1C_EXPECTED_NEW_TABLES (run_phase1c.sh checks this list against a clean application)
+      'column#kitchens.code#text|notnull=true|default=-|identity=|generated=',
+      'column#kitchens.created_at#timestamp with time zone|notnull=true|default=now()|identity=|generated=',
+      'column#kitchens.id#uuid|notnull=true|default=gen_random_uuid()|identity=|generated=',
+      'column#kitchens.is_active#boolean|notnull=true|default=false|identity=|generated=',
+      'column#kitchens.name#text|notnull=true|default=-|identity=|generated=',
+      'column#security_audit_log.action#text|notnull=true|default=-|identity=|generated=',
+      'column#security_audit_log.actor_id#uuid|notnull=false|default=-|identity=|generated=',
+      'column#security_audit_log.details#jsonb|notnull=true|default=''{}''::jsonb|identity=|generated=',
+      'column#security_audit_log.id#bigint|notnull=true|default=-|identity=a|generated=',
+      'column#security_audit_log.occurred_at#timestamp with time zone|notnull=true|default=now()|identity=|generated=',
+      'column#security_audit_log.target_user_id#uuid|notnull=false|default=-|identity=|generated=',
+      'column#staff_roles.granted_at#timestamp with time zone|notnull=true|default=now()|identity=|generated=',
+      'column#staff_roles.granted_by#uuid|notnull=false|default=-|identity=|generated=',
+      'column#staff_roles.id#uuid|notnull=true|default=gen_random_uuid()|identity=|generated=',
+      'column#staff_roles.is_active#boolean|notnull=true|default=true|identity=|generated=',
+      'column#staff_roles.kitchen_id#uuid|notnull=false|default=-|identity=|generated=',
+      'column#staff_roles.revoked_at#timestamp with time zone|notnull=false|default=-|identity=|generated=',
+      'column#staff_roles.revoked_by#uuid|notnull=false|default=-|identity=|generated=',
+      'column#staff_roles.role#text|notnull=true|default=-|identity=|generated=',
+      'column#staff_roles.user_id#uuid|notnull=true|default=-|identity=|generated=',
+      'constraint#kitchens.kitchens_code_check#CHECK ((code ~ ''^[A-Z0-9_-]{1,16}$''::text))',
+      'constraint#kitchens.kitchens_code_key#UNIQUE (code)',
+      'constraint#kitchens.kitchens_pkey#PRIMARY KEY (id)',
+      'constraint#security_audit_log.security_audit_log_pkey#PRIMARY KEY (id)',
+      'constraint#staff_roles.staff_roles_kitchen_id_fkey#FOREIGN KEY (kitchen_id) REFERENCES public.kitchens(id)',
+      'constraint#staff_roles.staff_roles_pkey#PRIMARY KEY (id)',
+      'constraint#staff_roles.staff_roles_role_check#CHECK ((role = ANY (ARRAY[''admin''::text, ''support''::text, ''cashier''::text, ''kitchen_staff''::text, ''driver''::text])))',
+      'constraint#staff_roles.staff_roles_scope#CHECK ((((role = ANY (ARRAY[''cashier''::text, ''kitchen_staff''::text])) AND (kitchen_id IS NOT NULL)) OR ((role = ANY (ARRAY[''admin''::text, ''support''::text])) AND (kitchen_id IS NULL)) OR (role = ''driver''::text)))',
+      'constraint#staff_roles.staff_roles_unique#UNIQUE NULLS NOT DISTINCT (user_id, role, kitchen_id)',
+      'constraint#staff_roles.staff_roles_user_id_fkey#FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE',
+      'index#kitchens.kitchens_code_key#CREATE UNIQUE INDEX kitchens_code_key ON public.kitchens USING btree (code)',
+      'index#kitchens.kitchens_pkey#CREATE UNIQUE INDEX kitchens_pkey ON public.kitchens USING btree (id)',
+      'index#security_audit_log.security_audit_log_pkey#CREATE UNIQUE INDEX security_audit_log_pkey ON public.security_audit_log USING btree (id)',
+      'index#staff_roles.staff_roles_active_user_idx#CREATE INDEX staff_roles_active_user_idx ON public.staff_roles USING btree (user_id) WHERE is_active',
+      'index#staff_roles.staff_roles_pkey#CREATE UNIQUE INDEX staff_roles_pkey ON public.staff_roles USING btree (id)',
+      'index#staff_roles.staff_roles_unique#CREATE UNIQUE INDEX staff_roles_unique ON public.staff_roles USING btree (user_id, role, kitchen_id) NULLS NOT DISTINCT',
+      'policy#kitchens.kitchens_read_authenticated#PERMISSIVE|{authenticated}|SELECT|true|-',
+      'policy#security_audit_log.security_audit_log_admin_read#PERMISSIVE|{authenticated}|SELECT|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|-',
+      'policy#staff_roles.staff_roles_admin_read#PERMISSIVE|{authenticated}|SELECT|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|-',
+      'policy#staff_roles.staff_roles_self_read#PERMISSIVE|{authenticated}|SELECT|(user_id = ( SELECT auth.uid() AS uid))|-',
+      'table#kitchens#owner=postgres;rls=true;force=false',
+      'table#security_audit_log#owner=postgres;rls=true;force=false',
+      'table#staff_roles#owner=postgres;rls=true;force=false',
+      'trigger#security_audit_log.security_audit_log_append_only#CREATE TRIGGER security_audit_log_append_only BEFORE DELETE OR UPDATE ON public.security_audit_log FOR EACH ROW EXECUTE FUNCTION public.security_audit_log_append_only()|enabled=O',
+      'trigger#security_audit_log.security_audit_log_no_truncate#CREATE TRIGGER security_audit_log_no_truncate BEFORE TRUNCATE ON public.security_audit_log FOR EACH STATEMENT EXECUTE FUNCTION public.security_audit_log_append_only()|enabled=O',
+      'trigger#staff_roles.trg_staff_roles_driver_offline#CREATE TRIGGER trg_staff_roles_driver_offline AFTER DELETE OR UPDATE ON public.staff_roles FOR EACH ROW EXECUTE FUNCTION public.staff_roles_driver_offline()|enabled=O',
+      'trigger#staff_roles.trg_staff_roles_no_truncate#CREATE TRIGGER trg_staff_roles_no_truncate BEFORE TRUNCATE ON public.staff_roles FOR EACH STATEMENT EXECUTE FUNCTION public.staff_roles_no_truncate()|enabled=O',
+      'trigger#staff_roles.trg_staff_roles_require_admin#CREATE TRIGGER trg_staff_roles_require_admin AFTER DELETE OR UPDATE ON public.staff_roles FOR EACH ROW EXECUTE FUNCTION public.staff_roles_require_admin()|enabled=O',
+      'trigger#staff_roles.trg_staff_roles_serialize#CREATE TRIGGER trg_staff_roles_serialize BEFORE INSERT OR DELETE OR UPDATE ON public.staff_roles FOR EACH STATEMENT EXECUTE FUNCTION public.staff_roles_serialize()|enabled=O'
+    ]::text[]) x
+$e$;
+
+-- Problems of the three new tables as they exist NOW (NULL = none, or
+-- none of them exists). Used by the preflight (state before any change)
+-- and by the postcondition (state after the migration).
+create function pg_temp.phase1c_new_table_problems()
+returns text language plpgsql stable as $f$
+declare
+  n int;
+  bad text;
+  acl_bad text;
+begin
+  select count(*) into n from pg_temp.phase1c_describe() where kind = 'table';
+  if n = 0 then return null; end if;
+  if n <> 3 then
+    return 'only some of the new tables kitchens, staff_roles, security_audit_log exist (' || n || ' of 3); not created by this migration';
+  end if;
+  with cur as (select * from pg_temp.phase1c_describe() d where d.kind <> 'acl' and d.kind <> 'function'
+                 and (d.kind = 'table' or split_part(d.name, '.', 1) in ('kitchens', 'staff_roles', 'security_audit_log'))),
+       exp as (select * from pg_temp.phase1c_expected_new_tables())
+  select string_agg(z, '; ' order by z) into bad from (
+    select 'unexpected or different ' || c.kind || ' ' || c.name as z from cur c
+     where not exists (select 1 from exp e where e.kind = c.kind and e.name = c.name and e.descr = c.descr)
+    union all
+    select 'missing ' || e.kind || ' ' || e.name from exp e
+     where not exists (select 1 from cur c where c.kind = e.kind and c.name = e.name)) s;
+  select string_agg(d.name || ': ' || g, '; ') into acl_bad
+    from pg_temp.phase1c_describe() d
+    cross join lateral unnest(string_to_array(d.descr, ',')) g
+   where d.kind = 'acl'
+     and not (g like 'postgres=%'
+              or g = 'authenticated=SELECT'
+              or (g like 'service_role=%' and g <> 'service_role=TRUNCATE'));
+  if acl_bad is null then
+    select string_agg(d.name, ', ') into acl_bad from pg_temp.phase1c_describe() d
+     where d.kind = 'acl' and strpos(',' || d.descr || ',', ',authenticated=SELECT,') = 0;
+    if acl_bad is not null then acl_bad := 'authenticated lacks SELECT on ' || acl_bad; end if;
+  else
+    acl_bad := 'unexpected table grants: ' || acl_bad;
+  end if;
+  if bad is null and acl_bad is null then return null; end if;
+  return 'existing new tables differ from the reviewed definition (not created by this migration, or modified): '
+         || concat_ws('; ', bad, acl_bad);
+end
+$f$;
 
 -- ---------------------------------------------------------------------
 -- 0b. DEPLOYMENT PREREQUISITE — the owner-authorized initial administrator
@@ -266,16 +471,17 @@ declare
   --   signature|security definer|configuration|md5(body)
   -- so a CREATE OR REPLACE that weakens one is reported.
   reviewed_functions text[] := array[
-    'public.assign_staff_role(uuid,text,uuid)|true|search_path=""|1c9c7f3bc700bd76d4cee1c8033842ab',
+    'public.assign_staff_role(uuid,text,uuid)|true|search_path=""|42c8afcf7cff114d86aa6f105724c9a0',
     'public.enforce_driver_availability()|true|search_path=""|da0e53b932e051e9a371cb9fb2e64ce0',
     'public.enforce_profile_privilege_guard()|false|search_path=""|777cbb1b279b251dbb5380675638c1eb',
     'public.has_staff_role(text)|true|search_path=""|f44b74472038a40e54a5875a1ad1a835',
-    'public.revoke_staff_role(uuid,text,uuid)|true|search_path=""|20e241df950caf65393fc30e1107a726',
+    'public.revoke_staff_role(uuid,text,uuid)|true|search_path=""|33bdc8cefd5a08a7c32c5ad9a2883b7f',
     'public.security_audit_log_append_only()|false|search_path=""|9283a0cd3cd689131cb43161db1f0c1e',
     'public.set_driver_availability(boolean)|true|search_path=""|387497cf2e12e33c2a3e528dfec585b7',
     'public.staff_roles_driver_offline()|true|search_path=""|6c92d893f56587ae443a911badcfd922',
     'public.staff_roles_no_truncate()|false|search_path=""|5b001f4e82a1558a7fb36fb7f42d64e5',
-    'public.staff_roles_require_admin()|false|search_path=""|fd3d27a94d54238193182cf3d8467de8'];
+    'public.staff_roles_require_admin()|true|search_path=""|44a2aecd08c07582112b0e65beb07aa5',
+    'public.staff_roles_serialize()|false|search_path=""|cf5ff3a87980a74d971b17c7fa89a16a'];
 begin
   -- ============================ drift (U3) ============================
   return query select 'drift'::text, r.rolname::text, 'unexpected database role'::text
@@ -446,14 +652,16 @@ begin
                  ('drivers','trg_enforce_driver_availability'),
                  ('security_audit_log','security_audit_log_append_only'),
                  ('security_audit_log','security_audit_log_no_truncate'),
+                 ('staff_roles','trg_staff_roles_serialize'),
                  ('staff_roles','trg_staff_roles_require_admin'),
                  ('staff_roles','trg_staff_roles_driver_offline'),
                  ('staff_roles','trg_staff_roles_no_truncate')) x(t, g)
    where not exists (select 1 from pg_trigger tg
                       where tg.tgrelid = to_regclass('public.' || x.t) and tg.tgname = x.g and tg.tgenabled <> 'D');
-  return query select 'containment', 'public.drivers', 'availability check constraint missing'
+  return query select 'containment', 'public.drivers', 'availability check constraint missing or not the reviewed definition'
    where not exists (select 1 from pg_constraint
-                      where conrelid = to_regclass('public.drivers') and conname = 'drivers_status_availability_check');
+                      where conrelid = to_regclass('public.drivers') and conname = 'drivers_status_availability_check'
+                        and pg_get_constraintdef(oid) = 'CHECK ((status = ANY (ARRAY[''online''::text, ''offline''::text])))');
   return query select 'containment', 'public.drivers.status', 'drivers.status allows NULL'
     from pg_attribute a
    where a.attrelid = to_regclass('public.drivers') and a.attname = 'status' and not a.attnotnull;
@@ -524,6 +732,7 @@ declare
   problems text[] := '{}';
   missing  text;
   admin_rows boolean := false;
+  shape text;
   -- Every policy this migration expects to see on the tables it changes:
   -- the staging policies from the 2026-10-15 evidence plus the ones this
   -- migration creates (so a re-run passes). Anything else is unreviewed.
@@ -653,13 +862,58 @@ begin
    where status is not null and status not in ('online','offline','pending','rejected');
   if missing is not null then problems := problems || ('unexpected drivers.status values: ' || missing); end if;
 
+  -- The availability constraint is added only when absent (section 9), so
+  -- one that already exists must be exactly the reviewed definition.
+  select pg_get_constraintdef(k.oid) into missing
+    from pg_constraint k
+   where k.conrelid = 'public.drivers'::regclass and k.conname = 'drivers_status_availability_check';
+  if missing is distinct from null and missing <> 'CHECK ((status = ANY (ARRAY[''online''::text, ''offline''::text])))' then
+    problems := problems || ('existing constraint drivers.drivers_status_availability_check differs from the reviewed definition: ' || missing);
+  end if;
+
   -- Initial administrator (section 3): on first application (no admin row
   -- in staff_roles yet) the owner-authorized id in section 0b must be a
   -- verified account. user_profiles.role / is_admin are NOT used to find it.
-  if to_regclass('public.staff_roles') is not null then
-    execute $q$select exists (select 1 from public.staff_roles where role = 'admin')$q$ into admin_rows;
+  -- The new tables either do not exist (first application) or exist
+  -- EXACTLY as this migration defines them (re-run). A pre-existing table
+  -- of another shape, or with missing protections or extra grants or
+  -- policies, is refused; it is never repaired (section 0a2).
+  shape := pg_temp.phase1c_new_table_problems();
+  if shape is not null then
+    problems := problems || shape;
+  elsif to_regclass('public.staff_roles') is not null then
+    -- Re-run: the existing rows must be ones this migration (or its audited
+    -- functions) wrote. An admin row without its audit record, e.g. from a
+    -- hand-made or superseded staff_roles table, is refused; it is never
+    -- trusted as the initial administrator.
+    for v in execute $q$
+      select format('staff_roles admin row for %s has no seed or assign audit record (unknown provenance)', s.user_id) as p
+        from public.staff_roles s
+       where s.role = 'admin'
+         and not exists (select 1 from public.security_audit_log l
+                          where l.target_user_id = s.user_id
+                            and (l.action = 'staff_role.seed_initial_admin'
+                                 or (l.action = 'staff_role.assign' and l.details ->> 'role' = 'admin')))
+      union all
+      select format('security_audit_log holds %s initial-admin seed records (expected exactly 1)', count(*))
+        from public.security_audit_log where action = 'staff_role.seed_initial_admin' having count(*) <> 1
+      union all
+      select 'staff_roles has no active admin'
+       where not exists (select 1 from public.staff_roles where role = 'admin' and is_active)
+      union all
+      select 'kitchens: Kitchen A is missing or differs from the reviewed row (code A, Kitchen A (Casablanca), active)'
+       where not exists (select 1 from public.kitchens where code = 'A' and name = 'Kitchen A (Casablanca)' and is_active)
+    $q$ loop
+      problems := problems || v.p;
+    end loop;
+    -- every active admin must still pass the initial-administrator account checks
+    for v in execute $q$select user_id::text as p from public.staff_roles where role = 'admin' and is_active order by 1$q$ loop
+      missing := pg_temp.phase1c_initial_admin_problem(v.p);
+      if missing is not null then problems := problems || ('active admin: ' || missing); end if;
+    end loop;
+    admin_rows := true;
   end if;
-  if not admin_rows then
+  if not admin_rows and shape is null then
     missing := pg_temp.phase1c_initial_admin_problem(current_setting('phase1c.initial_admin_user_id', true));
     if missing is not null then problems := problems || missing; end if;
   end if;
@@ -672,6 +926,9 @@ begin
   if cardinality(problems) > 0 then
     raise exception 'Phase 1C preflight failed; aborting the migration transaction (its COMMIT cannot succeed): %',
       array_to_string(problems, ' | ') using errcode = 'P0001';
+  end if;
+  if current_user <> 'postgres' then   -- also here, so a skipped role check (ON_ERROR_ROLLBACK) cannot pass the gate
+    raise exception 'Phase 1C: core preflight must run as role postgres (current_user=%)', current_user using errcode = '42501';
   end if;
   insert into pg_temp.phase1c_gate_ok values ('core preflight');
 end
@@ -795,21 +1052,46 @@ create policy security_audit_log_admin_read on public.security_audit_log
   for select to authenticated using ((select public.has_staff_role('admin')));
 
 -- Invariants on staff_roles that hold for EVERY writer (the functions
--- below, service_role, operators, and ON DELETE CASCADE from auth.users):
---   * at least one active admin remains. Writers that remove an active
---     admin are serialized by a transaction-level advisory lock, and the
---     check runs after the lock in a fresh snapshot, so two concurrent
---     revocations cannot both pass (tested);
+-- below, service_role, operators, and ON DELETE CASCADE from auth.users)
+-- at EVERY isolation level:
+--   * every write statement first takes one transaction-level advisory
+--     lock (trg_staff_roles_serialize, BEFORE ... FOR EACH STATEMENT), so
+--     competing staff-role changes run one after the other and in the same
+--     lock order (no deadlock between the functions and direct writes);
+--   * at least one active admin remains. After a row stops being an active
+--     admin, the remaining active admin rows are read with FOR SHARE. In
+--     READ COMMITTED that reads the latest committed versions; in
+--     REPEATABLE READ / SERIALIZABLE a row that a concurrent transaction
+--     changed and committed raises a serialization failure (40001) instead
+--     of being read from a stale snapshot. Either way two concurrent
+--     removals cannot both commit (tested for every write path and
+--     isolation level, supabase/tests/admin_concurrency_tests.sh);
 --   * a driver whose approval is revoked or deleted is set offline
 --     (audited);
 --   * the table cannot be truncated (TRUNCATE bypasses row triggers).
-create or replace function public.staff_roles_require_admin()
+create or replace function public.staff_roles_serialize()
 returns trigger language plpgsql set search_path = '' as $$
+begin
+  perform pg_advisory_xact_lock(hashtextextended('phase1c.staff_roles.admin', 0));
+  return null;
+end;
+$$;
+revoke all on function public.staff_roles_serialize() from public, anon, authenticated;
+drop trigger if exists trg_staff_roles_serialize on public.staff_roles;
+create trigger trg_staff_roles_serialize
+  before insert or update or delete on public.staff_roles
+  for each statement execute function public.staff_roles_serialize();
+
+-- SECURITY DEFINER (owner postgres, not subject to RLS) so the remaining
+-- admins are always counted completely, whoever the writer is.
+create or replace function public.staff_roles_require_admin()
+returns trigger language plpgsql security definer set search_path = '' as $$
 begin
   if old.role = 'admin' and old.is_active
      and (tg_op = 'DELETE' or not new.is_active or new.role <> 'admin' or new.user_id is distinct from old.user_id) then
     perform pg_advisory_xact_lock(hashtextextended('phase1c.staff_roles.admin', 0));
-    if not exists (select 1 from public.staff_roles where role = 'admin' and is_active) then
+    perform 1 from public.staff_roles where role = 'admin' and is_active for share;
+    if not found then
       raise exception 'at least one active admin must remain' using errcode = '42501';
     end if;
   end if;
@@ -871,12 +1153,15 @@ as $$
 declare
   v_id uuid;
 begin
-  -- Serialize all staff-role changes (same lock as revoke_staff_role and
-  -- trg_staff_roles_require_admin). The authority check below runs after
-  -- the lock, in a fresh snapshot, so a caller whose admin role was just
-  -- revoked by a concurrent, committed call is refused.
+  -- Serialize all staff-role changes (same lock as trg_staff_roles_serialize).
+  -- The authority check is a locking read after the lock: a caller whose
+  -- admin role a concurrent transaction revoked and committed is refused
+  -- (READ COMMITTED) or gets a serialization failure (REPEATABLE READ /
+  -- SERIALIZABLE); it never acts on a stale snapshot.
   perform pg_advisory_xact_lock(hashtextextended('phase1c.staff_roles.admin', 0));
-  if not public.has_staff_role('admin') then
+  perform 1 from public.staff_roles s
+   where s.user_id = (select auth.uid()) and s.role = 'admin' and s.is_active for share;
+  if not found then
     raise exception 'only an admin may assign staff roles' using errcode = '42501';
   end if;
   if p_role is null or p_role not in ('admin','support','cashier','kitchen_staff','driver') then
@@ -915,17 +1200,22 @@ as $$
 declare
   v_count int;
 begin
-  -- Serialize all staff-role changes (same lock as assign_staff_role and
-  -- trg_staff_roles_require_admin). The authority check and the last-admin
-  -- count run after the lock, in a fresh snapshot, so two concurrent
-  -- revocations cannot both pass (tested).
+  -- Serialize all staff-role changes (same lock as trg_staff_roles_serialize).
+  -- The authority check and the last-admin check are locking reads after
+  -- the lock (see assign_staff_role); trg_staff_roles_require_admin
+  -- enforces the last-admin rule again for every writer.
   perform pg_advisory_xact_lock(hashtextextended('phase1c.staff_roles.admin', 0));
-  if not public.has_staff_role('admin') then
+  perform 1 from public.staff_roles s
+   where s.user_id = (select auth.uid()) and s.role = 'admin' and s.is_active for share;
+  if not found then
     raise exception 'only an admin may revoke staff roles' using errcode = '42501';
   end if;
-  if p_role = 'admin' and (select count(*) from public.staff_roles
-                            where role = 'admin' and is_active and user_id <> p_user) = 0 then
-    raise exception 'cannot revoke the last active admin' using errcode = '42501';
+  if p_role = 'admin' then
+    perform 1 from public.staff_roles s
+     where s.role = 'admin' and s.is_active and s.user_id <> p_user for share;
+    if not found then
+      raise exception 'cannot revoke the last active admin' using errcode = '42501';
+    end if;
   end if;
 
   update public.staff_roles
@@ -1306,6 +1596,28 @@ begin
   -- also reported by containment_violations(); stated here explicitly
   if not exists (select 1 from public.staff_roles where role = 'admin' and is_active) then
     raise exception 'Phase 1C postcondition failed: no active admin; aborting the migration transaction';
+  end if;
+  -- The new tables are now exactly the reviewed definition (section 0a2).
+  bad := pg_temp.phase1c_new_table_problems();
+  if bad is not null then
+    raise exception 'Phase 1C postcondition failed; aborting the migration transaction (its COMMIT cannot succeed): %', bad;
+  end if;
+  if not exists (select 1 from public.kitchens where code = 'A' and name = 'Kitchen A (Casablanca)' and is_active) then
+    raise exception 'Phase 1C postcondition failed: Kitchen A missing or not the reviewed row; aborting the migration transaction';
+  end if;
+  -- No object that existed before was replaced, repaired or removed: each
+  -- one must be exactly what this migration defines (a re-run). Otherwise
+  -- an unknown function, trigger, policy, constraint, index, column or
+  -- grant of the same name would have been silently overwritten.
+  select string_agg(p.kind || ' ' || p.name, '; ' order by p.kind, p.name) into bad
+    from pg_temp.phase1c_pre p
+   where not exists (select 1 from pg_temp.phase1c_describe() d
+                      where d.kind = p.kind and d.name = p.name and d.descr = p.descr);
+  if bad is not null then
+    raise exception 'Phase 1C postcondition failed; aborting the migration transaction (its COMMIT cannot succeed): pre-existing objects differ from what this migration defines and were not overwritten: %', bad;
+  end if;
+  if current_user <> 'postgres' then   -- also here, so a skipped role check (ON_ERROR_ROLLBACK) cannot pass the gate
+    raise exception 'Phase 1C: core postcondition must run as role postgres (current_user=%)', current_user using errcode = '42501';
   end if;
   insert into pg_temp.phase1c_gate_ok values ('core postcondition');
 end

@@ -58,8 +58,9 @@ STORAGE_IMAGE="${PHASE1C_STORAGE_IMAGE:-ghcr.io/supabase/storage-api:v1.79.30}"
 BASE="$ROOT/supabase/baseline/staging_schema_2026-10-15.sql"
 MIG="${PHASE1C_MIGRATION:-$ROOT/supabase/migrations/20261016170000_phase1c_security_containment.sql}"   # override only for mutation testing
 MIG_S="${PHASE1C_STORAGE_MIGRATION:-$ROOT/supabase/migrations/20261016171000_phase1c_storage_meal_images.sql}"   # override only for mutation testing
-DOWN="$ROOT/supabase/rollback/20261016170000_phase1c_security_containment.down.sql"
-DOWN_S="$ROOT/supabase/rollback/20261016171000_phase1c_storage_meal_images.down.sql"
+RB_SQL="$ROOT/supabase/rollback/phase1c_rollback.sql"      # one transaction: storage part, then core part
+RB_SH="$ROOT/supabase/rollback/phase1c_rollback.sh"        # the supported rollback procedure
+CONCURRENCY="$HERE/admin_concurrency_tests.sh"
 EVIDENCE="$ROOT/supabase/evidence/catalog_2026-10-15.json"
 CATALOG_Q="$ROOT/supabase/evidence/phase1b_catalog_query.sql"
 BOOT="$HERE/bootstrap_hosted_auth.sql"; FIX="$HERE/fixtures_staging_like.sql"
@@ -142,6 +143,52 @@ nothing_applied() {
   [ "$(qa "select to_regclass('public.staff_roles') is null and to_regclass('public.kitchens') is null and to_regprocedure('public.containment_violations()') is null")" = "t" ] &&
   [ "$(qa "select count(*) from pg_policies where schemaname = 'public'")" = "$1" ]
 }
+# state_digest: one hash over every catalog object and every row this
+# package could touch (public schema, storage policies/buckets/objects,
+# migration history, schemas, default privileges). Equal digests before and
+# after a refused run prove the refusal changed nothing.
+state_digest() {
+  local data
+  data="$(qa "select coalesce(string_agg(format('select %L || md5(coalesce(string_agg(to_jsonb(t)::text, E''\\n'' order by to_jsonb(t)::text), '''')) from %s t',
+                     c.oid::regclass::text, c.oid::regclass::text), ' union all '), 'select null')
+              from pg_class c
+             where c.relkind = 'r' and (c.relnamespace in ('public'::regnamespace) or c.oid in (to_regclass('storage.objects'),
+                   to_regclass('storage.buckets'), to_regclass('supabase_migrations.schema_migrations')))")"
+  qa "select md5(string_agg(x, E'\n' order by x)) from (
+      select 'pol|' || schemaname || '|' || tablename || '|' || policyname || '|' || permissive || '|' || cmd || '|' || roles::text
+             || '|' || coalesce(qual, '') || '|' || coalesce(with_check, '') as x from pg_policies
+      union all select 'trg|' || tgrelid::regclass::text || '|' || tgname || '|' || tgenabled::text || '|' || pg_get_triggerdef(oid) from pg_trigger where not tgisinternal
+      union all select 'fn|' || p.oid::regprocedure::text || '|' || md5(p.prosrc) || '|' || coalesce(p.proacl::text, '') || '|' || p.prosecdef::text
+             || '|' || coalesce(array_to_string(p.proconfig, ','), '') from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname not in ('pg_catalog', 'information_schema') and n.nspname !~ '^pg_'
+      union all select 'rel|' || c.oid::regclass::text || '|' || c.relkind::text || '|' || coalesce(c.relacl::text, '') || '|' || c.relrowsecurity::text
+             || '|' || c.relowner::regrole::text from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname !~ '^pg_' and n.nspname <> 'information_schema'
+      union all select 'con|' || conrelid::regclass::text || '|' || conname || '|' || pg_get_constraintdef(oid) from pg_constraint where conrelid <> 0
+      union all select 'att|' || attrelid::regclass::text || '|' || attname || '|' || format_type(atttypid, atttypmod) || '|' || attnotnull::text || '|' || coalesce(attacl::text, '')
+        from pg_attribute a join pg_class c on c.oid = a.attrelid join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname !~ '^pg_' and n.nspname <> 'information_schema' and attnum > 0 and not attisdropped and c.relkind in ('r', 'v', 'm', 'f', 'p')
+      union all select 'nsp|' || nspname || '|' || coalesce(nspacl::text, '') from pg_namespace where nspname !~ '^pg_'
+      union all select 'defacl|' || defaclrole::regrole::text || '|' || defaclnamespace::text || '|' || defaclobjtype::text || '|' || defaclacl::text from pg_default_acl
+      union all select 'data|' || coalesce(d, '') from ($data) as dd(d)) s"
+}
+# record_history VERSION...: migration-history rows as supabase db push writes them
+record_history() {
+  q postgres -c "create schema if not exists supabase_migrations;
+    create table if not exists supabase_migrations.schema_migrations (version text not null primary key, statements text[], name text)" >/dev/null
+  for v in "$@"; do q postgres -c "insert into supabase_migrations.schema_migrations (version, name) values ('$v', 'phase1c') on conflict do nothing" >/dev/null; done
+}
+# rollback_run NAME [extra args...]: the supported rollback procedure against
+# this local container; output in $OUT/NAME.log, prints the exit code
+rollback_run() {
+  local name="$1" rc=0; shift
+  "$RB_SH" "$@" > "$OUT/$name.log" 2>&1 || rc=$?
+  echo "$rc"
+}
+rb_args() {   # default, valid arguments (each test overrides one)
+  RB_EXPORT="$OUT/export_$1"
+  RB=(--target local --db-url "postgresql://postgres:postgres@127.0.0.1:$PORT/postgres" --expected-admin "$INITIAL_ADMIN"
+      --approved-by "local harness" --backup-ref "local-disposable" --export-dir "$RB_EXPORT" --confirm "ROLLBACK PHASE 1C ON local")
+}
 with_admin "$INITIAL_ADMIN" "$MIG_T"
 
 echo "Images: $IMAGE ($(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE" 2>/dev/null || echo 'digest unknown'))"
@@ -188,6 +235,24 @@ PY
 then pass "every pre-existing policy the migration keeps is unchanged from the staging evidence ($(cat "$OUT/kept_policies.txt"))"
 else fail "kept policies differ from the evidence: $(cat "$OUT/kept_policies.txt")"; fi
 [ "$(preflight phase1c_not_yet_applied\ \(U9\))" = "False" ] && pass "preflight reports the migration as already applied" || fail "preflight did not detect applied migration"
+# the reviewed new-table definition embedded in the migration (section 0a2)
+# must be exactly what a clean application produces
+python3 -I - "$MIG" > "$OUT/describe_helpers.sql" <<'PY'
+import sys
+s = open(sys.argv[1]).read()
+for start, end in (("create function pg_temp.phase1c_describe()", "$d$;"),
+                   ("create function pg_temp.phase1c_expected_new_tables()", "$e$;")):
+    i = s.index(start); print(s[i:s.index(end, i) + len(end)])
+PY
+DIFF_NEW="$( { cat "$OUT/describe_helpers.sql"; echo "select count(*) from (
+  (select kind, name, descr from pg_temp.phase1c_describe() where kind not in ('acl', 'function')
+     and (kind = 'table' or split_part(name, '.', 1) in ('kitchens', 'staff_roles', 'security_audit_log'))
+   except select * from pg_temp.phase1c_expected_new_tables())
+  union all
+  (select * from pg_temp.phase1c_expected_new_tables()
+   except select kind, name, descr from pg_temp.phase1c_describe())) d;"; } | q postgres -At)"
+[ "$DIFF_NEW" = "0" ] && pass "the reviewed definition of kitchens/staff_roles/security_audit_log in the migration equals a clean application ($(grep -c "^      '" "$OUT/describe_helpers.sql") entries)" \
+  || fail "embedded new-table definition differs from a clean application ($DIFF_NEW rows)"
 if migrate b_storage "$MIG_S"; then fail "storage migration ran without a storage schema"
 elif grep -q "storage.objects / storage.buckets missing" "$OUT/b_storage.log"; then pass "storage migration refuses to run where storage.objects is absent (fails closed)"
 else fail "storage migration: wrong error"; cat "$OUT/b_storage.log"; fi
@@ -253,6 +318,10 @@ q supabase_admin -c "create role cli_login_postgres login password 'postgres' in
 run_mode stop "$MIG_T" "$OUT/p_role.log" cli_login_postgres || true
 grep -q "must run as role postgres" "$OUT/p_role.log" && nothing_applied "$NPOL" \
   && pass "a login role that has not switched to postgres is refused before any change (L6)" || { fail "role check"; cat "$OUT/p_role.log"; }
+run_mode rollback_on "$MIG_T" "$OUT/p_role_rollback_on.log" cli_login_postgres || true
+grep -q "phase1c_guard_did_not_pass" "$OUT/p_role_rollback_on.log" && nothing_applied "$NPOL" \
+  && pass "the same login role with ON_ERROR_ROLLBACK=on (role check skipped by the runner): the gate refuses the COMMIT; nothing applied" \
+  || { fail "role check under ON_ERROR_ROLLBACK"; tail -5 "$OUT/p_role_rollback_on.log"; }
 q supabase_admin -c "drop role cli_login_postgres" >/dev/null
 run_mode plain "$MIG_T" "$OUT/p_plain_ok.log" || true
 [ "$(qa "select coalesce(string_agg(user_id::text, ','), 'none') from public.staff_roles where role = 'admin' and is_active")" = "$INITIAL_ADMIN" ] \
@@ -335,6 +404,88 @@ guard H11_rls_off "alter table public.meals disable row level security" \
 [ "$(preflight ALL skip-storage)" = "True" ] && pass "guard database clean again after all reverts" || fail "guard database not clean after reverts"
 if migrate h_final; then pass "migration applies once every injected state is reverted"; else fail "migration failed after reverts"; cat "$OUT/h_final.log"; fi
 
+echo; echo "=== X. pre-existing objects on conditional paths (rev6 M3): validated, never accepted or overwritten"
+# xguard NAME ROLE "inject SQL" "expected error fragment" "revert SQL"
+#   inject -> the migration must abort with the fragment and the complete
+#   state digest must be identical before and after the attempt (atomic,
+#   nothing repaired); revert -> back to the previous state.
+xguard() {
+  local name="$1" role="$2" inject="$3" frag="$4" revert="$5" d1
+  if ! q "$role" -c "$inject" >/dev/null 2>"$OUT/x_$name.err"; then fail "x $name: injection failed"; cat "$OUT/x_$name.err"; return; fi
+  d1="$(state_digest)"
+  if migrate "x_$name"; then fail "x $name: migration ACCEPTED the pre-existing state"
+  elif grep -qF -- "$frag" "$OUT/x_$name.log" && [ "$(state_digest)" = "$d1" ]; then
+    pass "x $name: refused ($frag); database byte-for-byte unchanged"
+  else fail "x $name: wrong error or the database changed"; grep -E "ERROR|FATAL" "$OUT/x_$name.log" | head -3; fi
+  if [ -n "$revert" ]; then
+    q "$role" -c "$revert" >/dev/null 2>"$OUT/x_${name}_revert.err" || { fail "x $name: revert failed"; cat "$OUT/x_${name}_revert.err"; }
+  fi
+}
+start_db x; setup
+E1=00000000-0000-0000-0000-0000000000e1
+echo "  -- first application: an object of the same name already exists"
+xguard malformed_tables postgres "create table public.staff_roles (user_id uuid, role text, is_active boolean default true);
+  create table public.kitchens (id uuid primary key, code text, name text, is_active boolean);
+  create table public.security_audit_log (id bigint, action text);
+  alter table public.staff_roles enable row level security;
+  insert into public.staff_roles (user_id, role) values ('$E1', 'admin')" \
+  "existing new tables differ from the reviewed definition" ""
+xguard_cleanup_all() { q postgres -c "drop table if exists public.staff_roles, public.kitchens, public.security_audit_log" >/dev/null; }
+xguard_cleanup_all
+xguard partial_tables postgres "create table public.kitchens (id uuid primary key, code text, name text, is_active boolean)" \
+  "only some of the new tables" "drop table public.kitchens"
+xguard unknown_function postgres "create function public.has_staff_role(p_role text) returns boolean language sql as 'select true'" \
+  "function public.has_staff_role(text)" "drop function public.has_staff_role(text)"
+xguard unknown_trigger postgres "create function public.p1c_noop() returns trigger language plpgsql as 'begin return new; end';
+  create trigger trg_enforce_profile_privilege_guard before update on public.user_profiles for each row execute function public.p1c_noop()" \
+  "trigger user_profiles.trg_enforce_profile_privilege_guard" "drop trigger trg_enforce_profile_privilege_guard on public.user_profiles; drop function public.p1c_noop()"
+xguard unknown_constraint postgres "alter table public.drivers add constraint drivers_status_availability_check check (status is not null or status is null)" \
+  "constraint drivers.drivers_status_availability_check" "alter table public.drivers drop constraint drivers_status_availability_check"
+xguard policy_name_collision postgres "create policy staff_admin_all_orders on public.orders for select using (true)" \
+  "policy orders.staff_admin_all_orders" "drop policy staff_admin_all_orders on public.orders"
+D_X0="$(state_digest)"
+if migrate x_first; then pass "valid first application after the reverts"; else fail "first application failed"; cat "$OUT/x_first.log"; fi
+D_X1="$(state_digest)"
+if migrate x_rerun; then
+  [ "$(state_digest)" = "$D_X1" ] && pass "valid pre-existing tables (re-run on its own result): accepted, database byte-for-byte unchanged" \
+    || fail "re-run changed the database"
+else fail "re-run on a valid database refused"; cat "$OUT/x_rerun.log"; fi
+echo "  -- re-run: the existing tables differ from the reviewed definition or hold unsafe data"
+xguard missing_trigger postgres "drop trigger trg_staff_roles_no_truncate on public.staff_roles" \
+  "missing trigger staff_roles.trg_staff_roles_no_truncate" \
+  "create trigger trg_staff_roles_no_truncate before truncate on public.staff_roles for each statement execute function public.staff_roles_no_truncate()"
+xguard disabled_trigger postgres "alter table public.staff_roles disable trigger trg_staff_roles_require_admin" \
+  "trigger staff_roles.trg_staff_roles_require_admin" "alter table public.staff_roles enable trigger trg_staff_roles_require_admin"
+xguard missing_rls postgres "alter table public.security_audit_log disable row level security" \
+  "table security_audit_log" "alter table public.security_audit_log enable row level security"
+xguard extra_column postgres "alter table public.staff_roles add column note text" \
+  "column staff_roles.note" "alter table public.staff_roles drop column note"
+xguard dropped_constraint postgres "alter table public.staff_roles drop constraint staff_roles_scope" \
+  "missing constraint staff_roles.staff_roles_scope" \
+  "alter table public.staff_roles add constraint staff_roles_scope check ((role in ('cashier','kitchen_staff') and kitchen_id is not null) or (role in ('admin','support') and kitchen_id is null) or role = 'driver')"
+xguard extra_index postgres "create index p1c_probe_idx on public.kitchens (name)" \
+  "index kitchens.p1c_probe_idx" "drop index public.p1c_probe_idx"
+xguard unexpected_grant postgres "grant insert on public.staff_roles to authenticated" \
+  "unexpected table grants: staff_roles: authenticated=INSERT" "revoke insert on public.staff_roles from authenticated"
+xguard anon_grant postgres "grant select on public.security_audit_log to anon" \
+  "unexpected table grants: security_audit_log: anon=SELECT" "revoke select on public.security_audit_log from anon"
+xguard service_truncate postgres "grant truncate on public.kitchens to service_role" \
+  "kitchens: service_role=TRUNCATE" "revoke truncate on public.kitchens from service_role"
+xguard column_grant postgres "grant update (is_active) on public.staff_roles to authenticated" \
+  "column_acl staff_roles.is_active" "revoke update (is_active) on public.staff_roles from authenticated"
+xguard unexpected_policy postgres "create policy p1c_probe on public.staff_roles for insert to authenticated with check (true)" \
+  "policy staff_roles.p1c_probe" "drop policy p1c_probe on public.staff_roles"
+xguard changed_policy postgres "alter policy staff_roles_self_read on public.staff_roles using (true)" \
+  "policy staff_roles.staff_roles_self_read" "alter policy staff_roles_self_read on public.staff_roles using (user_id = (select auth.uid()))"
+xguard unaudited_admin postgres "insert into public.staff_roles (user_id, role) values ('$E1', 'admin')" \
+  "has no seed or assign audit record (unknown provenance)" "delete from public.staff_roles where user_id = '$E1'"
+xguard audited_flagged_admin postgres "$(echo "set role authenticated; select set_config('request.jwt.claims', '{\"sub\":\"$INITIAL_ADMIN\",\"role\":\"authenticated\"}', false);") select public.assign_staff_role('$E1', 'admin')" \
+  "illegitimate profile pattern" "delete from public.staff_roles where user_id = '$E1'"
+xguard kitchen_a_changed postgres "update public.kitchens set is_active = false where code = 'A'" \
+  "Kitchen A is missing or differs" "update public.kitchens set is_active = true where code = 'A'"
+xguard seed_record_removed supabase_admin "set session_replication_role = replica; delete from public.security_audit_log where action = 'staff_role.seed_initial_admin'" \
+  "0 initial-admin seed records" ""
+
 echo; echo "=== M. monitoring: containment_violations() reports regressions of the reviewed state (M2, L1-L3)"
 start_db m; setup
 migrate m || { fail "migration failed"; cat "$OUT/m.log"; }
@@ -392,55 +543,129 @@ mon L3_unapproved_online supabase_admin "set session_replication_role = replica;
   "driver online without an active driver approval" "update public.drivers set status = 'offline' where id = '00000000-0000-0000-0000-0000000000d2'"
 mon P2_nullable_status postgres "alter table public.drivers alter column status drop not null" "drivers.status allows NULL" \
   "alter table public.drivers alter column status set not null"
-# a reviewed migration function weakened with CREATE OR REPLACE (same name and signature)
-q postgres -c "create or replace function public.has_staff_role(p_role text) returns boolean language sql stable security definer set search_path = '' as \$\$ select true \$\$" >/dev/null
-[ "$(qa "select count(*) from public.containment_violations() where object = 'public.has_staff_role(text)' and strpos(problem, 'reviewed function changed') > 0")" = "1" ] \
-  && pass "monitor P7_weakened_reviewed_function: reported ('reviewed function changed')" || { fail "weakened has_staff_role not reported"; qa "select * from public.containment_violations()"; }
-migrate m_restore || { fail "re-apply to restore has_staff_role failed"; cat "$OUT/m_restore.log"; }
-clean_m && pass "re-applying the migration restores the reviewed function; 0 violations" || fail "not clean after restore"
 
-echo "  -- concurrent admin revocations (L2): two admins revoke each other at the same time"
+# concurrent administrator changes (L2 / rev6 M1): every write path at every
+# isolation level, committed state asserted (supabase/tests/admin_concurrency_tests.sh)
 as_user() { echo "set role authenticated; select set_config('request.jwt.claims', '{\"sub\":\"$1\",\"role\":\"authenticated\"}', false) is not null;"; }
 F1=00000000-0000-0000-0000-0000000000f1
 q postgres -c "$(as_user "$INITIAL_ADMIN") select public.assign_staff_role('$F1', 'admin');" >/dev/null
 [ "$(qa "select count(*) from public.staff_roles where role = 'admin' and is_active")" = "2" ] || fail "second admin not assigned"
-( q postgres -c "$(as_user "$INITIAL_ADMIN") begin; select public.revoke_staff_role('$F1', 'admin'); select pg_sleep(3); commit;" > "$OUT/l2_s1.log" 2>&1; echo "exit=$?" >> "$OUT/l2_s1.log" ) &
-sleep 1
-( q postgres -c "$(as_user "$F1") begin; select public.revoke_staff_role('$INITIAL_ADMIN', 'admin'); commit;" > "$OUT/l2_s2.log" 2>&1; echo "exit=$?" >> "$OUT/l2_s2.log" ) &
-wait
-N_ADM="$(qa "select count(*) from public.staff_roles where role = 'admin' and is_active")"
-N_ERR="$(cat "$OUT/l2_s1.log" "$OUT/l2_s2.log" | grep -c -E "cannot revoke the last active admin|at least one active admin|only an admin may revoke")"
-[ "$N_ADM" = "1" ] && [ "$N_ERR" = "1" ] \
-  && pass "concurrent revocations are serialized: exactly one succeeds, the other is refused; 1 active admin remains" \
-  || { fail "concurrent revocation: active admins=$N_ADM, refused=$N_ERR"; cat "$OUT/l2_s1.log" "$OUT/l2_s2.log"; }
-clean_m && pass "0 violations after the concurrent revocations" || { fail "violations after concurrency test"; qa "select * from public.containment_violations()"; }
+for round in 1 2; do   # twice: the cases depend on timing, a single lucky run proves little
+  if CONC_OUT="$OUT/concurrency_$round" PORT="$PORT" "$CONCURRENCY" > "$OUT/concurrency_$round.txt" 2>&1; then
+    pass "concurrency round $round: $(grep -c 'pass:' "$OUT/concurrency_$round.txt") cases, every one leaves >= 1 active admin and the expected committed state"
+  else fail "concurrency round $round"; fi
+  [ "$round" = "1" ] && grep -v '^      ' "$OUT/concurrency_$round.txt"
+  [ "$round" = "2" ] && grep -E 'FAIL' "$OUT/concurrency_$round.txt" || true
+done
+clean_m && pass "0 violations after the concurrency cases" || { fail "violations after concurrency tests"; qa "select * from public.containment_violations()"; }
 
-echo; echo "=== G. ROLLBACK core (re-opens the vulnerabilities by design)"
+# a reviewed migration function weakened with CREATE OR REPLACE (same name and signature)
+q postgres -c "create or replace function public.has_staff_role(p_role text) returns boolean language sql stable security definer set search_path = '' as \$\$ select true \$\$" >/dev/null
+[ "$(qa "select count(*) from public.containment_violations() where object = 'public.has_staff_role(text)' and strpos(problem, 'reviewed function changed') > 0")" = "1" ] \
+  && pass "monitor P7_weakened_reviewed_function: reported ('reviewed function changed')" || { fail "weakened has_staff_role not reported"; qa "select * from public.containment_violations()"; }
+D_M="$(state_digest)"
+if migrate m_reapply_weakened; then fail "re-apply silently replaced the weakened has_staff_role"
+elif grep -q "pre-existing objects differ" "$OUT/m_reapply_weakened.log" && [ "$(state_digest)" = "$D_M" ]; then
+  pass "re-applying over the weakened function is refused (never silently repaired); nothing changed"
+else fail "re-apply over weakened function: wrong error or state changed"; cat "$OUT/m_reapply_weakened.log"; fi
+
+echo; echo "=== G. ROLLBACK (re-opens the vulnerabilities by design): supported procedure only (rev6 M2)"
 start_db g; setup
 q postgres -f "$MATRIX" > "$OUT/matrix_g_before.txt"
 D4=00000000-0000-0000-0000-0000000000d4
 q supabase_admin -c "update public.drivers set status = null where id = '$D4'" >/dev/null   # a NULL legacy status
 DRV_BEFORE="$(qa "select string_agg(id || '=' || coalesce(status, '<null>'), ',' order by id) from public.drivers")"
 migrate g || { fail "migration failed"; cat "$OUT/g.log"; }
+record_history 20261016170000
 [ "$(qa "select d.status = 'offline' and exists (select 1 from public.security_audit_log l where l.action = 'drivers.status.normalised' and l.target_user_id = d.id and l.details -> 'old_status' = 'null'::jsonb) from public.drivers d where d.id = '$D4'")" = "t" ] \
   && pass "a NULL drivers.status is normalised to offline and its previous value (NULL) is audited" || fail "NULL driver status not normalised/audited"
 N_AUD="$(qa 'select count(*) from public.security_audit_log')"; N_SR="$(qa 'select count(*) from public.staff_roles')"; N_K="$(qa 'select count(*) from public.kitchens')"
-if q postgres -f "$DOWN" > "$OUT/g_down.log" 2>&1; then pass "rollback applied"; else fail "rollback failed"; cat "$OUT/g_down.log"; fi
+D_G="$(state_digest)"
+# refused NAME FRAGMENT [args to change]: the procedure must refuse with the
+# fragment and leave the database byte-for-byte unchanged
+refused() {
+  local name="$1" frag="$2" rc; shift 2
+  rc="$(rollback_run "rb_$name" "$@")"
+  if [ "$rc" != "0" ] && grep -qF -- "$frag" "$OUT/rb_$name.log" && [ "$(state_digest)" = "$D_G" ]; then
+    pass "rollback $name: refused (exit $rc: $frag); database unchanged"
+  else fail "rollback $name: exit $rc, expected refusal '$frag' with no change"; tail -5 "$OUT/rb_$name.log"; fi
+}
+rb_args t1; refused wrong_target_staging "target staging accepts only project" "${RB[@]}" --target staging --confirm "ROLLBACK PHASE 1C ON teppcfnpkoxkudajnvad"
+rb_args t2; refused wrong_target_remote_host "target local accepts only 127.0.0.1" "${RB[@]}" --db-url "postgresql://postgres:x@db.otherproject.supabase.co:5432/postgres"
+rb_args t3; refused wrong_target_kind "--target must be staging or local" "${RB[@]}" --target production
+rb_args t4; refused missing_confirmation "--confirm must be exactly" "${RB[@]}" --confirm "yes"
+rb_args t5; refused unexpected_database "unexpected database" "${RB[@]}" --expected-admin 00000000-0000-0000-0000-0000000000f1
+rb_args t6; refused missing_backup_ref "--backup-ref is required" "${RB[@]}" --backup-ref " "
+rb_args t7; refused missing_approval "--approved-by is required" "${RB[@]}" --approved-by ""
+rb_args t8; mkdir -p "$RB_EXPORT"; refused export_dir_exists "already exists" "${RB[@]}"
+rb_args t9; refused export_dir_in_repo "outside the repository" "${RB[@]}" --export-dir "$ROOT/supabase/p1c-export-should-not-exist"
+q supabase_admin -c "create role cli_login_postgres login password 'postgres' in role postgres" >/dev/null
+rb_args t10; refused wrong_role "must connect as role postgres" "${RB[@]}" --db-url "postgresql://cli_login_postgres:postgres@127.0.0.1:$PORT/postgres"
+q postgres -c "delete from supabase_migrations.schema_migrations" >/dev/null; D_G="$(state_digest)"
+rb_args t11; refused missing_history "migration history must end with the Phase 1C versions" "${RB[@]}"
+record_history 20261016170000 20261016180000; D_G="$(state_digest)"
+rb_args t12; refused later_migration "migration history must end with the Phase 1C versions" "${RB[@]}"
+q postgres -c "delete from supabase_migrations.schema_migrations where version = '20261016180000'" >/dev/null; D_G="$(state_digest)"
+# the SQL file itself (bypassing the procedure) is also atomic and guarded
+psql -h 127.0.0.1 -p "$PORT" -U postgres -d postgres -X -q -f "$RB_SQL" > "$OUT/rb_direct_novars.log" 2>&1 || true
+[ "$(state_digest)" = "$D_G" ] && grep -q "syntax error" "$OUT/rb_direct_novars.log" \
+  && pass "the rollback SQL run directly (plain psql -f, no procedure variables) fails before any change; database unchanged" \
+  || { fail "direct rollback SQL run changed the database"; tail -5 "$OUT/rb_direct_novars.log"; }
+psql -h 127.0.0.1 -p "$PORT" -U cli_login_postgres -d postgres -X -q -v ON_ERROR_ROLLBACK=on -v expected_admin="$INITIAL_ADMIN" -v approved_by=x -v backup_ref=x \
+  -v export_sha256="$(printf '%064d' 0)" -f "$RB_SQL" > "$OUT/rb_direct_role.log" 2>&1 || true
+[ "$(state_digest)" = "$D_G" ] && grep -q "must run as role postgres" "$OUT/rb_direct_role.log" \
+  && pass "the rollback SQL run directly by a login role that is not postgres (even with ON_ERROR_ROLLBACK=on) commits nothing" \
+  || { fail "rollback SQL as wrong role"; tail -5 "$OUT/rb_direct_role.log"; }
+q supabase_admin -c "drop role cli_login_postgres" >/dev/null; D_G="$(state_digest)"
+# injected failure midway: a dependency makes the LAST function drop fail,
+# after the policies, grants, driver statuses and archive were already changed
+q postgres -c "create schema p1c_dep; create view p1c_dep.v as select public.has_staff_role('admin') as x" >/dev/null; D_G="$(state_digest)"
+rb_args t13; refused injected_failure_midway "the rollback transaction did not commit" "${RB[@]}"
+grep -q "cannot drop function has_staff_role(text)" "$OUT/rb_injected_failure_midway.log" \
+  && pass "the injected failure happened at the end of the core part (drop function), after the earlier changes" || fail "injected failure not at the expected point"
+psql -h 127.0.0.1 -p "$PORT" -U postgres -d postgres -X -q -v ON_ERROR_ROLLBACK=on -v expected_admin="$INITIAL_ADMIN" -v approved_by=x -v backup_ref=x \
+  -v export_sha256="$(printf '%064d' 0)" -f "$RB_SQL" > "$OUT/rb_direct_rollback_on.log" 2>&1 || true
+[ "$(state_digest)" = "$D_G" ] && grep -q "phase1c_rollback_guard_did_not_pass" "$OUT/rb_direct_rollback_on.log" \
+  && pass "same failure under psql ON_ERROR_ROLLBACK=on (errors ignored): the deferred commit gate refuses the COMMIT; database unchanged" \
+  || { fail "ON_ERROR_ROLLBACK rollback run"; tail -5 "$OUT/rb_direct_rollback_on.log"; }
+q postgres -c "drop schema p1c_dep cascade" >/dev/null
+DATA_BEFORE_RB="$(qa "select md5(string_agg(to_jsonb(o)::text, ',' order by o.id)) from public.orders o") $(qa "select md5(string_agg(to_jsonb(k)::text, ',' order by k.id)) from public.kiosks k")"
+rb_args ok
+RC="$(rollback_run rb_ok "${RB[@]}")"
+[ "$RC" = "0" ] && grep -q "COMMITTED and verified" "$OUT/rb_ok.log" && pass "supported rollback procedure: committed and verified (exit 0)" \
+  || { fail "rollback procedure failed (exit $RC)"; cat "$OUT/rb_ok.log"; }
+[ -f "$RB_EXPORT/SHA256SUMS" ] && (cd "$RB_EXPORT" && sha256sum -c --quiet SHA256SUMS) \
+  && [ "$(($(wc -l < "$RB_EXPORT/security_audit_log.csv") - 1))" = "$N_AUD" ] && [ "$(stat -c %a "$RB_EXPORT")" = "700" ] \
+  && pass "audit export made first: security_audit_log ($N_AUD rows), staff_roles, kitchens; SHA-256 manifest verifies; directory mode 700" \
+  || fail "audit export missing or wrong"
 ARCH="$(qa "select string_agg(nspname, ',') from pg_namespace where nspname like 'phase1c_archive_%'")"
 if [ -n "$ARCH" ] && [ "${ARCH#*,}" = "$ARCH" ] \
    && [ "$(qa "select count(*) from $ARCH.security_audit_log")" = "$N_AUD" ] && [ "$(qa "select count(*) from $ARCH.staff_roles")" = "$N_SR" ] \
    && [ "$(qa "select count(*) from $ARCH.kitchens")" = "$N_K" ]; then
   pass "rollback ARCHIVES kitchens, staff_roles and security_audit_log in $ARCH with every row ($N_K / $N_SR / $N_AUD)"
 else fail "archive missing or rows lost (archive=$ARCH)"; fi
+qa "select obj_description('$ARCH'::regnamespace, 'pg_namespace')" | grep -q "approved by local harness; backup local-disposable; audit export sha256 $(sha256sum "$RB_EXPORT/SHA256SUMS" | cut -d' ' -f1)" \
+  && pass "the archive schema records the approval, the backup reference and the export checksum" || fail "archive approval record missing"
 [ "$(qa "select bool_or(has_schema_privilege(r, '$ARCH', 'USAGE')) from unnest(array['anon','authenticated','service_role']) r")" = "f" ] \
   && pass "archive schema is not usable by anon, authenticated or service_role" || fail "archive schema is accessible"
+[ "$(qa "select count(*) from supabase_migrations.schema_migrations where version like '2026101617%'")" = "0" ] \
+  && pass "the Phase 1C migration-history rows are removed in the same transaction" || fail "migration history not updated"
 q postgres -f "$MATRIX" > "$OUT/matrix_rollback.txt"
 diff -q "$OUT/matrix_g_before.txt" "$OUT/matrix_rollback.txt" >/dev/null \
   && pass "rollback restores the exact BEFORE policy/grant/function/default-privilege matrix" \
   || { fail "rollback matrix differs"; diff "$OUT/matrix_g_before.txt" "$OUT/matrix_rollback.txt" || true; }
 DRV_AFTER="$(qa "select string_agg(id || '=' || coalesce(status, '<null>'), ',' order by id) from public.drivers")"
 [ "$DRV_BEFORE" = "$DRV_AFTER" ] && pass "legacy drivers.status values (incl. NULL) restored from the audit log" || fail "driver statuses not restored: $DRV_AFTER"
+[ "$(qa "select md5(string_agg(to_jsonb(o)::text, ',' order by o.id)) from public.orders o") $(qa "select md5(string_agg(to_jsonb(k)::text, ',' order by k.id)) from public.kiosks k")" = "$DATA_BEFORE_RB" ] \
+  && pass "historical orders and kiosk records unchanged by the rollback" || fail "orders or kiosks changed by the rollback"
 diff -q "$OUT/matrix_before.txt" "$OUT/matrix_g_before.txt" >/dev/null && pass "BEFORE matrices of A and G identical (deterministic setup)" || fail "A/G before matrices differ"
+D_G="$(state_digest)"
+rb_args again; refused repeat_invocation "Phase 1C is not applied on this database" "${RB[@]}"
+rb_args again2
+psql -h 127.0.0.1 -p "$PORT" -U postgres -d postgres -X -q -v expected_admin="$INITIAL_ADMIN" -v approved_by=x -v backup_ref=x \
+  -v export_sha256="$(printf '%064d' 0)" -f "$RB_SQL" > "$OUT/rb_repeat_sql.log" 2>&1 || true
+[ "$(state_digest)" = "$D_G" ] && grep -q "Phase 1C is not applied here" "$OUT/rb_repeat_sql.log" \
+  && pass "repeat run of the rollback SQL itself: refused by its preflight; database unchanged" || { fail "repeat SQL run"; tail -3 "$OUT/rb_repeat_sql.log"; }
 
 echo; echo "=== S. real Supabase Storage API (meal-images)"
 if python3 -I -B "$HERE/tooling_unit_tests.py" > "$OUT/tooling_unit.txt" 2>&1; then pass "tooling unit tests: object paths are percent-encoded per segment (space, ?, #, %, /, unicode)"
@@ -509,6 +734,8 @@ PY
   sguard unexpected_limits "update storage.buckets set file_size_limit = 1048576 where id = 'meal-images';" "unexpected limits"
   sguard unexpected_types "update storage.buckets set allowed_mime_types = array['image/png'] where id = 'meal-images';" "unexpected limits"
   sguard not_public "update storage.buckets set public = false where id = 'meal-images';" "is not public"
+  sguard preexisting_policy "create policy staff_admin_insert_meal_images on storage.objects for insert to authenticated with check (bucket_id = 'meal-images');" \
+    "pre-existing storage policies differ"
   [ "$BUCKET_BEFORE" = "true:NULL:NULL" ] && pass "bucket before migration matches evidence: public, file_size_limit NULL, allowed_mime_types NULL" \
     || fail "unexpected bucket state before migration: $BUCKET_BEFORE"
   OBJ_BEFORE="$(qa "select count(*) || ':' || coalesce(string_agg(name, ',' order by name), '') from storage.objects where bucket_id = 'meal-images'")"
@@ -694,13 +921,27 @@ PY
   if migrate s_storage2 "$MIG_S"; then pass "storage migration re-apply clean"; else fail "storage re-apply failed"; cat "$OUT/s_storage2.log"; fi
   [ "$(qa "select count(*) from public.security_audit_log where action = 'storage.bucket.limits_set'")" = "1" ] && [ "$(bucket_state)" = "true:5242880:{image/jpeg,image/png,image/webp}" ] \
     && pass "re-apply changed nothing (bucket unchanged, no second audit record)" || fail "re-apply changed the bucket or logged again"
-  if q postgres -f "$DOWN" > "$OUT/s_down_wrong_order.log" 2>&1; then fail "core rollback ran before storage rollback"
-  else grep -q "run supabase/rollback/20261016171000" "$OUT/s_down_wrong_order.log" && pass "core rollback refuses to run before the storage rollback" || fail "core rollback: wrong error"; fi
-  if q postgres -f "$DOWN_S" > "$OUT/s_down_s.log" 2>&1; then pass "storage rollback applied"; else fail "storage rollback failed"; cat "$OUT/s_down_s.log"; fi
+  record_history 20261016170000 20261016171000
+  OBJ_PRE_RB="$(qa "select md5(string_agg(to_jsonb(o)::text, ',' order by o.id)) from storage.objects o")"
+  # storage and core parts are ONE transaction: a failure in the core part
+  # leaves the storage part unapplied too
+  q postgres -c "create schema p1c_dep; create view p1c_dep.v as select public.has_staff_role('admin') as x" >/dev/null
+  D_S="$(state_digest)"
+  rb_args s_fail
+  RC="$(rollback_run rb_s_fail "${RB[@]}")"
+  [ "$RC" = "1" ] && [ "$(state_digest)" = "$D_S" ] && [ "$(bucket_state)" = "true:5242880:{image/jpeg,image/png,image/webp}" ] \
+    && pass "rollback failing in its core part: storage policies, bucket limits and everything else unchanged (one transaction)" \
+    || { fail "storage+core rollback not atomic (exit $RC)"; tail -5 "$OUT/rb_s_fail.log"; }
+  q postgres -c "drop schema p1c_dep cascade" >/dev/null
+  rb_args s_ok
+  RC="$(rollback_run rb_s_ok "${RB[@]}")"
+  [ "$RC" = "0" ] && pass "supported rollback procedure (storage + core, one transaction): committed and verified" \
+    || { fail "rollback procedure failed in the storage scenario (exit $RC)"; cat "$OUT/rb_s_ok.log"; }
   [ "$(qa "select public and file_size_limit is null and allowed_mime_types is null from storage.buckets where id = 'meal-images'")" = "t" ] \
-    && pass "storage rollback restores the exact original bucket settings (public; file_size_limit IS NULL; allowed_mime_types IS NULL)" \
+    && pass "rollback restores the exact original bucket settings (public; file_size_limit IS NULL; allowed_mime_types IS NULL)" \
     || fail "bucket not restored exactly: $(bucket_state)"
-  if q postgres -f "$DOWN" > "$OUT/s_down.log" 2>&1; then pass "core rollback applied"; else fail "core rollback failed"; cat "$OUT/s_down.log"; fi
+  [ "$(qa "select md5(string_agg(to_jsonb(o)::text, ',' order by o.id)) from storage.objects o")" = "$OBJ_PRE_RB" ] \
+    && pass "every existing Storage object row is unchanged by the rollback" || fail "storage objects changed by the rollback"
   [ "$(preflight storage_objects_policies_match_evidence)" = "True" ] && pass "storage rollback restores the verbatim staging storage policies" || fail "storage policies not restored"
   [ "$(preflight storage_buckets_match_evidence)" = "True" ] && pass "preflight bucket check matches the evidence again after rollback" || fail "preflight bucket check not restored"
   q postgres -f "$MATRIX" > "$OUT/matrix_s_rollback.txt"
