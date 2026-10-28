@@ -8,6 +8,7 @@ import { locationService } from '../services/locationService';
 import { useAdminStore } from './adminStore';
 import { useCartStore } from './cartStore';
 import { useCollaboratorStore } from './collaboratorStore';
+import { useSetupStore } from './setupStore';
 import { useDriverEarningsStore } from './driverEarningsStore';
 import { useSubscriptionStore } from './subscriptionStore';
 import { useUserStore } from './userStore';
@@ -19,6 +20,7 @@ export async function resetUserScopedState(
   // start); cartStore.claimForUser() then discards it if it belongs to someone else.
   if (!options.keepPersistedCart) useCartStore.getState().reset();
   useUserStore.getState().reset();
+  useSetupStore.getState().reset();
   useSubscriptionStore.setState(useSubscriptionStore.getInitialState(), true);
   useCollaboratorStore.setState(useCollaboratorStore.getInitialState(), true);
   useAdminStore.setState(useAdminStore.getInitialState(), true);

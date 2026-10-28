@@ -60,6 +60,19 @@ class NotificationService {
     }
   }
 
+  // Registers the push token only when permission was already granted.
+  // Never shows the OS prompt (that happens after the explanation screen).
+  async registerPushTokenIfPermitted(userId: string, role: string) {
+    try {
+      const { status } = await Notifications.getPermissionsAsync();
+      if (status !== 'granted') return;
+      const token = await this.registerForPushNotificationsAsync();
+      if (token) await this.savePushToken(userId, token, role);
+    } catch (error) {
+      console.log('Push token registration skipped:', error);
+    }
+  }
+
   // Save token to database for a user
   async savePushToken(userId: string, token: string, role: string) {
     if (!token) return;

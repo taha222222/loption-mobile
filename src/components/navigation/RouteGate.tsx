@@ -25,7 +25,7 @@ export function RouteGate({ group, children }: RouteGateProps) {
 export function AuthLoadingScreen() {
   return (
     <View style={styles.container}>
-      <ActivityIndicator size="large" color={theme.colors.gold} />
+      <ActivityIndicator size="large" color={theme.colors.brand} />
     </View>
   );
 }
@@ -56,7 +56,7 @@ function AuthErrorScreen({ reason }: { reason: 'role' | 'profile' }) {
       <Text style={styles.title}>We couldn&apos;t load your account</Text>
       <Text style={styles.body}>Check your connection and try again.</Text>
       {busy ? (
-        <ActivityIndicator color={theme.colors.gold} />
+        <ActivityIndicator color={theme.colors.brand} />
       ) : (
         <>
           <TouchableOpacity style={styles.button} onPress={retry}>
@@ -77,24 +77,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: theme.spacing.xl,
-    backgroundColor: theme.colors.background,
+    backgroundColor: theme.colors.canvas,
   },
   title: {
     fontSize: 18,
     fontWeight: '600',
-    color: theme.colors.textDark,
+    color: theme.colors.ink,
     marginBottom: theme.spacing.sm,
     textAlign: 'center',
   },
   body: {
     fontSize: 14,
-    color: theme.colors.textLight,
+    color: theme.colors.inkMuted,
     marginBottom: theme.spacing.lg,
     textAlign: 'center',
   },
   button: {
-    backgroundColor: theme.colors.gold,
-    borderRadius: 24,
+    backgroundColor: theme.colors.brand,
+    borderRadius: theme.radii.pill,
     paddingVertical: 12,
     paddingHorizontal: 32,
     marginBottom: theme.spacing.md,
@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   link: {
-    color: theme.colors.textLight,
+    color: theme.colors.inkMuted,
     fontSize: 14,
   },
 });

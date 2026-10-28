@@ -17,8 +17,12 @@ export const supabase = createClient(config.url, config.anonKey, {
     storage: AsyncStorage,
     persistSession: true,
     autoRefreshToken: true,
-    // There is no URL-based OAuth/magic-link callback handling in this app.
+    // OAuth and e-mail links return to app/auth-callback.tsx, which exchanges
+    // the code explicitly; the client must not parse URLs on its own (RN).
     detectSessionInUrl: false,
+    // PKCE: the redirect carries a one-time code, not tokens, and the code
+    // can only be exchanged by the app instance that started the flow.
+    flowType: 'pkce',
   },
 });
 

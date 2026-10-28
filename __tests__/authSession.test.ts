@@ -10,8 +10,10 @@ type Row = Record<string, any> | null;
 const mockState: {
   rows: Record<string, (filterValue: string) => { data: Row; error: any }>;
   signOutError: any;
+  signOutClearsLocal: boolean;
+  localSession: any;
   authListeners: ((event: string, session: any) => void)[];
-} = { rows: {}, signOutError: null, authListeners: [] };
+} = { rows: {}, signOutError: null, signOutClearsLocal: false, localSession: null, authListeners: [] };
 
 const mockSupabase = {
   from: jest.fn((table: string) => {
@@ -40,11 +42,17 @@ const mockSupabase = {
         },
       };
     }),
-    signInWithPassword: jest.fn(async ({ email }: { email: string }) => ({
-      data: { session: sessionFor(email) },
-      error: null,
-    })),
-    signOut: jest.fn(async () => ({ error: mockState.signOutError })),
+    signInWithPassword: jest.fn(async ({ email }: { email: string }) => {
+      mockState.localSession = sessionFor(email);
+      return { data: { session: mockState.localSession }, error: null };
+    }),
+    signOut: jest.fn(async () => {
+      // supabase-js 2.118 removes the local session even when the revoke
+      // request fails; 2.39 kept it. Both behaviours are simulated.
+      if (!mockState.signOutError || mockState.signOutClearsLocal) mockState.localSession = null;
+      return { error: mockState.signOutError };
+    }),
+    getSession: jest.fn(async () => ({ data: { session: mockState.localSession }, error: null })),
   },
 };
 
@@ -70,6 +78,8 @@ beforeEach(async () => {
     user_profiles: () => ({ data: { role: 'customer', is_admin: false }, error: null }),
   };
   mockState.signOutError = null;
+  mockState.signOutClearsLocal = false;
+  mockState.localSession = null;
   jest.clearAllMocks();
   await useCartStore.persist.rehydrate();
   useAuthStore.setState({ session: null, user: null, role: null, roleStatus: 'idle', isLoading: true });
@@ -115,7 +125,7 @@ describe('sign-out', () => {
     expect(locationService.stopTracking).toHaveBeenCalled();
   });
 
-  it('keeps the session and reports the error when the server sign-out fails', async () => {
+  it('keeps the session and reports the error when the server sign-out fails and the session is still stored', async () => {
     await useAuthStore.getState().signIn('a@x.ma', 'pw');
     useCartStore.getState().addItem(meal);
     mockState.signOutError = { message: 'offline' };
@@ -125,6 +135,19 @@ describe('sign-out', () => {
     expect(error).toEqual({ message: 'offline' });
     expect(useAuthStore.getState().user?.id).toBe('id-a@x.ma');
     expect(useCartStore.getState().items).toHaveLength(1);
+  });
+
+  it('clears state without a false error when the library already removed the local session (supabase-js 2.118)', async () => {
+    await useAuthStore.getState().signIn('a@x.ma', 'pw');
+    useCartStore.getState().addItem(meal);
+    mockState.signOutError = { message: 'offline' };
+    mockState.signOutClearsLocal = true;
+
+    const { error } = await useAuthStore.getState().signOut();
+
+    expect(error).toBeNull();
+    expect(useAuthStore.getState()).toMatchObject({ session: null, user: null, role: null });
+    expect(useCartStore.getState().items).toEqual([]);
   });
 });
 
@@ -199,18 +222,11 @@ describe('auth listener lifecycle', () => {
   });
 });
 
-describe('sign-up', () => {
-  it('always creates a customer profile regardless of caller input', async () => {
-    const insert = jest.fn(async () => ({ error: null }));
-    (mockSupabase.auth as any).signUp = jest.fn(async () => ({
-      data: { user: { id: 'new' }, session: null },
-      error: null,
-    }));
-    mockSupabase.from.mockImplementationOnce(() => ({ insert }) as any);
-
-    await useAuthStore.getState().signUp('n@x.ma', 'pw', { full_name: 'N', role: 'admin', is_admin: true });
-
-    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ role: 'customer', is_admin: false }));
+describe('external sessions (OAuth, Apple, e-mail link)', () => {
+  it('adoptSession resolves the role like a password sign-in', async () => {
+    await useAuthStore.getState().adoptSession(sessionFor('g@x.ma') as any);
+    expect(useAuthStore.getState()).toMatchObject({ role: 'customer', roleStatus: 'resolved' });
+    expect(useCartStore.getState().ownerId).toBe('id-g@x.ma');
   });
 });
 

@@ -15,12 +15,14 @@ import { theme } from '../../src/theme';
 import { Button } from '../../src/components/ui/Button';
 import { useCartStore } from '../../src/stores/cartStore';
 import { useAuthStore } from '../../src/stores/authStore';
+import { useUserStore } from '../../src/stores/userStore';
 import { supabase } from '../../src/lib/supabase';
 import { notificationService } from '../../src/services/notificationService';
 import { buildOrderInsert, COD_PAYMENT_METHOD } from '../../src/checkout/orderPayload';
 
 export default function CheckoutScreen() {
-  const [address, setAddress] = useState('');
+  // Pre-filled with the delivery address the customer confirmed, if any.
+  const [address, setAddress] = useState(() => useUserStore.getState().profile?.delivery_address ?? '');
   const [loading, setLoading] = useState(false);
   const { items, getTotalPrice, clearCart } = useCartStore();
   const { user } = useAuthStore();

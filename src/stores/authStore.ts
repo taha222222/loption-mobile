@@ -18,7 +18,9 @@ interface AuthState {
   isLoading: boolean;
   initialize: () => () => void;
   signIn: (email: string, password: string) => Promise<{ error: any | null }>;
-  signUp: (email: string, password: string, userData?: any) => Promise<{ error: any | null }>;
+  // Applies a session obtained outside signIn (OAuth, Sign in with Apple,
+  // e-mail link) and waits for the role, like signIn does.
+  adoptSession: (session: Session) => Promise<void>;
   signOut: () => Promise<{ error: any | null }>;
   retryRoleResolution: () => Promise<void>;
 }
@@ -147,47 +149,19 @@ export const useAuthStore = create<AuthState>((set, get) => {
       return { error };
     },
 
-    // Public sign-up always creates a customer. Driver, kitchen-staff and admin
-    // accounts must be provisioned by an administrator through a trusted path.
-    signUp: async (email: string, password: string, userData: any = {}) => {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-
-      if (!error && data?.user) {
-        const { error: insertError } = await supabase
-          .from('user_profiles')
-          .insert({
-            user_id: data.user.id,
-            full_name: userData.full_name || null,
-            phone: userData.phone || null,
-            role: 'customer',
-            is_admin: false,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          });
-
-        if (insertError) {
-          console.log('Profile creation error:', insertError);
-        }
-
-        // With email confirmation enabled data.session is null and the user
-        // must verify their email, then sign in.
-        if (data.session) {
-          await applySession(data.session);
-        }
-      }
-      return { error };
+    adoptSession: async (session: Session) => {
+      await applySession(session);
     },
 
     signOut: async () => {
       const { error } = await supabase.auth.signOut();
       if (error) {
-        // supabase-js keeps the stored session when the revoke call fails
-        // (e.g. offline), so the user is still signed in: report it instead
-        // of showing a signed-out UI over a live session.
-        return { error };
+        // When the revoke request fails (e.g. offline), supabase-js 2.39 kept
+        // the stored session while 2.118 removes it locally and emits
+        // SIGNED_OUT. Report a failure only if this device is still signed in;
+        // never show a signed-in UI over a removed session or vice versa.
+        const { data } = await supabase.auth.getSession();
+        if (data?.session) return { error };
       }
       await applySession(null);
       return { error: null };

@@ -14,9 +14,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.loption.app",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "L'OPTION needs your location to track deliveries",
+        "NSLocationWhenInUseUsageDescription": "L'OPTION uses your location to suggest your delivery address and, for drivers, to track deliveries in progress.",
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "usesAppleSignIn": true
     },
     "android": {
       "adaptiveIcon": {
@@ -54,7 +55,9 @@
           "backgroundColor": "#111827",
           "resizeMode": "contain"
         }
-      ]
+      ],
+      "expo-web-browser",
+      "expo-apple-authentication"
     ],
     "experiments": {
       "typedRoutes": true

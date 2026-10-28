@@ -7,6 +7,8 @@ import { useAuthStore } from '../src/stores/authStore';
 import { useUserStore } from '../src/stores/userStore';
 import { useSubscriptionStore } from '../src/stores/subscriptionStore';
 import { useRouteDecision } from '../src/navigation/useRouteDecision';
+import { isOnboardingComplete } from '../src/navigation/routeDecision';
+import { useSetupStore } from '../src/stores/setupStore';
 import '../src/i18n';
 import { notificationService } from '../src/services/notificationService';
 
@@ -15,13 +17,17 @@ import { notificationService } from '../src/services/notificationService';
 function useProtectedRoute() {
   const segments = useSegments();
   const group = segments[0] as string | undefined;
-  const decision = useRouteDecision(group);
+  const screen = (segments as string[])[1];
+  const decision = useRouteDecision(group, screen);
 
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const role = useAuthStore((s) => s.role);
   const roleStatus = useAuthStore((s) => s.roleStatus);
   const loadedUserId = useUserStore((s) => s.loadedUserId);
   const loadProfile = useUserStore((s) => s.loadProfile);
+  const onboarded = useUserStore((s) => s.loadedUserId === userId && isOnboardingComplete(s.profile));
+  const setupUserId = useSetupStore((s) => s.loadedUserId);
+  const loadSetup = useSetupStore((s) => s.load);
 
   // Customers need their nutrition profile to decide onboarding vs. app.
   useEffect(() => {
@@ -30,10 +36,23 @@ function useProtectedRoute() {
     }
   }, [userId, role, roleStatus, loadedUserId, loadProfile]);
 
+  // After onboarding: has this device shown the notification/location introduction?
+  useEffect(() => {
+    if (userId && role === 'customer' && onboarded && setupUserId !== userId) loadSetup(userId);
+  }, [userId, role, onboarded, setupUserId, loadSetup]);
+
+  // Keep the push token current for every sign-in method, without ever
+  // prompting here (the prompt is shown only after the explanation screen).
+  useEffect(() => {
+    if (userId && role && roleStatus === 'resolved') {
+      notificationService.registerPushTokenIfPermitted(userId, role);
+    }
+  }, [userId, role, roleStatus]);
+
   const redirectTo = decision.kind === 'redirect' ? decision.href : null;
   useEffect(() => {
     if (redirectTo) router.replace(redirectTo as any);
-  }, [redirectTo, group]);
+  }, [redirectTo, group, screen]);
 }
 
 export default function RootLayout() {
@@ -92,6 +111,8 @@ export default function RootLayout() {
         <Stack.Screen name="(admin)" />
         <Stack.Screen name="(collaborator)" />
         <Stack.Screen name="onboarding" />
+        <Stack.Screen name="setup" />
+        <Stack.Screen name="auth-callback" />
       </Stack>
     </SafeAreaProvider>
   );

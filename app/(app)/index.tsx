@@ -14,6 +14,7 @@ import { theme } from '../../src/theme';
 import {
   ActionTile,
   BrandMark,
+  FirstOrderOfferBanner,
   IconBadge,
   MacroBar,
   ProgressRing,
@@ -104,7 +105,11 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* First-order offer (display only; applied by the server at checkout) */}
+      <FirstOrderOfferBanner status={profile?.first_order_offer_status} />
+
       {/* Energy card */}
+      {dailyCalories > 0 ? (
       <View style={styles.energyCard}>
         <View style={styles.energyGlow} />
         <View style={styles.energyTop}>
@@ -135,6 +140,17 @@ export default function HomeScreen() {
           <MacroBar label="Lipides" value={consumedShare(fatsTarget)} target={fatsTarget} color={theme.colors.textWhite} />
         </View>
       </View>
+      ) : (
+        <SurfaceCard style={styles.noEstimate}>
+          <IconBadge icon="nutrition-outline" />
+          <View style={styles.bannerText}>
+            <Text style={styles.bannerTitle}>Pas d’estimation énergétique</Text>
+            <Text style={styles.bannerSubtitle}>
+              Complétez votre profil nutritionnel pour voir vos besoins estimés.
+            </Text>
+          </View>
+        </SurfaceCard>
+      )}
 
       {/* Quick Actions */}
       <View style={styles.actionsContainer}>
@@ -207,6 +223,13 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  noEstimate: {
+    marginHorizontal: theme.spacing.xl,
+    marginBottom: theme.spacing.xl,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+  },
   loadingContainer: {
     justifyContent: 'center',
     alignItems: 'center',
