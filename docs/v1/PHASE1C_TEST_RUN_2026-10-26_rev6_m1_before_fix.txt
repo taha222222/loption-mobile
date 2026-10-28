@@ -1,0 +1,205 @@
+# Phase 1C revision 6, finding M1: reproduction BEFORE the fix. Exact, unedited output of:
+#   PORT=<port> CONC_OUT=<scratch> supabase/tests/admin_concurrency_tests.sh
+# against a local disposable supabase/postgres:17.6.1.178 container (sha256:c282d393...a570) holding
+# bootstrap_hosted_auth.sql + baseline staging_schema_2026-10-15.sql + fixtures_staging_like.sql and the
+# REVISION-5 core migration (git show 855b96f:supabase/migrations/20261016170000_phase1c_security_containment.sql)
+# with only the initial-admin line set to the fixture admin a1 (as run_phase1c.sh does). Run on 2026-10-26.
+# No remote system contacted. The final line 'exit=N' is the script's exit code, appended by the invoking shell.
+# Result: 15 cases pass, 7 FAIL: 6 REPEATABLE READ cases commit both removals and leave 0 active admins, and a
+# revoked admin assigns a role from a stale snapshot. Every SERIALIZABLE and READ COMMITTED case passes.
+# The same script passes 22/22 against the revision-6 migration (see PHASE1C_TEST_RUN_2026-10-26_rev6.txt, scenario M).
+# Lines below this header are the script output, unedited.
+  -- concurrent administrator changes (every write path x every isolation level; committed state asserted)
+  pass: fn_revoke_each_other_read_committed (read committed): one transaction committed, the other was refused (ERROR:  only an admin may revoke staff roles); committed state: 1 active admin
+  pass: direct_update_each_other_read_committed (read committed): one transaction committed, the other was refused (ERROR:  at least one active admin must remain); committed state: 1 active admin
+  pass: delete_vs_update_read_committed (read committed): one transaction committed, the other was refused (ERROR:  at least one active admin must remain); committed state: 1 active admin
+  pass: role_change_vs_delete_read_committed (read committed): one transaction committed, the other was refused (ERROR:  at least one active admin must remain); committed state: 1 active admin
+  pass: fn_revoke_vs_direct_update_read_committed (read committed): one transaction committed, the other was refused (ERROR:  at least one active admin must remain); committed state: 1 active admin
+  FAIL: fn_revoke_each_other_repeatable_read (repeatable read): committed=1:1, active admins after commit: none
+       ?column?
+      ----------
+       t
+      (1 row)
+
+       ?column?
+      ----------
+              1
+      (1 row)
+
+       revoke_staff_role
+      -------------------
+
+      (1 row)
+
+       pg_sleep
+      ----------
+
+      (1 row)
+
+      rc=0
+       ?column?
+      ----------
+       t
+      (1 row)
+
+       ?column?
+      ----------
+              1
+      (1 row)
+
+       revoke_staff_role
+      -------------------
+
+      (1 row)
+
+      rc=0
+  FAIL: direct_update_each_other_repeatable_read (repeatable read): committed=1:1, active admins after commit: none
+       ?column?
+      ----------
+              1
+      (1 row)
+
+       pg_sleep
+      ----------
+
+      (1 row)
+
+      rc=0
+       ?column?
+      ----------
+              1
+      (1 row)
+
+      rc=0
+  FAIL: delete_vs_update_repeatable_read (repeatable read): committed=1:1, active admins after commit: none
+       ?column?
+      ----------
+              1
+      (1 row)
+
+       pg_sleep
+      ----------
+
+      (1 row)
+
+      rc=0
+       ?column?
+      ----------
+              1
+      (1 row)
+
+      rc=0
+  FAIL: role_change_vs_delete_repeatable_read (repeatable read): committed=1:1, active admins after commit: none
+       ?column?
+      ----------
+              1
+      (1 row)
+
+       pg_sleep
+      ----------
+
+      (1 row)
+
+      rc=0
+       ?column?
+      ----------
+              1
+      (1 row)
+
+      rc=0
+  FAIL: fn_revoke_vs_direct_update_repeatable_read (repeatable read): committed=1:1, active admins after commit: none
+       ?column?
+      ----------
+       t
+      (1 row)
+
+       ?column?
+      ----------
+              1
+      (1 row)
+
+       revoke_staff_role
+      -------------------
+
+      (1 row)
+
+       pg_sleep
+      ----------
+
+      (1 row)
+
+      rc=0
+       ?column?
+      ----------
+              1
+      (1 row)
+
+      rc=0
+  pass: fn_revoke_each_other_serializable (serializable): one transaction committed, the other was refused (ERROR:  could not serialize access due to read/write dependencies among transactions); committed state: 1 active admin
+  pass: direct_update_each_other_serializable (serializable): one transaction committed, the other was refused (ERROR:  could not serialize access due to read/write dependencies among transactions); committed state: 1 active admin
+  pass: delete_vs_update_serializable (serializable): one transaction committed, the other was refused (ERROR:  could not serialize access due to read/write dependencies among transactions); committed state: 1 active admin
+  pass: role_change_vs_delete_serializable (serializable): one transaction committed, the other was refused (ERROR:  could not serialize access due to read/write dependencies among transactions); committed state: 1 active admin
+  pass: fn_revoke_vs_direct_update_serializable (serializable): one transaction committed, the other was refused (ERROR:  could not serialize access due to read/write dependencies among transactions); committed state: 1 active admin
+  pass: auth_user_delete_cascade_vs_update (read committed): one committed, the other refused; committed state: 1 active admin
+  FAIL: auth_user_delete_cascade_vs_update (repeatable read): committed=1:1, active admins: none
+       ?column?
+      ----------
+              1
+      (1 row)
+
+       pg_sleep
+      ----------
+
+      (1 row)
+
+      rc=0
+       ?column?
+      ----------
+              1
+      (1 row)
+
+      rc=0
+  pass: rollback_after_failed_operation (read committed): T1 failed and rolled back; T2 committed; committed state: f1 is the 1 active admin
+  pass: rollback_after_failed_operation (repeatable read): T1 failed and rolled back; T2 committed; committed state: f1 is the 1 active admin
+  pass: removing every admin in one transaction is refused; committed state unchanged (2 active admins)
+  pass: removing every admin in one statement is refused; committed state unchanged (2 active admins)
+  FAIL: stale authority: committed=1:1
+       ?column?
+      ----------
+       t
+      (1 row)
+
+       ?column?
+      ----------
+              1
+      (1 row)
+
+       revoke_staff_role
+      -------------------
+
+      (1 row)
+
+       pg_sleep
+      ----------
+
+      (1 row)
+
+      rc=0
+       ?column?
+      ----------
+       t
+      (1 row)
+
+       ?column?
+      ----------
+              1
+      (1 row)
+
+                assign_staff_role
+      --------------------------------------
+       7d2d73fb-5452-4480-8044-31e9f470885c
+      (1 row)
+
+      rc=0
+  concurrency: SOME CASES FAILED
+exit=1
