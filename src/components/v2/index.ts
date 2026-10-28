@@ -15,6 +15,7 @@ export { StatusBadge } from './StatusBadge';
 export { SurfaceCard } from './SurfaceCard';
 export { formatNumber, formatPrice } from './format';
 export { FirstOrderOfferBanner } from './FirstOrderOfferBanner';
+export { FormMessage } from './FormMessage';
 export { OptionCard } from './OptionCard';
 export { ProviderButton } from './ProviderButton';
 export { StepProgress } from './StepProgress';

@@ -226,7 +226,8 @@ export default function MenuScreen() {
               image={meal.image_url || undefined}
               popular={meal.popular}
               onAddToCart={() => handleAddToCart(meal)}
-              onPress={() => router.push(`/(app)/meal/${meal.id}`)}
+              // No meal detail screen exists yet; the card used to navigate to
+              // the missing route /(app)/meal/[id] ("Unmatched route").
             />
           ))}
         </ScrollView>

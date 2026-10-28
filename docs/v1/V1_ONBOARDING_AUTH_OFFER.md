@@ -20,7 +20,9 @@ All three tips branch directly from `0cb0fe0` (Initial commit); none contains an
 | Merge Phase 1C rev 7 (`--no-ff`) | `4e465f7` (message names the branch's first local name, `claude/v1-onboarding-auth`) | `claude/v1-integration` |
 | Merge V2 / SDK 58 (`--no-ff`) | `68dc65b` | `claude/v1-integration` |
 | Database migration, rollback, tests | `99e820b` | `claude/v1-onboarding-auth` (from `68dc65b`) |
-| App: auth, onboarding, setup, offer UI, tests, docs | next commit on `claude/v1-onboarding-auth` | |
+| App: auth, onboarding, setup, offer UI, tests, docs | `5baec9c` | `claude/v1-onboarding-auth` |
+| react-refresh dependency (first fix) | `08d7a2f` | `claude/v1-onboarding-auth-react-refresh` (the repository rule requires a PR to update `claude/v1-onboarding-auth`) |
+| Babel fix aligned to the SDK runtime, onboarding drafts, inline messages, end-to-end harness, menu dead link | commits on `claude/v1-app-integration` (from `08d7a2f`) | `claude/v1-app-integration` |
 
 ### Conflicts and resolutions
 File overlap per lineage pair: 1A∩1C = `.gitignore`, `supabase/evidence/phase1b_catalog_query.sql` (identical); 1C∩V2 = none; 1A∩V2 = the files below.
@@ -39,6 +41,7 @@ File overlap per lineage pair: 1A∩1C = `.gitignore`, `supabase/evidence/phase1
 - **supabase-js 2.39.8 → 2.118.0.** V2's SDK 58 lockfile resolved `^2.39.8` to 2.118.0. Phase 1A verified behaviour on 2.39.8. Re-checked on 2.118.0: `startAutoRefresh`/`stopAutoRefresh`, `exchangeCodeForSession`, `signInWithIdToken` (nonce), `resend` exist. **Behaviour change found:** when the sign-out revoke request fails, 2.118 removes the local session and emits `SIGNED_OUT` (2.39 kept it). `authStore.signOut` now reports a failure only if a session is still stored; tests cover both behaviours. Range pinned to `^2.118.0`.
 - New SDK 58 modules: `expo-apple-authentication` 58.0.2, `expo-web-browser` 58.0.7, `expo-crypto` 58.0.7. `app.json`: `ios.usesAppleSignIn: true`, plugins `expo-web-browser`, `expo-apple-authentication`.
 - V2 removed `jsEngine: jsc` (Hermes now), `newArchEnabled`, and Metro's `unstable_enablePackageExports = false`. Android/iOS/web exports succeed; the bundle contains the URL polyfill, `detectSessionInUrl` setting and no admin-phrase code.
+- **`Cannot find module 'react-refresh/babel'` (dev server only).** `babel-preset-expo` 58 (`build/configs/expo.js`, `getReactRefreshPlugin`) requires `react-refresh/babel` whenever Fast Refresh is on, i.e. for every dev-server bundle; production `expo export` never loads it. The preset declares `react-refresh` only as a **peer dependency** (`>=0.14.0 <1.0.0`); `react-native` and `expo` keep their own nested copies. With npm's `legacy-peer-deps` (flag or global setting) the peer is not installed and Metro fails with HTTP 500 / `TransformError`. Reproduced with a dev-server bundle request; `expo export` had not exercised this path. Fix: `react-refresh` declared as a devDependency at **`^0.14.2`, the version `react-native` (`^0.14.0`) and `expo` (`^0.14.2`) use**, so one deduplicated copy serves both the Babel plugin and the runtime; project `.npmrc` sets `legacy-peer-deps=false` so the other SDK 58 peers install too. No Babel/Metro config change; Fast Refresh stays on. Verified: dev-server bundles for iOS and Android return 200 with Fast Refresh registrations after `npm ci`, and after `npm install --legacy-peer-deps`.
 - Still missing (pre-existing): `assets/notification.wav` referenced in `app.json` → native prebuild/EAS build will fail until the file is added. Not invented.
 
 ## 2. Architecture found before the change
@@ -56,11 +59,13 @@ File overlap per lineage pair: 1A∩1C = `.gitignore`, `supabase/evidence/phase1
 - **Google**: Supabase-hosted OAuth with **PKCE** (`flowType: 'pkce'`) in the system browser (`openAuthSessionAsync`); the code is exchanged once (deduplicated for Android's double delivery). No Google credential in the app. Cancel → no message.
 - **Apple**: native on iOS (`expo-apple-authentication`, SHA-256 nonce to Apple, raw nonce to `signInWithIdToken`); hosted OAuth elsewhere. Cancel handled; "Unacceptable audience" → not configured; private-relay e-mails work like any address; the name Apple shares once is stored only if no profile exists yet.
 - **E-mail**: sign-up sends only e-mail + password + `emailRedirectTo` (no profile/role from the client). Outcomes: verification sent / account exists (Supabase returns no identities) / delivery not configured (`email_address_not_authorized`, SMTP error → "Aucun e-mail n'a été envoyé") / rate limited / weak password. **Verification screen** with resend (60 s cooldown), "J'ai confirmé mon adresse" (refreshes the session) and "Utiliser un autre compte". Expired link → "Lien expiré" + resend; link opened on another device → "connectez-vous avec votre mot de passe".
+- **Messages** (provider not configured, e-mail not sent, rate limit, expired link…) are shown inline on the form (`FormMessage`), so they are visible on every platform; React Native Web has no system alert.
 - **Routing policy** (`src/navigation/routeDecision.ts`): an unverified e-mail account (any role) can only see `/(auth)/verify-email`; OAuth identities are provider-verified. Signed-out users go to `/(auth)/welcome`. The callback route is always reachable.
 - **Profile creation**: on the first signed-in profile load, `upsert({ user_id }, { onConflict: 'user_id', ignoreDuplicates: true })` → one customer profile per account; the database guard decides role/admin.
 
 ### Nutrition onboarding (`app/onboarding.tsx`, `src/nutrition/energy.ts`)
 Five V2 steps with progress, Back/Continue and preserved answers: sex input (Femme / Homme / Je préfère ne pas répondre, with the explanation), age (13–100, whole years), weight (30–300 kg, decimal comma accepted), height (100–250 cm), activity (5 described cards). Inline validation messages, keyboard-safe layout, retryable save errors. Goal and Program steps are no longer asked (columns and data kept).
+- **Drafts:** answers and the current step are kept on the device per account (`src/stores/onboardingDraft.ts`, AsyncStorage) and restored if the app closes; malformed drafts are ignored. Nothing partial is written to the server. The draft is deleted when completion is saved and when the account signs out of the device (it holds health data).
 - Answers are saved; the **database computes** BMR/TDEE (trigger) and the app shows the server values on a result screen labelled as an estimate, not medical advice. "Unspecified" → no estimate shown or stored.
 - "Continuer" sets `onboarding_completed_at`; the server stamps the time and refuses completion while an answer is missing.
 - Returning users with `onboarding_completed_at` (or, on the legacy schema, weight/height/age) skip onboarding.
@@ -85,20 +90,23 @@ Adds to `user_profiles`: `bmr_kcal`, `tdee_kcal`, `nutrition_formula`, `nutritio
 - Backfill: profiles the app already treated as onboarded (weight, height, age set) are marked complete; estimates computed; offer status computed.
 - Privacy: age (not date of birth) as the existing column; exact coordinates stored only with an address the customer confirmed.
 
-## 4. Tests and results (this branch)
-See the final report in the session for the exact command output. Summary of suites:
-- Jest: 13 suites (6 existing + 7 new): routing (verification gate, setup step, returning users), auth session (sign-out on supabase-js 2.39 and 2.118 behaviour, external sessions), auth flows (Google/Apple/e-mail outcomes incl. cancel, not configured, delivery not configured, account exists, expired link, other device, double redirect), provider settings, energy calculation (parity with the SQL tests), profile store (single profile creation, no reload loop, payloads), onboarding screen, setup screen (denials, blocked, manual address, suggestion confirmation), welcome screen without credentials, offer banner, existing checkout COD tests.
-- `supabase/tests/run_v1_onboarding_offer.sh` (local Docker, Supabase Postgres 17.6.1.178): refusals, 29 SQL tests, Phase 1C SQL tests after the migration, containment = 0, concurrency, re-run, rollback/re-apply.
+## 4. Tests and results
+Commands and results of the final run are in the session's final report. Suites:
+- Jest (13 suites): routing (verification gate, setup, returning users), auth session (sign-out on supabase-js 2.39/2.118 behaviour, draft cleared at sign-out, external sessions), auth flows (Google/Apple/e-mail outcomes), provider settings, energy calculation (parity with SQL), profile store (single profile creation, no reload loop), onboarding screen (validation, Back/Continue, drafts restored/saved/ignored/cleared), setup screen (denials, blocked, manual address, suggestion confirmation), welcome and sign-up screens without credentials, offer banner, existing checkout COD tests.
+- `supabase/tests/run_v1_onboarding_offer.sh`: refusals, 29 SQL tests, Phase 1C SQL tests after the migration, containment = 0, concurrency, re-run, rollback/re-apply.
 - `supabase/tests/run_phase1c.sh` on the integrated tree.
-- `tsc`, ESLint, `expo install --check`, `expo export` (android, ios, web); web build rendered in Chromium at 390 px and 320 px.
+- **`supabase/tests/e2e/run_app_e2e.sh`** (new): the app's web build against **real local services** — Supabase Postgres (staging baseline + fixtures + Phase 1C + this migration), Supabase Auth (GoTrue, e-mail confirmation on), PostgREST, a local gateway and an SMTP sink — driven by Playwright: providers not configured; sign-up without SMTP (no false "sent"); sign-up with SMTP; unverified log-in → verification screen; verification link (PKCE) → onboarding; one customer profile; validation; reload mid-onboarding restores the draft; no partial server writes; server-computed BMR/TDEE; server-stamped completion; setup (notifications declined, manual address); V2 home with the offer from the server status; API refuses writes of derived/offer/role columns, client order inserts, promotions and the enforcement function; returning user and second device skip onboarding; other V2 tabs open; no page errors.
+- Dev-server bundles (iOS, Android) requested from `expo start`; `expo export` for android/ios/web; `tsc` with Expo Router typed routes; ESLint; `expo install --check`.
 
-**Not verified (mocked or not possible here):** real Google/Apple sign-in, real e-mail delivery, real iOS/Android permission dialogs, native builds (EAS/prebuild; blocked by the missing `notification.wav`), anything against a hosted Supabase project, the Supabase CLI `db push` cases of the Phase 1C suite (CLI not installed).
+**Not verified:** real Google/Apple sign-in, real Resend delivery, native permission dialogs (the web build has no notification permission), native builds (EAS/prebuild; `notification.wav` missing), a hosted Supabase project, the Supabase CLI `db push` cases.
 
 ## 5. Rollback guidance
 - App: revert the feature commit; the integration commits are independent.
 - Database (only if the migration was ever applied, with an approved task and a backup): `psql -X -v ON_ERROR_STOP=1 -f supabase/rollback/v1_onboarding_offer_rollback.sql` as `postgres`. It archives profile columns, promotions, redemptions and order discount columns into the private schema `v1_onboarding_rollback_archive`, drops every object, removes the migration-history row, and requires `containment_violations()` = 0 before COMMIT. Order amounts are not changed. It must run **before** any Phase 1C rollback (that procedure refuses while a later migration is recorded).
 
 ## 6. Pre-existing issues found
+- **Fixed:** the menu navigated to `/(app)/meal/[id]`, a route that has never existed (Expo Router "Unmatched route"); found by typed-route checking. The card no longer navigates; a meal detail screen is not built.
+- V2 profile tab shows placeholder data (weight change, plan completion, streak, last order) — mock features already listed in Phase 0 (X1).
 - **Fixed:** endless profile reload on the home screen (home calls `loadProfile` on mount; the Phase 1A gate unmounted it while `loading`). Reproduced on `68dc65b`: 368 profile reads in 5 s; after the fix: 3. Covered by a unit test.
 - Lint baseline: 47 errors, all in files this work did not write (was 52 after the integration; the rewritten login/sign-up/onboarding removed 5).
 - Home "énergie du jour" consumption (40 %) and macro progress are V2 placeholders, not tracked data.

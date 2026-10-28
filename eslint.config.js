@@ -6,7 +6,7 @@ const globals = require('globals');
 module.exports = defineConfig([
   expoConfig,
   {
-    ignores: ['dist/*', 'coverage/*', 'web-build/*'],
+    ignores: ['dist/*', 'coverage/*', 'web-build/*', '.expo/*'],
   },
   {
     // Flat config ignores `/* eslint-env jest */`; declare Jest globals here.

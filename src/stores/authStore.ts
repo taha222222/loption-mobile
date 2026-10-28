@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { useCartStore } from './cartStore';
+import { clearOnboardingDraft } from './onboardingDraft';
 import { resetUserScopedState } from './sessionReset';
 
 export type UserRole = 'customer' | 'driver' | 'collaborator' | 'admin';
@@ -99,6 +100,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
 
     if (previousUserId !== nextUserId) {
       set({ session, user: session?.user ?? null, role: null, roleStatus: 'idle' });
+      // Unsaved onboarding answers (health data) never outlive the session on this device.
+      if (previousUserId) await clearOnboardingDraft(previousUserId);
       await resetUserScopedState({ keepPersistedCart: previousUserId === null });
       if (get().user?.id !== nextUserId) return;
       if (nextUserId) await resolveRole(nextUserId);

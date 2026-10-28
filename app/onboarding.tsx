@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../src/theme';
@@ -7,6 +7,12 @@ import { BrandButton, OptionCard, StepProgress, SurfaceCard, TextField, formatNu
 import { RouteGate } from '../src/components/navigation/RouteGate';
 import { useAuthStore } from '../src/stores/authStore';
 import { useUserStore } from '../src/stores/userStore';
+import {
+  clearOnboardingDraft,
+  loadOnboardingDraft,
+  OnboardingDraft,
+  saveOnboardingDraft,
+} from '../src/stores/onboardingDraft';
 import {
   ActivityLevel,
   estimateEnergy,
@@ -22,7 +28,7 @@ import {
 export default function OnboardingRoute() {
   return (
     <RouteGate group="onboarding">
-      <OnboardingScreen />
+      <OnboardingLoader />
     </RouteGate>
   );
 }
@@ -59,22 +65,51 @@ function numberError(error: FieldError | null, unit: string, range: { min: numbe
   }
 }
 
-function OnboardingScreen() {
-  const user = useAuthStore((s) => s.user);
+// Restores the device draft (if any) before showing the form, so a customer
+// who closed the app continues at the same step with the same answers.
+function OnboardingLoader() {
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  const [draft, setDraft] = useState<OnboardingDraft | null | undefined>(undefined);
+
+  useEffect(() => {
+    let active = true;
+    if (userId) loadOnboardingDraft(userId).then((d) => active && setDraft(d));
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  if (!userId || draft === undefined) {
+    return (
+      <View style={[styles.safe, styles.center]}>
+        <ActivityIndicator size="large" color={theme.colors.brand} />
+      </View>
+    );
+  }
+  return <OnboardingScreen userId={userId} draft={draft} />;
+}
+
+function OnboardingScreen({ userId, draft }: { userId: string; draft: OnboardingDraft | null }) {
   const signOut = useAuthStore((s) => s.signOut);
   const profile = useUserStore((s) => s.profile);
   const saveOnboardingAnswers = useUserStore((s) => s.saveOnboardingAnswers);
   const completeOnboarding = useUserStore((s) => s.completeOnboarding);
 
   // Answers are kept here for the whole flow, so Back/Continue never lose
-  // them; earlier saved answers (an interrupted onboarding) are pre-filled.
-  const [step, setStep] = useState(0);
-  const [showResult, setShowResult] = useState(false);
-  const [sex, setSex] = useState<SexInput | null>(profile?.gender ?? null);
-  const [ageText, setAgeText] = useState(profile?.age ? String(profile.age) : '');
-  const [weightText, setWeightText] = useState(profile?.weight ? String(profile.weight) : '');
-  const [heightText, setHeightText] = useState(profile?.height ? String(profile.height) : '');
-  const [activity, setActivity] = useState<ActivityLevel | null>(profile?.activity_level ?? null);
+  // them. Initial values: the device draft, else answers already saved on
+  // the server (an interrupted onboarding), else empty.
+  const answersSaved = !!(profile?.gender && profile?.age && profile?.weight && profile?.height && profile?.activity_level);
+  const [step, setStep] = useState(draft?.step ?? 0);
+  const [showResult, setShowResult] = useState(!!draft?.showResult && answersSaved);
+  const [sex, setSex] = useState<SexInput | null>(draft?.sex ?? profile?.gender ?? null);
+  const [ageText, setAgeText] = useState(draft?.ageText || (profile?.age ? String(profile.age) : ''));
+  const [weightText, setWeightText] = useState(draft?.weightText || (profile?.weight ? String(profile.weight) : ''));
+  const [heightText, setHeightText] = useState(draft?.heightText || (profile?.height ? String(profile.height) : ''));
+  const [activity, setActivity] = useState<ActivityLevel | null>(draft?.activity ?? profile?.activity_level ?? null);
+
+  useEffect(() => {
+    saveOnboardingDraft(userId, { step, showResult, sex, ageText, weightText, heightText, activity });
+  }, [userId, step, showResult, sex, ageText, weightText, heightText, activity]);
   const [touched, setTouched] = useState<Partial<Record<StepKey, boolean>>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -112,10 +147,9 @@ function OnboardingScreen() {
       setStep(step + 1);
       return;
     }
-    if (!user) return;
     setSaving(true);
     setSaveError(null);
-    const result = await saveOnboardingAnswers(user.id, {
+    const result = await saveOnboardingAnswers(userId, {
       gender: sex!,
       age: age!,
       weight: weight!,
@@ -131,13 +165,16 @@ function OnboardingScreen() {
   };
 
   const finish = async () => {
-    if (!user) return;
     setSaving(true);
     setSaveError(null);
-    const result = await completeOnboarding(user.id);
+    const result = await completeOnboarding(userId);
     setSaving(false);
-    // On success the routing policy moves on to the permission screens.
-    if (!result.ok) setSaveError(result.message);
+    if (!result.ok) {
+      setSaveError(result.message);
+      return;
+    }
+    // Saved on the server; the routing policy moves on to the permission screens.
+    await clearOnboardingDraft(userId);
   };
 
   // Server-computed values when the profile has them; same formula otherwise.
@@ -341,6 +378,10 @@ const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: theme.colors.canvas,
+  },
+  center: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   fill: {
     flex: 1,

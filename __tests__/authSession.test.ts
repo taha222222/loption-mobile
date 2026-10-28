@@ -1,4 +1,5 @@
 // Auth lifecycle and sign-out cleanup, against a mocked Supabase client.
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from '../src/stores/authStore';
 import { useCartStore } from '../src/stores/cartStore';
 import { useUserStore } from '../src/stores/userStore';
@@ -123,6 +124,13 @@ describe('sign-out', () => {
     expect(useCollaboratorStore.getState().orders).toEqual([]);
     expect(mockSupabase.removeAllChannels).toHaveBeenCalled();
     expect(locationService.stopTracking).toHaveBeenCalled();
+  });
+
+  it('removes the signed-out account’s unsaved onboarding draft (health data) from the device', async () => {
+    await useAuthStore.getState().signIn('a@x.ma', 'pw');
+    await AsyncStorage.setItem('loption.onboarding.draft.v1.id-a@x.ma', JSON.stringify({ step: 2, ageText: '41' }));
+    await useAuthStore.getState().signOut();
+    expect(await AsyncStorage.getItem('loption.onboarding.draft.v1.id-a@x.ma')).toBeNull();
   });
 
   it('keeps the session and reports the error when the server sign-out fails and the session is still stored', async () => {

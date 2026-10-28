@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { ProviderButton } from '../v2';
+import { FormMessage, ProviderButton } from '../v2';
 import { fetchAuthProviderSettings, OAuthProvider } from '../../services/authProviders';
 import { AuthOutcome, describeOutcome, signInWithApple, signInWithGoogle } from '../../services/authFlows';
 import { theme } from '../../theme';
@@ -17,6 +17,7 @@ export function SocialSignIn() {
     apple: 'unknown',
   });
   const [busy, setBusy] = useState<OAuthProvider | null>(null);
+  const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -41,8 +42,7 @@ export function SocialSignIn() {
     if (outcome.kind === 'not_configured' && outcome.provider !== 'email') {
       setAvailability((a) => ({ ...a, [outcome.provider]: 'disabled' }));
     }
-    const text = describeOutcome(outcome);
-    if (text) Alert.alert(text.title, text.message);
+    setNotice(describeOutcome(outcome));
   };
 
   const run = async (provider: OAuthProvider) => {
@@ -51,6 +51,7 @@ export function SocialSignIn() {
       return;
     }
     setBusy(provider);
+    setNotice(null);
     const outcome = provider === 'google' ? await signInWithGoogle() : await signInWithApple();
     setBusy(null);
     handleOutcome(outcome);
@@ -75,6 +76,7 @@ export function SocialSignIn() {
         disabled={busy !== null && busy !== 'google'}
         note={note('google')}
       />
+      {notice ? <FormMessage title={notice.title} message={notice.message} tone="info" /> : null}
     </View>
   );
 }

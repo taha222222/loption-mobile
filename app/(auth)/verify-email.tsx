@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AuthScreen } from '../../src/components/auth/AuthScreen';
-import { BrandButton, SurfaceCard } from '../../src/components/v2';
+import { BrandButton, FormMessage, SurfaceCard } from '../../src/components/v2';
 import { supabase } from '../../src/lib/supabase';
 import { isEmailVerified } from '../../src/navigation/routeDecision';
 import { describeOutcome, resendVerificationEmail } from '../../src/services/authFlows';
@@ -25,6 +25,7 @@ export default function VerifyEmailScreen() {
     params.expired === '1' ? 'expired' : params.sent === '1' ? 'sent' : 'pending'
   );
   const [busy, setBusy] = useState<'resend' | 'check' | null>(null);
+  const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -38,6 +39,7 @@ export default function VerifyEmailScreen() {
       return;
     }
     setBusy('resend');
+    setNotice(null);
     const outcome = await resendVerificationEmail(email);
     setBusy(null);
     if (outcome.kind === 'verification_sent') {
@@ -46,7 +48,7 @@ export default function VerifyEmailScreen() {
       return;
     }
     const text = describeOutcome(outcome);
-    if (text) Alert.alert(text.title, text.message);
+    if (text) setNotice(text);
   };
 
   const checkVerified = async () => {
@@ -57,6 +59,7 @@ export default function VerifyEmailScreen() {
       return;
     }
     setBusy('check');
+    setNotice(null);
     const { data, error } = await supabase.auth.refreshSession();
     setBusy(null);
     if (!error && data.session && isEmailVerified(data.session.user as any)) {
@@ -64,7 +67,7 @@ export default function VerifyEmailScreen() {
       router.replace('/');
       return;
     }
-    Alert.alert('Adresse non confirmée', 'Ouvrez le lien reçu par e-mail, puis réessayez.');
+    setNotice({ title: 'Adresse non confirmée', message: 'Ouvrez le lien reçu par e-mail, puis réessayez.' });
   };
 
   const useAnotherAccount = async () => {
@@ -102,6 +105,7 @@ export default function VerifyEmailScreen() {
         </Text>
         <Text style={styles.hint}>Rien reçu ? Vérifiez vos courriers indésirables, puis renvoyez l’e-mail.</Text>
       </SurfaceCard>
+      {notice ? <FormMessage title={notice.title} message={notice.message} /> : null}
       <BrandButton title="J’ai confirmé mon adresse" onPress={checkVerified} loading={busy === 'check'} />
       <BrandButton
         title={cooldown > 0 ? `Renvoyer l’e-mail (${cooldown} s)` : 'Renvoyer l’e-mail'}

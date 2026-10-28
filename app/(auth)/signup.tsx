@@ -1,8 +1,8 @@
 import React, { useRef, useState } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { AuthScreen } from '../../src/components/auth/AuthScreen';
-import { BrandButton, TextField, TextFieldHandle } from '../../src/components/v2';
+import { BrandButton, FormMessage, TextField, TextFieldHandle } from '../../src/components/v2';
 import {
   describeOutcome,
   PASSWORD_MIN_LENGTH,
@@ -20,6 +20,7 @@ export default function SignupScreen() {
   const [confirm, setConfirm] = useState('');
   const [errors, setErrors] = useState<Errors>({});
   const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState<{ title: string; message: string; login?: boolean } | null>(null);
   const passwordRef = useRef<TextFieldHandle>(null);
   const confirmRef = useRef<TextFieldHandle>(null);
 
@@ -30,6 +31,7 @@ export default function SignupScreen() {
       confirm: password === confirm ? null : 'Les mots de passe ne correspondent pas.',
     };
     setErrors(next);
+    setNotice(null);
     if (next.email || next.password || next.confirm) return;
 
     setLoading(true);
@@ -44,21 +46,19 @@ export default function SignupScreen() {
         router.replace('/');
         return;
       case 'account_exists':
-        Alert.alert(
-          'Compte existant',
-          'Un compte existe peut-être déjà avec cette adresse. Connectez-vous ou utilisez la méthode choisie lors de votre inscription.',
-          [
-            { text: 'Annuler', style: 'cancel' },
-            { text: 'Se connecter', onPress: () => router.replace('/(auth)/login') },
-          ]
-        );
+        setNotice({
+          title: 'Compte existant',
+          message:
+            'Un compte existe peut-être déjà avec cette adresse. Connectez-vous ou utilisez la méthode choisie lors de votre inscription.',
+          login: true,
+        });
         return;
       case 'invalid_input':
         setErrors(/e-mail/i.test(outcome.message) ? { email: outcome.message } : { password: outcome.message });
         return;
       default: {
         const text = describeOutcome(outcome);
-        if (text) Alert.alert(text.title, text.message);
+        if (text) setNotice(text);
       }
     }
   };
@@ -118,6 +118,14 @@ export default function SignupScreen() {
         onSubmitEditing={handleSignup}
         error={errors.confirm}
       />
+      {notice ? (
+        <FormMessage
+          title={notice.title}
+          message={notice.message}
+          actionLabel={notice.login ? 'Se connecter' : undefined}
+          onAction={notice.login ? () => router.replace('/(auth)/login') : undefined}
+        />
+      ) : null}
       <BrandButton title="Créer mon compte" onPress={handleSignup} loading={loading} />
     </AuthScreen>
   );

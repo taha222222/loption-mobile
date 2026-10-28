@@ -1,9 +1,9 @@
 import React, { useRef, useState } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { AuthScreen } from '../../src/components/auth/AuthScreen';
 import { SocialSignIn } from '../../src/components/auth/SocialSignIn';
-import { BrandButton, TextField, TextFieldHandle } from '../../src/components/v2';
+import { BrandButton, FormMessage, TextField, TextFieldHandle } from '../../src/components/v2';
 import { describeOutcome, signInWithEmail } from '../../src/services/authFlows';
 import { theme } from '../../src/theme';
 
@@ -12,10 +12,12 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
   const passwordRef = useRef<TextFieldHandle>(null);
 
   const handleLogin = async () => {
     setError(null);
+    setNotice(null);
     setLoading(true);
     const outcome = await signInWithEmail(email, password);
     setLoading(false);
@@ -34,7 +36,7 @@ export default function LoginScreen() {
         return;
       default: {
         const text = describeOutcome(outcome);
-        if (text) Alert.alert(text.title, text.message);
+        if (text) setNotice(text);
       }
     }
   };
@@ -78,6 +80,7 @@ export default function LoginScreen() {
         onSubmitEditing={handleLogin}
         error={error}
       />
+      {notice ? <FormMessage title={notice.title} message={notice.message} /> : null}
       <BrandButton title="Se connecter" onPress={handleLogin} loading={loading} />
       <View style={styles.divider}>
         <View style={styles.line} />

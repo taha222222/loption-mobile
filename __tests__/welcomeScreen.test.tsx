@@ -2,9 +2,9 @@
 // state): the app must start, show every option, and explain unconfigured
 // providers instead of crashing. E-mail stays available.
 import React from 'react';
-import { Alert } from 'react-native';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import WelcomeScreen from '../app/(auth)/welcome';
+import SignupScreen from '../app/(auth)/signup';
 import { FirstOrderOfferBanner } from '../src/components/v2';
 
 jest.mock('../src/lib/supabase', () => ({ supabase: { auth: {} } }));
@@ -16,16 +16,16 @@ jest.mock('expo-router', () => ({
 }));
 const mockSettings = jest.fn();
 jest.mock('../src/services/authProviders', () => ({ fetchAuthProviderSettings: () => mockSettings() }));
-const mockFlows = { google: jest.fn(), apple: jest.fn() };
+const mockFlows = { google: jest.fn(), apple: jest.fn(), signUp: jest.fn() };
 jest.mock('../src/services/authFlows', () => ({
   ...jest.requireActual('../src/services/authFlows'),
   signInWithGoogle: () => mockFlows.google(),
   signInWithApple: () => mockFlows.apple(),
+  signUpWithEmail: (...a: any[]) => (mockFlows.signUp as any)(...a),
 }));
 
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.spyOn(Alert, 'alert').mockImplementation(() => {});
 });
 
 describe('welcome screen without provider credentials', () => {
@@ -37,10 +37,10 @@ describe('welcome screen without provider credentials', () => {
     await render(<WelcomeScreen />);
     await waitFor(() => expect(screen.getAllByText('Pas encore configuré')).toHaveLength(2));
     await fireEvent.press(screen.getByText('Continuer avec Google'));
-    expect(Alert.alert).toHaveBeenCalledWith('Google n’est pas encore configuré', expect.any(String));
+    expect(screen.getByText('Google n’est pas encore configuré')).toBeTruthy();
     expect(mockFlows.google).not.toHaveBeenCalled();
     await fireEvent.press(screen.getByText('Continuer avec Apple'));
-    expect(Alert.alert).toHaveBeenCalledWith('Apple n’est pas encore configuré', expect.any(String));
+    expect(screen.getByText('Apple n’est pas encore configuré')).toBeTruthy();
     expect(mockFlows.apple).not.toHaveBeenCalled();
   });
 
@@ -58,7 +58,7 @@ describe('welcome screen without provider credentials', () => {
     mockFlows.google.mockResolvedValue({ kind: 'not_configured', provider: 'google' });
     await render(<WelcomeScreen />);
     await fireEvent.press(screen.getByText('Continuer avec Google'));
-    await waitFor(() => expect(Alert.alert).toHaveBeenCalledWith('Google n’est pas encore configuré', expect.any(String)));
+    await waitFor(() => expect(screen.getByText('Google n’est pas encore configuré')).toBeTruthy());
     expect(mockRouter.replace).not.toHaveBeenCalled();
   });
 
@@ -68,7 +68,7 @@ describe('welcome screen without provider credentials', () => {
     await render(<WelcomeScreen />);
     await fireEvent.press(screen.getByText('Continuer avec Google'));
     await waitFor(() => expect(mockFlows.google).toHaveBeenCalled());
-    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(mockRouter.replace).not.toHaveBeenCalled();
   });
 });
@@ -87,5 +87,45 @@ describe('first-order offer banner', () => {
   it('confirms when the offer has been applied', async () => {
     await render(<FirstOrderOfferBanner status="applied" />);
     expect(screen.getByText('Livraison offerte appliquée à votre première commande.')).toBeTruthy();
+  });
+});
+
+describe('e-mail sign-up screen', () => {
+  async function submit() {
+    await render(<SignupScreen />);
+    await fireEvent.changeText(screen.getByLabelText('E-mail'), 'client@exemple.ma');
+    await fireEvent.changeText(screen.getByLabelText('Mot de passe'), 'secret123');
+    await fireEvent.changeText(screen.getByLabelText('Confirmer le mot de passe'), 'secret123');
+    await fireEvent.press(screen.getByText('Créer mon compte'));
+  }
+
+  it('says no e-mail was sent and stays on the form when delivery is not configured', async () => {
+    mockFlows.signUp.mockResolvedValue({ kind: 'email_delivery_unavailable' });
+    await submit();
+    await waitFor(() => expect(screen.getByText('E-mail non envoyé')).toBeTruthy());
+    expect(screen.getByText(/Aucun e-mail n’a été envoyé/)).toBeTruthy();
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+  });
+
+  it('goes to the verification screen only when the server accepted the request', async () => {
+    mockFlows.signUp.mockResolvedValue({ kind: 'verification_sent', email: 'client@exemple.ma' });
+    await submit();
+    await waitFor(() =>
+      expect(mockRouter.replace).toHaveBeenCalledWith({
+        pathname: '/(auth)/verify-email',
+        params: { email: 'client@exemple.ma', sent: '1' },
+      })
+    );
+  });
+
+  it('validates the form before calling the server', async () => {
+    await render(<SignupScreen />);
+    await fireEvent.changeText(screen.getByLabelText('E-mail'), 'pas-un-email');
+    await fireEvent.changeText(screen.getByLabelText('Mot de passe'), 'court');
+    await fireEvent.press(screen.getByText('Créer mon compte'));
+    expect(screen.getByText('Cette adresse e-mail n’est pas valide.')).toBeTruthy();
+    expect(screen.getByText(/au moins 8 caractères/)).toBeTruthy();
+    expect(screen.getByText('Les mots de passe ne correspondent pas.')).toBeTruthy();
+    expect(mockFlows.signUp).not.toHaveBeenCalled();
   });
 });

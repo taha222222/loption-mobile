@@ -62,7 +62,7 @@
     "jest": "~30.5.2",
     "jest-expo": "~58.0.13",
     "metro-resolver": "^0.84.4",
-    "react-refresh": "^0.19.0",
+    "react-refresh": "^0.14.2",
     "typescript": "~6.0.3"
   },
   "private": true,
