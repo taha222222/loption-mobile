@@ -5,18 +5,27 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Dimensions,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../../src/theme';
+import {
+  ActionTile,
+  BrandMark,
+  IconBadge,
+  MacroBar,
+  ProgressRing,
+  Screen,
+  SectionHeader,
+  SurfaceCard,
+  formatNumber,
+  formatPrice,
+} from '../../src/components/v2';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useUserStore } from '../../src/stores/userStore';
 import { supabase } from '../../src/lib/supabase';
-
-const { width } = Dimensions.get('window');
 
 interface Meal {
   id: string;
@@ -66,349 +75,333 @@ export default function HomeScreen() {
   // Estimate remaining calories (assume 60% consumed by end of day)
   const remainingCalories = Math.round(dailyCalories * 0.6);
   const progressPercent = 40; // 40% consumed
+  const consumedCalories = dailyCalories - remainingCalories;
+  // Macro intake isn't tracked yet: show the same placeholder share as calories.
+  const consumedShare = (target: number) => Math.round((target * progressPercent) / 100);
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.gold} />
-      </View>
+      <Screen contentStyle={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={theme.colors.brand} />
+      </Screen>
     );
   }
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <Screen scroll>
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>Welcome back</Text>
-          <Text style={styles.userName}>
-            {user?.email?.split('@')[0] || 'User'}
+        <BrandMark size={48} />
+        <View style={styles.headerText}>
+          <Text style={styles.greeting} numberOfLines={1}>Bonjour</Text>
+          <Text style={styles.userName} numberOfLines={1}>
+            {user?.email?.split('@')[0] || 'Utilisateur'}
           </Text>
         </View>
-        <TouchableOpacity style={styles.notificationButton}>
-          <Ionicons name="notifications-outline" size={24} color={theme.colors.textDark} />
+        <TouchableOpacity style={styles.notificationButton} accessibilityLabel="Notifications">
+          <Ionicons name="notifications-outline" size={22} color={theme.colors.ink} />
           <View style={styles.notificationBadge} />
         </TouchableOpacity>
       </View>
 
-      {/* Calorie Card */}
-      <LinearGradient
-        colors={theme.gradients.dark}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.calorieCard}
-      >
-        <Text style={styles.calorieLabel}>Daily Energy Target</Text>
-        <Text style={styles.calorieValue}>
-          {dailyCalories}
-          <Text style={styles.calorieUnit}> kcal</Text>
+      {/* Energy card */}
+      <View style={styles.energyCard}>
+        <View style={styles.energyGlow} />
+        <View style={styles.energyTop}>
+          <View style={styles.energyText}>
+            <Text style={styles.energyLabel}>Énergie du jour</Text>
+            <Text
+              style={styles.energyValue}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+            >
+              {formatNumber(remainingCalories)}
+            </Text>
+            <Text style={styles.energyUnit} numberOfLines={1}>kcal restantes</Text>
+          </View>
+          <ProgressRing progress={progressPercent / 100} size={116} stroke={12}>
+            <Text style={styles.ringValue}>{`${progressPercent}\u00A0%`}</Text>
+            <Text style={styles.ringLabel}>CONSOMMÉ</Text>
+          </ProgressRing>
+        </View>
+        <Text style={styles.energyMeta} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+          {`${formatNumber(consumedCalories)} consommées · objectif ${formatNumber(dailyCalories)}`}
         </Text>
-        <View style={styles.progressContainer}>
-          <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
-          </View>
-          <Text style={styles.progressText}>{remainingCalories} remaining</Text>
+        <View style={styles.energyDivider} />
+        <View style={styles.macroRow}>
+          <MacroBar label="Protéines" value={consumedShare(proteinTarget)} target={proteinTarget} color={theme.colors.coral} />
+          <MacroBar label="Glucides" value={consumedShare(carbsTarget)} target={carbsTarget} color={theme.colors.highlight} />
+          <MacroBar label="Lipides" value={consumedShare(fatsTarget)} target={fatsTarget} color={theme.colors.textWhite} />
         </View>
-        <View style={styles.macroContainer}>
-          <View style={styles.macroItem}>
-            <Text style={styles.macroValue}>{proteinTarget}g</Text>
-            <Text style={styles.macroLabel}>Protein</Text>
-          </View>
-          <View style={styles.macroDivider} />
-          <View style={styles.macroItem}>
-            <Text style={styles.macroValue}>{carbsTarget}g</Text>
-            <Text style={styles.macroLabel}>Carbs</Text>
-          </View>
-          <View style={styles.macroDivider} />
-          <View style={styles.macroItem}>
-            <Text style={styles.macroValue}>{fatsTarget}g</Text>
-            <Text style={styles.macroLabel}>Fats</Text>
-          </View>
-        </View>
-      </LinearGradient>
+      </View>
 
       {/* Quick Actions */}
       <View style={styles.actionsContainer}>
-        <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(app)/menu')}>
-          <LinearGradient
-            colors={theme.gradients.gold}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.actionGradient}
-          >
-            <Ionicons name="restaurant" size={28} color={theme.colors.dark} />
-            <Text style={styles.actionTitle}>Order Food</Text>
-          </LinearGradient>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(app)/progress')}>
-          <View style={[styles.actionIcon, { backgroundColor: theme.colors.backgroundDark }]}>
-            <Ionicons name="fitness" size={28} color={theme.colors.accent} />
-          </View>
-          <Text style={styles.actionTitle}>Track Progress</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.actionCard}>
-          <View style={[styles.actionIcon, { backgroundColor: theme.colors.backgroundDark }]}>
-            <Ionicons name="calendar" size={28} color={theme.colors.secondary} />
-          </View>
-          <Text style={styles.actionTitle}>Meal Plan</Text>
-        </TouchableOpacity>
+        <ActionTile
+          icon="restaurant"
+          label="Commander un repas"
+          highlighted
+          onPress={() => router.push('/(app)/menu')}
+        />
+        <ActionTile
+          icon="pulse"
+          label="Suivre mes progrès"
+          onPress={() => router.push('/(app)/progress')}
+        />
+        <ActionTile icon="calendar-outline" label="Plan repas" />
       </View>
 
       {/* Recommended Section */}
       <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recommended for You</Text>
-          <TouchableOpacity onPress={() => router.push('/(app)/menu')}>
-            <Text style={styles.seeAllLink}>See All</Text>
-          </TouchableOpacity>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <SectionHeader
+          title="Recommandé pour vous"
+          actionLabel="Voir tout"
+          onAction={() => router.push('/(app)/menu')}
+        />
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.recommendList}
+        >
           {recommendedMeals.map((meal) => (
-            <TouchableOpacity 
-              key={meal.id} 
+            <SurfaceCard
+              key={meal.id}
               style={styles.recommendCard}
               onPress={() => router.push('/(app)/menu')}
             >
-              <View style={styles.recommendImage} />
-              <Text style={styles.recommendName}>{meal.name}</Text>
-              <Text style={styles.recommendCalories}>{meal.calories} calories</Text>
-              <Text style={styles.recommendPrice}>${meal.price.toFixed(2)}</Text>
-            </TouchableOpacity>
+              <View style={styles.recommendImageWrap}>
+                {meal.image_url ? (
+                  <Image source={{ uri: meal.image_url }} style={styles.recommendImage} />
+                ) : (
+                  <View style={[styles.recommendImage, styles.recommendPlaceholder]}>
+                    <Ionicons name="restaurant-outline" size={28} color={theme.colors.inkFaint} />
+                  </View>
+                )}
+                <View style={styles.kcalPill}>
+                  <Text style={styles.kcalPillText}>{`${formatNumber(meal.calories)}\u00A0kcal`}</Text>
+                </View>
+              </View>
+              <Text style={styles.recommendName} numberOfLines={2}>{meal.name}</Text>
+              <Text style={styles.recommendPrice}>{formatPrice(meal.price)}</Text>
+            </SurfaceCard>
           ))}
         </ScrollView>
       </View>
 
       {/* Subscription Banner - Show if no active subscription */}
       {!profile?.program && (
-        <TouchableOpacity style={styles.subscriptionBanner}>
-          <LinearGradient
-            colors={theme.gradients.gold}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.bannerGradient}
-          >
-            <View>
-              <Text style={styles.bannerTitle}>Unlock Your Potential</Text>
-              <Text style={styles.bannerText}>Subscribe to get personalized meal plans</Text>
-            </View>
-            <Ionicons name="arrow-forward" size={24} color={theme.colors.dark} />
-          </LinearGradient>
-        </TouchableOpacity>
+        <SurfaceCard style={styles.subscriptionBanner}>
+          <IconBadge icon="sparkles-outline" />
+          <View style={styles.bannerText}>
+            <Text style={styles.bannerTitle}>Libérez votre potentiel</Text>
+            <Text style={styles.bannerSubtitle}>
+              Abonnez-vous pour des plans repas personnalisés
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.inkMuted} />
+        </SurfaceCard>
       )}
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
   loadingContainer: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: theme.colors.background,
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: theme.spacing.md,
     paddingHorizontal: theme.spacing.xl,
-    paddingTop: theme.spacing.xl,
-    paddingBottom: theme.spacing.lg,
+    paddingTop: theme.spacing.lg,
+    paddingBottom: theme.spacing.xl,
+  },
+  headerText: {
+    flex: 1,
   },
   greeting: {
     fontSize: theme.typography.sizes.sm,
-    color: theme.colors.textLight,
+    lineHeight: theme.typography.lineHeights.sm,
+    color: theme.colors.inkMuted,
   },
   userName: {
     fontSize: theme.typography.sizes['2xl'],
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textDark,
-    marginTop: 4,
+    lineHeight: theme.typography.lineHeights.lg,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.ink,
+    letterSpacing: -0.4,
   },
   notificationButton: {
-    position: 'relative',
-    padding: theme.spacing.sm,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.hairline,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   notificationBadge: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: theme.colors.gold,
+    top: 11,
+    right: 12,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: theme.colors.surface,
+    backgroundColor: theme.colors.highlight,
   },
-  calorieCard: {
+  energyCard: {
     marginHorizontal: theme.spacing.xl,
     marginBottom: theme.spacing.xl,
-    borderRadius: theme.spacing['2xl'],
+    borderRadius: theme.radii.xl,
     padding: theme.spacing.xl,
-  },
-  calorieLabel: {
-    fontSize: theme.typography.sizes.sm,
-    color: theme.colors.textWhite,
-    opacity: 0.8,
-  },
-  calorieValue: {
-    fontSize: theme.typography.sizes['4xl'],
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.gold,
-    marginTop: theme.spacing.sm,
-  },
-  calorieUnit: {
-    fontSize: theme.typography.sizes.lg,
-    fontWeight: theme.typography.weights.normal,
-  },
-  progressContainer: {
-    marginTop: theme.spacing.lg,
-  },
-  progressBar: {
-    height: 8,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 4,
+    backgroundColor: theme.colors.brand,
     overflow: 'hidden',
   },
-  progressFill: {
-    height: '100%',
-    backgroundColor: theme.colors.gold,
-    borderRadius: 4,
+  energyGlow: {
+    position: 'absolute',
+    top: -90,
+    right: -90,
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    backgroundColor: 'rgba(255,255,255,0.07)',
   },
-  progressText: {
-    fontSize: theme.typography.sizes.xs,
+  energyTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+  },
+  energyText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  energyLabel: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: theme.colors.brandOnDark,
+  },
+  energyValue: {
+    fontSize: theme.typography.sizes.display,
+    lineHeight: theme.typography.lineHeights.display,
+    fontWeight: theme.typography.weights.extrabold,
     color: theme.colors.textWhite,
-    opacity: 0.7,
+    letterSpacing: -1.5,
     marginTop: theme.spacing.xs,
   },
-  macroContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: theme.spacing.xl,
-    paddingTop: theme.spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.1)',
-  },
-  macroItem: {
-    alignItems: 'center',
-  },
-  macroValue: {
-    fontSize: theme.typography.sizes.lg,
+  energyUnit: {
+    fontSize: theme.typography.sizes.md,
     fontWeight: theme.typography.weights.semibold,
+    color: theme.colors.brandOnDark,
+  },
+  ringValue: {
+    fontSize: theme.typography.sizes['2xl'],
+    fontWeight: theme.typography.weights.extrabold,
     color: theme.colors.textWhite,
   },
-  macroLabel: {
-    fontSize: theme.typography.sizes.xs,
-    color: theme.colors.textWhite,
-    opacity: 0.7,
-    marginTop: 4,
+  ringLabel: {
+    fontSize: 10,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.brandOnDark,
+    letterSpacing: 0.8,
+    marginTop: 2,
   },
-  macroDivider: {
-    width: 1,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+  energyMeta: {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.brandOnDark,
+    marginTop: theme.spacing.md,
+  },
+  energyDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    marginVertical: theme.spacing.lg,
+  },
+  macroRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.md,
   },
   actionsContainer: {
     flexDirection: 'row',
     paddingHorizontal: theme.spacing.xl,
-    gap: theme.spacing.md,
-    marginBottom: theme.spacing.xl,
-  },
-  actionCard: {
-    flex: 1,
-    borderRadius: theme.spacing.lg,
-    overflow: 'hidden',
-  },
-  actionGradient: {
-    alignItems: 'center',
-    paddingVertical: theme.spacing.lg,
-    gap: theme.spacing.sm,
-  },
-  actionIcon: {
-    alignItems: 'center',
-    paddingVertical: theme.spacing.lg,
-    borderRadius: theme.spacing.lg,
-    gap: theme.spacing.sm,
-  },
-  actionTitle: {
-    fontSize: theme.typography.sizes.sm,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textDark,
+    gap: 10,
+    marginBottom: theme.spacing['2xl'],
   },
   section: {
     marginBottom: theme.spacing.xl,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  recommendList: {
     paddingHorizontal: theme.spacing.xl,
-    marginBottom: theme.spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: theme.typography.sizes.xl,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textDark,
-  },
-  seeAllLink: {
-    fontSize: theme.typography.sizes.sm,
-    color: theme.colors.gold,
-    fontWeight: theme.typography.weights.semibold,
+    gap: theme.spacing.md,
   },
   recommendCard: {
-    width: 160,
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.spacing.lg,
-    marginLeft: theme.spacing.xl,
-    padding: theme.spacing.md,
-    ...theme.shadows.sm,
+    width: 220,
+    padding: theme.spacing.sm,
+    paddingBottom: theme.spacing.lg,
+  },
+  recommendImageWrap: {
+    marginBottom: theme.spacing.md,
   },
   recommendImage: {
     width: '100%',
-    height: 100,
-    backgroundColor: theme.colors.border,
-    borderRadius: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
+    height: 140,
+    borderRadius: theme.radii.md,
+    backgroundColor: theme.colors.canvas,
+  },
+  recommendPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kcalPill: {
+    position: 'absolute',
+    top: theme.spacing.sm,
+    left: theme.spacing.sm,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radii.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  kcalPillText: {
+    fontSize: theme.typography.sizes.xs,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.ink,
   },
   recommendName: {
-    fontSize: theme.typography.sizes.sm,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textDark,
-  },
-  recommendCalories: {
-    fontSize: theme.typography.sizes.xs,
-    color: theme.colors.textLight,
-    marginTop: 2,
+    fontSize: theme.typography.sizes.md,
+    lineHeight: theme.typography.lineHeights.sm,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.ink,
+    paddingHorizontal: theme.spacing.sm,
   },
   recommendPrice: {
-    fontSize: theme.typography.sizes.md,
+    fontSize: theme.typography.sizes.sm,
     fontWeight: theme.typography.weights.bold,
-    color: theme.colors.gold,
-    marginTop: 8,
+    color: theme.colors.brand,
+    marginTop: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.sm,
   },
   subscriptionBanner: {
     marginHorizontal: theme.spacing.xl,
-    marginBottom: theme.spacing.xl,
-    borderRadius: theme.spacing.lg,
-    overflow: 'hidden',
-  },
-  bannerGradient: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: theme.spacing.lg,
+    gap: theme.spacing.md,
+  },
+  bannerText: {
+    flex: 1,
   },
   bannerTitle: {
     fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.dark,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.ink,
   },
-  bannerText: {
+  bannerSubtitle: {
     fontSize: theme.typography.sizes.xs,
-    color: theme.colors.dark,
-    opacity: 0.8,
+    lineHeight: theme.typography.lineHeights.xs,
+    color: theme.colors.inkMuted,
     marginTop: 2,
   },
 });

@@ -36,7 +36,7 @@ function DriverTabs() {
         options={{
           title: 'Dashboard',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="speedometer-outline" size={size} color={color} />
+            <Ionicons name="speedometer-outline" size={size} color={color as string} />
           ),
         }}
       />
@@ -45,7 +45,7 @@ function DriverTabs() {
         options={{
           title: 'Earnings',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="wallet-outline" size={size} color={color} />
+            <Ionicons name="wallet-outline" size={size} color={color as string} />
           ),
         }}
       />
@@ -54,7 +54,7 @@ function DriverTabs() {
         options={{
           title: 'History',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="time-outline" size={size} color={color} />
+            <Ionicons name="time-outline" size={size} color={color as string} />
           ),
         }}
       />
@@ -63,7 +63,7 @@ function DriverTabs() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-outline" size={size} color={color} />
+            <Ionicons name="person-outline" size={size} color={color as string} />
           ),
         }}
       />

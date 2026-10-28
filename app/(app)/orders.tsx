@@ -7,12 +7,12 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { theme } from '../../src/theme';
 import { supabase } from '../../src/lib/supabase';
 import { useAuthStore } from '../../src/stores/authStore';
+import { EmptyState, IconBadge, Screen, ScreenHeader, StatusBadge, SurfaceCard, formatPrice } from '../../src/components/v2';
 
 interface Order {
   id: string;
@@ -74,161 +74,107 @@ export default function OrdersScreen() {
     }
   };
 
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'confirmed':
+        return 'Confirmée';
+      case 'preparing':
+        return 'En préparation';
+      case 'on_the_way':
+        return 'En route';
+      case 'delivered':
+        return 'Livrée';
+      default:
+        return status.replace('_', ' ');
+    }
+  };
+
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.gold} />
-        </View>
-      </SafeAreaView>
+      <Screen contentStyle={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={theme.colors.brand} />
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Orders</Text>
-      </View>
+    <Screen>
+      <ScreenHeader subtitle="Historique" title="Commandes" />
 
       {orders.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons name="receipt-outline" size={80} color={theme.colors.textLight} />
-          <Text style={styles.emptyTitle}>No orders yet</Text>
-          <Text style={styles.emptyText}>Your order history will appear here</Text>
-          <TouchableOpacity
-            style={styles.orderButton}
-            onPress={() => router.push('/(app)/menu')}
-          >
-            <Text style={styles.orderButtonText}>Start Ordering</Text>
-          </TouchableOpacity>
-        </View>
+        <EmptyState
+          icon="receipt-outline"
+          title="Aucune commande"
+          message="Votre historique de commandes apparaîtra ici"
+          actionLabel="Commander un repas"
+          onAction={() => router.push('/(app)/menu')}
+        />
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.ordersContainer}
         >
           {orders.map((order) => (
-            <TouchableOpacity
+            <SurfaceCard
               key={order.id}
               style={styles.orderCard}
               onPress={() => router.push(`/(app)/order-tracking/${order.id}`)}
             >
-              <View style={styles.orderHeader}>
-                <Text style={styles.orderNumber}>#{order.order_number}</Text>
-                <View
-                  style={[
-                    styles.statusBadge,
-                    { backgroundColor: getStatusColor(order.status) + '20' },
-                  ]}
-                >
-                  <Ionicons
-                    name={getStatusIcon(order.status) as any}
-                    size={14}
+              <IconBadge icon="receipt-outline" />
+              <View style={styles.orderBody}>
+                <View style={styles.orderHeader}>
+                  <Text style={styles.orderNumber} numberOfLines={1}>#{order.order_number}</Text>
+                  <StatusBadge
+                    label={getStatusLabel(order.status)}
                     color={getStatusColor(order.status)}
+                    icon={getStatusIcon(order.status) as any}
                   />
-                  <Text
-                    style={[styles.statusText, { color: getStatusColor(order.status) }]}
-                  >
-                    {order.status.replace('_', ' ').toUpperCase()}
+                </View>
+                <View style={styles.orderFooter}>
+                  <Text style={styles.orderDate}>
+                    {new Date(order.created_at).toLocaleDateString('fr-FR')}
                   </Text>
+                  <Text style={styles.orderTotal}>{formatPrice(order.total)}</Text>
                 </View>
               </View>
-              <View style={styles.orderFooter}>
-                <Text style={styles.orderDate}>
-                  {new Date(order.created_at).toLocaleDateString()}
-                </Text>
-                <Text style={styles.orderTotal}>{order.total} MAD</Text>
-              </View>
-            </TouchableOpacity>
+            </SurfaceCard>
           ))}
         </ScrollView>
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  header: {
-    paddingHorizontal: theme.spacing.xl,
-    paddingTop: theme.spacing.xl,
-    paddingBottom: theme.spacing.md,
-  },
-  title: {
-    fontSize: theme.typography.sizes['3xl'],
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textDark,
-  },
   loadingContainer: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: theme.spacing.xl,
-  },
-  emptyTitle: {
-    fontSize: theme.typography.sizes.xl,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textDark,
-    marginTop: theme.spacing.lg,
-  },
-  emptyText: {
-    fontSize: theme.typography.sizes.md,
-    color: theme.colors.textLight,
-    marginTop: theme.spacing.sm,
-    textAlign: 'center',
-  },
-  orderButton: {
-    backgroundColor: theme.colors.gold,
-    paddingHorizontal: theme.spacing.xl,
-    paddingVertical: theme.spacing.md,
-    borderRadius: theme.spacing.lg,
-    marginTop: theme.spacing.xl,
-  },
-  orderButtonText: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.dark,
   },
   ordersContainer: {
-    padding: theme.spacing.xl,
+    paddingHorizontal: theme.spacing.xl,
+    paddingBottom: theme.spacing.lg,
     gap: theme.spacing.md,
   },
   orderCard: {
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.spacing.lg,
-    padding: theme.spacing.lg,
-    ...theme.shadows.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+  },
+  orderBody: {
+    flex: 1,
+    gap: theme.spacing.sm,
   },
   orderHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: theme.spacing.md,
+    gap: theme.spacing.sm,
   },
   orderNumber: {
+    flexShrink: 1,
     fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textDark,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 4,
-    borderRadius: theme.spacing.sm,
-    gap: 4,
-  },
-  statusText: {
-    fontSize: theme.typography.sizes.xs,
-    fontWeight: theme.typography.weights.semibold,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.ink,
   },
   orderFooter: {
     flexDirection: 'row',
@@ -237,11 +183,11 @@ const styles = StyleSheet.create({
   },
   orderDate: {
     fontSize: theme.typography.sizes.sm,
-    color: theme.colors.textLight,
+    color: theme.colors.inkMuted,
   },
   orderTotal: {
-    fontSize: theme.typography.sizes.lg,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.gold,
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.brand,
   },
 });

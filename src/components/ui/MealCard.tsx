@@ -9,7 +9,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme';
-import { Card } from './Card';
+import { SurfaceCard } from '../v2/SurfaceCard';
+import { formatPrice } from '../v2/format';
 
 interface MealCardProps {
   id: string;
@@ -40,78 +41,69 @@ export const MealCard: React.FC<MealCardProps> = ({
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
 
+  const macros = [
+    `${calories}\u00A0kcal`,
+    `${protein}\u00A0g protéines`,
+    carbs ? `${carbs}\u00A0g glucides` : null,
+    fat ? `${fat}\u00A0g lipides` : null,
+  ].filter(Boolean);
+
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
-      <Card variant="elevated" style={styles.card}>
-        <View style={styles.imageContainer}>
-          {image && !imageError ? (
-            <>
-              <Image
-                source={{ uri: image }}
-                style={styles.image}
-                onLoadStart={() => setImageLoading(true)}
-                onLoadEnd={() => setImageLoading(false)}
-                onError={() => {
-                  setImageError(true);
-                  setImageLoading(false);
-                }}
-              />
-              {imageLoading && (
-                <View style={styles.imageLoadingOverlay}>
-                  <ActivityIndicator size="small" color={theme.colors.gold} />
-                </View>
-              )}
-            </>
-          ) : (
-            <View style={styles.imagePlaceholder}>
-              <Ionicons name="restaurant-outline" size={32} color={theme.colors.textLight} />
-            </View>
-          )}
-          {popular && (
-            <View style={styles.popularBadge}>
-              <Ionicons name="flame" size={10} color={theme.colors.dark} />
-              <Text style={styles.popularText}>Popular</Text>
-            </View>
-          )}
-        </View>
-        
-        <View style={styles.content}>
-          <Text style={styles.name} numberOfLines={1}>
-            {name}
-          </Text>
-          
-          <View style={styles.macros}>
-            <View style={styles.macro}>
-              <Ionicons name="flame-outline" size={12} color={theme.colors.textLight} />
-              <Text style={styles.macroText}>{calories} cal</Text>
-            </View>
-            <View style={styles.macro}>
-              <Ionicons name="nutrition-outline" size={12} color={theme.colors.textLight} />
-              <Text style={styles.macroText}>{protein}g protein</Text>
-            </View>
-            {carbs !== undefined && carbs > 0 && (
-              <View style={styles.macro}>
-                <Ionicons name="leaf-outline" size={12} color={theme.colors.textLight} />
-                <Text style={styles.macroText}>{carbs}g carbs</Text>
+    <SurfaceCard onPress={onPress} style={styles.card}>
+      <View style={styles.imageContainer}>
+        {image && !imageError ? (
+          <>
+            <Image
+              source={{ uri: image }}
+              style={styles.image}
+              onLoadStart={() => setImageLoading(true)}
+              onLoadEnd={() => setImageLoading(false)}
+              onError={() => {
+                setImageError(true);
+                setImageLoading(false);
+              }}
+            />
+            {imageLoading && (
+              <View style={styles.imageLoadingOverlay}>
+                <ActivityIndicator size="small" color={theme.colors.brand} />
               </View>
             )}
-            {fat !== undefined && fat > 0 && (
-              <View style={styles.macro}>
-                <Ionicons name="egg-outline" size={12} color={theme.colors.textLight} />
-                <Text style={styles.macroText}>{fat}g fat</Text>
-              </View>
-            )}
+          </>
+        ) : (
+          <View style={styles.image}>
+            <Ionicons name="restaurant-outline" size={28} color={theme.colors.inkFaint} />
           </View>
-          
-          <View style={styles.footer}>
-            <Text style={styles.price}>{price} MAD</Text>
-            <TouchableOpacity onPress={onAddToCart} style={styles.addButton} activeOpacity={0.7}>
-              <Ionicons name="add-circle" size={32} color={theme.colors.gold} />
-            </TouchableOpacity>
+        )}
+      </View>
+
+      <View style={styles.content}>
+        {popular && (
+          <View style={styles.popularBadge}>
+            <Ionicons name="flame" size={11} color={theme.colors.brand} />
+            <Text style={styles.popularText}>Populaire</Text>
           </View>
+        )}
+        <Text style={styles.name} numberOfLines={2}>
+          {name}
+        </Text>
+        <Text style={styles.macroText} numberOfLines={2}>
+          {macros.join(' · ')}
+        </Text>
+
+        <View style={styles.footer}>
+          <Text style={styles.price}>{formatPrice(price)}</Text>
+          <TouchableOpacity
+            onPress={onAddToCart}
+            style={styles.addButton}
+            activeOpacity={0.8}
+            accessibilityLabel="Ajouter au panier"
+            hitSlop={6}
+          >
+            <Ionicons name="add" size={22} color={theme.colors.textWhite} />
+          </TouchableOpacity>
         </View>
-      </Card>
-    </TouchableOpacity>
+      </View>
+    </SurfaceCard>
   );
 };
 
@@ -119,18 +111,20 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     marginBottom: theme.spacing.md,
-    overflow: 'hidden',
+    padding: theme.spacing.sm,
+    gap: theme.spacing.md,
   },
   imageContainer: {
-    position: 'relative',
-    width: 100,
-    height: 120,
+    width: 104,
+    height: 116,
   },
   image: {
-    width: 100,
-    height: 120,
-    borderRadius: theme.spacing.md,
-    backgroundColor: theme.colors.backgroundDark,
+    width: 104,
+    height: 116,
+    borderRadius: theme.radii.md,
+    backgroundColor: theme.colors.canvas,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   imageLoadingOverlay: {
     position: 'absolute',
@@ -138,73 +132,62 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: theme.spacing.md,
+    backgroundColor: 'rgba(20,19,43,0.15)',
+    borderRadius: theme.radii.md,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  imagePlaceholder: {
-    width: 100,
-    height: 120,
-    borderRadius: theme.spacing.md,
-    backgroundColor: theme.colors.backgroundDark,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  popularBadge: {
-    position: 'absolute',
-    top: theme.spacing.xs,
-    left: theme.spacing.xs,
-    backgroundColor: theme.colors.gold,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 2,
-    borderRadius: theme.spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  popularText: {
-    fontSize: 9,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.dark,
   },
   content: {
     flex: 1,
-    marginLeft: theme.spacing.md,
-    justifyContent: 'space-between',
+    paddingVertical: theme.spacing.xs,
+    paddingRight: theme.spacing.xs,
+  },
+  popularBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: theme.colors.brandSoft,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: theme.radii.pill,
+    marginBottom: 4,
+  },
+  popularText: {
+    fontSize: 11,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.brand,
   },
   name: {
     fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textDark,
-    marginBottom: theme.spacing.xs,
-  },
-  macros: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: theme.spacing.sm,
-    marginBottom: theme.spacing.sm,
-  },
-  macro: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
+    lineHeight: theme.typography.lineHeights.sm,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.ink,
   },
   macroText: {
-    fontSize: 10,
-    color: theme.colors.textLight,
+    fontSize: theme.typography.sizes.xs,
+    lineHeight: theme.typography.lineHeights.xs,
+    color: theme.colors.inkMuted,
+    marginTop: 2,
   },
   footer: {
+    flex: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-end',
+    marginTop: theme.spacing.sm,
   },
   price: {
-    fontSize: theme.typography.sizes.lg,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.gold,
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.extrabold,
+    color: theme.colors.ink,
   },
   addButton: {
-    padding: theme.spacing.xs,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

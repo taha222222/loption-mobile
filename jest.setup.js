@@ -1,4 +1,3 @@
-/* eslint-env jest */
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock')
 );
@@ -7,3 +6,12 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 // Tests never talk to a real project; network calls are mocked per test.
 process.env.EXPO_PUBLIC_SUPABASE_URL = 'https://test-project.supabase.co';
 process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY = 'test-anon-key';
+
+// @expo/vector-icons loads its font through expo-font on mount. Under
+// jest-expo 58 the font asset is not in the test asset registry, so treat
+// fonts as already loaded. This affects icon rendering only.
+jest.mock('expo-font', () => ({
+  ...jest.requireActual('expo-font'),
+  isLoaded: () => true,
+  loadAsync: () => Promise.resolve(),
+}));
