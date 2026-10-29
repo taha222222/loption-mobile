@@ -8,6 +8,7 @@ import { locationService } from '../services/locationService';
 import { useAdminStore } from './adminStore';
 import { useCartStore } from './cartStore';
 import { useCollaboratorStore } from './collaboratorStore';
+import { useNutritionStore } from './nutritionStore';
 import { useSetupStore } from './setupStore';
 import { useDriverEarningsStore } from './driverEarningsStore';
 import { useSubscriptionStore } from './subscriptionStore';
@@ -21,6 +22,7 @@ export async function resetUserScopedState(
   if (!options.keepPersistedCart) useCartStore.getState().reset();
   useUserStore.getState().reset();
   useSetupStore.getState().reset();
+  useNutritionStore.getState().reset();
   useSubscriptionStore.setState(useSubscriptionStore.getInitialState(), true);
   useCollaboratorStore.setState(useCollaboratorStore.getInitialState(), true);
   useAdminStore.setState(useAdminStore.getInitialState(), true);

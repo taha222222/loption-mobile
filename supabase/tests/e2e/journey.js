@@ -13,6 +13,9 @@ const WEB = process.env.E2E_WEB;
 const SMTP_PORT = process.env.E2E_SMTP_PORT;
 const SINK = process.env.E2E_SINK;
 const DB_PORT = process.env.E2E_DB_PORT;
+const REST = process.env.E2E_REST;
+const SERVICE_JWT = process.env.E2E_SERVICE_JWT;
+const DISPATCH = process.env.E2E_DISPATCH;
 let failures = 0;
 const pass = (m) => console.log(`  pass: ${m}`);
 const fail = (m) => {
@@ -61,7 +64,7 @@ let sink = null; // SMTP sink process, always stopped on exit
   const password = 'Secret1234';
 
   // ---------------------------------------------------------------- welcome
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, timezoneId: 'Africa/Casablanca' });
   const page = await newPage(ctx);
   current = page;
   await page.goto(WEB + '/');
@@ -202,7 +205,6 @@ let sink = null; // SMTP sink process, always stopped on exit
       },
       [method, url, body, token]
     );
-  const REST = 'http://127.0.0.1:54321/rest/v1';
   const tamperBmr = await api('PATCH', `${REST}/user_profiles?user_id=eq.${userId}`, { bmr_kcal: 9999 });
   const tamperOffer = await api('PATCH', `${REST}/user_profiles?user_id=eq.${userId}`, { first_order_offer_status: 'eligible' });
   const tamperRole = await api('PATCH', `${REST}/user_profiles?user_id=eq.${userId}`, { role: 'admin', is_admin: true });
@@ -219,7 +221,7 @@ let sink = null; // SMTP sink process, always stopped on exit
   await waitForText(page, 'Livraison offerte sur votre première commande', 20000);
   check(!page.url().includes('onboarding') && !page.url().includes('setup'), 'reopening the app: straight to home');
 
-  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, timezoneId: 'Africa/Casablanca' });
   const page2 = await newPage(ctx2);
   current = page2;
   await page2.goto(WEB + '/login');
@@ -237,6 +239,104 @@ let sink = null; // SMTP sink process, always stopped on exit
   await waitForText(page2, 'Livraison offerte sur votre première commande', 20000);
   pass('another device reaches the V2 home screen');
   check(sql(`select count(*) from public.user_profiles where user_id = '${userId}'`) === '1', 'still exactly one profile');
+
+  // ------------------------------------------------- nutrition tracking
+  await page2.goto(WEB + '/nutrition');
+  await waitForText(page2, 'Vos estimations', 20000);
+  check((await page2.getByText('Aucun repas enregistré aujourd’hui.').count()) === 1, 'nutrition: empty day shown as "no meal logged"');
+  check((await page2.getByText(/1\s614 kcal/).count()) >= 1, 'nutrition: TDEE/target from the server (1 614 kcal)');
+  await shot(page2, '10-nutrition-empty');
+  const todayLocal = sql("select (now() at time zone 'Africa/Casablanca')::date");
+  check(sql(`select time_zone from public.user_profiles where user_id = '${userId}'`) === 'Africa/Casablanca',
+    'device time zone synced to the profile');
+
+  // log a meal through the UI
+  await page2.getByText('Ajouter un repas consommé').click();
+  await waitForText(page2, 'Menu L’OPTION', 20000);
+  await page2.getByLabel(/^Test bowl\. 500 kcal \/ portion$/).click();
+  await page2.getByText('Enregistrer', { exact: true }).click();
+  await waitForText(page2, 'Test bowl', 20000);
+  await page2.waitForTimeout(1000);
+  const e1 = sql(`select count(*) || ':' || sum(kcal) || ':' || min(local_date) from public.nutrition_log_entries where user_id = '${userId}' and deleted_at is null`);
+  check(e1 === `1:500:${todayLocal}`, `meal logged with server-side calories for the local day (${e1})`);
+  check((await page2.getByLabel(/500 kilocalories consommées sur un objectif de 1614\. 1114 restantes/).count()) === 1,
+    'today card: consumed 500, remaining 1 114 (real values)');
+  await shot(page2, '11-nutrition-logged');
+
+  // remove it (the web build confirms with window.confirm)
+  page2.once('dialog', (d) => d.accept());
+  await page2.getByLabel('Retirer Test bowl').click();
+  await waitForText(page2, 'Aucun repas enregistré aujourd’hui.', 20000);
+  check(sql(`select count(*) from public.nutrition_log_entries where user_id = '${userId}' and deleted_at is not null`) === '1',
+    'removal keeps an audit record (deleted_at set, row kept)');
+
+  // log again for the streak, then the API protections
+  await page2.getByText('Ajouter un repas consommé').click();
+  await waitForText(page2, 'Menu L’OPTION', 20000);
+  await page2.getByLabel(/^Test bowl\. 500 kcal \/ portion$/).click();
+  await page2.getByText('Enregistrer', { exact: true }).click();
+  await waitForText(page2, '1 jour d’affilée', 20000);
+  pass('streak: 1 day after logging today (server-computed)');
+  const token2 = await page2.evaluate(() => {
+    const key = Object.keys(localStorage).find((k) => k.endsWith('-auth-token'));
+    return JSON.parse(localStorage.getItem(key)).access_token;
+  });
+  const call = (method, url, body) =>
+    page2.evaluate(async ([m, u, b, t]) => {
+      const r = await fetch(u, { method: m, headers: { Authorization: `Bearer ${t}`, apikey: 'x', 'content-type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: b ? JSON.stringify(b) : undefined });
+      return { status: r.status, body: await r.text() };
+    }, [method, url, body, token2]);
+  const req = '7a1b2c3d-0000-4000-8000-00000000e2e1';
+  const entryBody = { client_request_id: req, local_date: todayLocal, time_zone: 'Africa/Casablanca', meal_id: '00000000-0000-0000-0000-00000000aa01', servings: 1 };
+  const retry1 = await call('POST', `${REST}/nutrition_log_entries?on_conflict=user_id,client_request_id`, entryBody);
+  const retry2 = await call('POST', `${REST}/nutrition_log_entries?on_conflict=user_id,client_request_id`, entryBody);
+  check(retry1.status < 300 && retry2.status < 300 && sql(`select count(*) from public.nutrition_log_entries where client_request_id = '${req}'`) === '1',
+    `API retry with the same idempotency key creates one entry (${retry1.status}/${retry2.status})`);
+  const forged = await call('POST', `${REST}/nutrition_log_entries`, { ...entryBody, client_request_id: '7a1b2c3d-0000-4000-8000-00000000e2e2', kcal: 1 });
+  const other = await call('GET', `${REST}/nutrition_log_entries?user_id=neq.${userId}&select=id`);
+  const deliveries = await call('GET', `${REST}/notification_deliveries?select=id`);
+  check(forged.status >= 400 && other.body === '[]' && deliveries.status >= 400,
+    `API refuses client calorie values (${forged.status}), hides other users' entries, and the outbox (${deliveries.status})`);
+  await call('DELETE', `${REST}/nutrition_log_entries?client_request_id=eq.${req}`);
+  check(sql(`select count(*) from public.nutrition_log_entries where client_request_id = '${req}' and deleted_at is null`) === '1',
+    'API cannot hard-delete entries');
+
+  // reminders: opt in through the UI
+  await page2.goto(WEB + '/nutrition-reminders');
+  await waitForText(page2, 'Recevoir des rappels de suivi', 20000);
+  await page2.getByLabel('Recevoir des rappels de suivi').click();
+  await page2.getByText('Enregistrer', { exact: true }).click();
+  await waitForText(page2, 'Préférences enregistrées', 20000);
+  check(sql(`select reminders_enabled || ':' || daily_target_enabled || ':' || daily_time || ':' || time_zone from public.notification_preferences where user_id = '${userId}'`)
+    === 'true:true:12:00:00:Africa/Casablanca', 'reminder opt-in saved with local time zone and the proposed default time');
+  await shot(page2, '12-reminders');
+
+  // a device token through the real RPC (web has no push token), then the dispatcher
+  const reg = await call('POST', `${REST}/rpc/register_push_token`, { p_token: 'ExponentPushToken[e2e-device-000001]', p_device_type: 'ios' });
+  check(reg.status < 300, `register_push_token as the customer (${reg.status})`);
+  const noon = sql(`select to_char(((now() at time zone 'Africa/Casablanca')::date + time '12:30') at time zone 'Africa/Casablanca' at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`);
+  const runDispatch = (nowIso, mode) => {
+    const out = path.join(OUT, `push-${mode}-${Date.now()}.json`);
+    const summary = JSON.parse(execFileSync('node', ['--experimental-strip-types', '--no-warnings', DISPATCH, REST, SERVICE_JWT, nowIso, mode, out]).toString().trim().split('\n').pop());
+    return { summary, received: JSON.parse(fs.readFileSync(out, 'utf8')) };
+  };
+  const d1 = runDispatch(noon, 'ok');
+  check(d1.summary.sent === 1 && d1.received.length === 1 && d1.received[0].to === 'ExponentPushToken[e2e-device-000001]'
+    && d1.received[0].data && d1.received[0].data.screen === 'nutrition' && /objectif du jour/.test(d1.received[0].title),
+    `12:30 local: the daily target reminder is planned and delivered to the fake push service (${JSON.stringify(d1.summary)})`);
+  check(sql(`select status from public.notification_deliveries where user_id = '${userId}' and kind = 'daily_target'`) === 'sent',
+    'delivery recorded as sent with its ticket');
+  const d2 = runDispatch(noon, 'ok');
+  check(d2.summary.planned === 0 && d2.received.length === 0, 'a second run at the same time sends nothing (idempotent)');
+  sql(`update public.notification_preferences set progress_enabled = true where user_id = '${userId}'`);
+  const fourPm = sql(`select to_char(((now() at time zone 'Africa/Casablanca')::date + time '16:10') at time zone 'Africa/Casablanca' at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`);
+  const consumedNow = sql(`select sum(kcal) from public.nutrition_log_entries where user_id = '${userId}' and deleted_at is null and local_date = '${todayLocal}'`);
+  const d3 = runDispatch(fourPm, 'unregistered');
+  check(d3.received.length === 1 && d3.received[0].body.includes(`${consumedNow} kcal`)
+    && sql(`select is_active from public.user_push_tokens where push_token = 'ExponentPushToken[e2e-device-000001]'`) === 'f',
+    'progress reminder carries the real logged total; DeviceNotRegistered deactivates the token');
+  const d4 = runDispatch(fourPm, 'ok');
+  check(d4.received.length === 0, 'nothing is sent to a deactivated token');
 
   // ---------------------------------------------------------- other tabs
   // Other V2 customer tabs still render for the onboarded account.

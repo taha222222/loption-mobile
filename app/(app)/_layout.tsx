@@ -23,6 +23,8 @@ function AppTabs() {
   return (
     <Tabs
       tabBar={(props) => <PillTabBar {...props} />}
+      // Back returns to the previous screen (e.g. log-meal -> nutrition).
+      backBehavior="history"
       screenOptions={{
         headerShown: false,
         sceneStyle: { backgroundColor: theme.colors.canvas },
@@ -35,13 +37,18 @@ function AppTabs() {
       <Tabs.Screen name="orders" options={{ title: 'Commandes' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profil' }} />
 
-      {/* Hidden Customer Screens */}
-      <Tabs.Screen name="my-plan" options={{ href: null }} />
-      <Tabs.Screen name="reorder" options={{ href: null }} />
-      <Tabs.Screen name="upgrade" options={{ href: null }} />
-      <Tabs.Screen name="checkout" options={{ href: null }} />
-      <Tabs.Screen name="order-tracking/[id]" options={{ href: null }} />
-      <Tabs.Screen name="progress" options={{ href: null }} />
+      {/* Screens without a tab button. The pill bar draws only the five tabs
+          above. Not `href: null`: in this Expo Router version that marks a
+          route hidden, and hidden routes redirect instead of rendering. */}
+      <Tabs.Screen name="my-plan" />
+      <Tabs.Screen name="reorder" />
+      <Tabs.Screen name="upgrade" />
+      <Tabs.Screen name="checkout" />
+      <Tabs.Screen name="order-tracking/[id]" />
+      <Tabs.Screen name="nutrition" />
+      <Tabs.Screen name="log-meal" />
+      <Tabs.Screen name="nutrition-profile" />
+      <Tabs.Screen name="nutrition-reminders" />
     </Tabs>
   );
 }

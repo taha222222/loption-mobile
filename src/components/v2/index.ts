@@ -21,3 +21,7 @@ export { ProviderButton } from './ProviderButton';
 export { StepProgress } from './StepProgress';
 export { TextField } from './TextField';
 export type { TextFieldHandle } from './TextField';
+export { CalorieHistoryChart } from './CalorieHistoryChart';
+export { CalorieTodayCard } from './CalorieTodayCard';
+export { Stepper } from './Stepper';
+export { StreakCard } from './StreakCard';

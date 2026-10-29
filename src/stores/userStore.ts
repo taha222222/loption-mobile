@@ -26,6 +26,7 @@ export interface UserProfile {
   delivery_latitude?: number | null;
   delivery_longitude?: number | null;
   first_order_offer_status?: FirstOrderOfferStatus | null;
+  time_zone?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -60,9 +61,6 @@ interface UserState {
   calculateBMR: () => number;
   calculateTDEE: () => number;
   calculateDailyCalories: () => number;
-  calculateProteinTarget: () => number;
-  calculateCarbsTarget: () => number;
-  calculateFatsTarget: () => number;
 }
 
 // Server messages for refused profile writes (trigger validation, SQLSTATE 22023).
@@ -192,40 +190,9 @@ export const useUserStore = create<UserState>((set, get) => {
       );
     },
 
-    calculateDailyCalories: () => {
-      const tdee = get().calculateTDEE();
-      const profile = get().profile;
-      if (!tdee || !profile?.goal) return tdee;
-
-      switch (profile.goal) {
-        case 'lose_fat':
-          return Math.round(tdee - 500);
-        case 'gain_muscle':
-          return Math.round(tdee + 300);
-        default:
-          return Math.round(tdee);
-      }
-    },
-
-    calculateProteinTarget: () => {
-      const profile = get().profile;
-      if (!profile?.weight) return 150;
-
-      const proteinPerKg = profile.goal === 'gain_muscle' ? 2.0 : 1.6;
-      return Math.round(profile.weight * proteinPerKg);
-    },
-
-    calculateCarbsTarget: () => {
-      const calories = get().calculateDailyCalories();
-      const proteinCalories = get().calculateProteinTarget() * 4;
-      const fatCalories = get().calculateFatsTarget() * 9;
-      const carbsCalories = calories - proteinCalories - fatCalories;
-      return Math.max(0, Math.round(carbsCalories / 4));
-    },
-
-    calculateFatsTarget: () => {
-      const calories = get().calculateDailyCalories();
-      return Math.round((calories * 0.25) / 9);
-    },
+    // Daily target policy v1 ("tdee_baseline_v1"): the target is the TDEE
+    // estimate. No deficit or surplus is applied until a goal-adjustment
+    // policy is approved (the server applies the same rule).
+    calculateDailyCalories: () => get().calculateTDEE(),
   };
 });

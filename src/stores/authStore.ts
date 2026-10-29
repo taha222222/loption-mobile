@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { useCartStore } from './cartStore';
+import { notificationService } from '../services/notificationService';
 import { clearOnboardingDraft } from './onboardingDraft';
 import { resetUserScopedState } from './sessionReset';
 
@@ -157,6 +158,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
     },
 
     signOut: async () => {
+      // While still signed in: stop reminders for this account on this device.
+      await notificationService.deactivateCurrentToken();
       const { error } = await supabase.auth.signOut();
       if (error) {
         // When the revoke request fails (e.g. offline), supabase-js 2.39 kept

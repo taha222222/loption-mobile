@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,23 +7,29 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../src/theme';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useUserStore } from '../../src/stores/userStore';
+import { useNutritionStore } from '../../src/stores/nutritionStore';
 import { useSubscriptionStore } from '../../src/stores/subscriptionStore';
 import { IconBadge, Screen, SectionHeader, SurfaceCard, formatPrice } from '../../src/components/v2';
 
 export default function ProfileScreen() {
   const { user, signOut } = useAuthStore();
   const { profile } = useUserStore();
+  const streak = useNutritionStore((s) => s.streak);
+  const refreshNutrition = useNutritionStore((s) => s.refresh);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshNutrition();
+    }, [refreshNutrition])
+  );
   const { subscription, fetchSubscription } = useSubscriptionStore();
 
   // Mock data - will be replaced with real data from Supabase
-  const streakDays = 7;
-  const weightChange = -2.4;
-  const completionPercent = 65;
   const nextDelivery = "Aujourd'hui, 18h00";
   const lastOrder = {
     name: 'Grilled Chicken Bowl',
@@ -106,18 +112,16 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* Progress Stats */}
-        <SurfaceCard style={styles.progressStats}>
+        {/* Tracking stats (server-computed streak; no placeholder values) */}
+        <SurfaceCard style={styles.progressStats} onPress={() => router.push('/(app)/nutrition')}>
           <View style={styles.statItem}>
-            <Text style={[styles.statValue, weightChange < 0 && styles.statSuccess]}>
-              {`${weightChange > 0 ? '+' : '-'}${String(Math.abs(weightChange)).replace('.', ',')}\u00A0kg`}
-            </Text>
-            <Text style={styles.statLabel}>évolution du poids</Text>
+            <Text style={styles.statValue}>{streak ? streak.current : '–'}</Text>
+            <Text style={styles.statLabel}>jours de suivi d’affilée</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{completionPercent}{'\u00A0'}%</Text>
-            <Text style={styles.statLabel}>plan accompli</Text>
+            <Text style={styles.statValue}>{streak ? streak.longest : '–'}</Text>
+            <Text style={styles.statLabel}>meilleure série</Text>
           </View>
         </SurfaceCard>
       </View>
@@ -165,33 +169,23 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Retention Section - Streak & Progress */}
+      {/* Nutrition tracking */}
       <View style={styles.stack}>
-        {/* Streak Card */}
-        <SurfaceCard style={styles.row}>
+        <SurfaceCard style={styles.row} onPress={() => router.push('/(app)/nutrition')}>
           <IconBadge icon="flame" />
           <View style={styles.rowContent}>
-            <Text style={styles.rowTitle}>{streakDays} jours d'affilée</Text>
-            <Text style={styles.rowSubtitle}>Ne cassez pas votre série !</Text>
-            <Text style={styles.rowDetail}>
-              Encore {10 - streakDays} jours pour la récompense des 10 jours
-            </Text>
+            <Text style={styles.rowTitle}>Mon suivi nutritionnel</Text>
+            <Text style={styles.rowSubtitle}>Objectif du jour, repas enregistrés et historique</Text>
           </View>
-          <View style={styles.rewardPill}>
-            <Text style={styles.rewardText}>+50 pts</Text>
-          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.inkFaint} />
         </SurfaceCard>
-
-        {/* Progress Card */}
-        <SurfaceCard>
-          <View style={styles.progressHeader}>
-            <Text style={styles.rowTitle}>Progression de l'objectif</Text>
-            <Text style={styles.progressPercent}>{completionPercent}{'\u00A0'}%</Text>
+        <SurfaceCard style={styles.row} onPress={() => router.push('/(app)/nutrition-reminders')}>
+          <IconBadge icon="notifications-outline" />
+          <View style={styles.rowContent}>
+            <Text style={styles.rowTitle}>Rappels de suivi</Text>
+            <Text style={styles.rowSubtitle}>Facultatifs, à l’heure de votre choix</Text>
           </View>
-          <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${completionPercent}%` }]} />
-          </View>
-          <Text style={styles.progressHint}>Terminez votre plan pour débloquer des récompenses</Text>
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.inkFaint} />
         </SurfaceCard>
       </View>
 
@@ -328,9 +322,6 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.extrabold,
     color: theme.colors.ink,
   },
-  statSuccess: {
-    color: theme.colors.success,
-  },
   statLabel: {
     fontSize: theme.typography.sizes.xs,
     color: theme.colors.inkMuted,
@@ -415,44 +406,6 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.sizes.xs,
     color: theme.colors.brandOnDark,
     marginTop: 2,
-  },
-  rewardPill: {
-    backgroundColor: theme.colors.brandSoft,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: theme.radii.pill,
-  },
-  rewardText: {
-    fontSize: theme.typography.sizes.xs,
-    fontWeight: theme.typography.weights.extrabold,
-    color: theme.colors.brand,
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: theme.spacing.md,
-  },
-  progressPercent: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.extrabold,
-    color: theme.colors.brand,
-  },
-  progressBar: {
-    height: 8,
-    backgroundColor: theme.colors.brandSoft,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: theme.colors.brand,
-    borderRadius: 4,
-  },
-  progressHint: {
-    fontSize: theme.typography.sizes.xs,
-    color: theme.colors.inkMuted,
-    marginTop: theme.spacing.sm,
   },
   section: {
     marginBottom: theme.spacing.xl,

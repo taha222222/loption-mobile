@@ -6,10 +6,12 @@ interface SectionHeaderProps {
   title: string;
   actionLabel?: string;
   onAction?: () => void;
+  // false inside an already padded container (no side padding / bottom margin).
+  inset?: boolean;
 }
 
-export const SectionHeader: React.FC<SectionHeaderProps> = ({ title, actionLabel, onAction }) => (
-  <View style={styles.row}>
+export const SectionHeader: React.FC<SectionHeaderProps> = ({ title, actionLabel, onAction, inset = true }) => (
+  <View style={[styles.row, !inset && styles.flush]}>
     {/* flex + single line so long titles truncate instead of clipping */}
     <Text style={styles.title} numberOfLines={1}>
       {title}
@@ -30,6 +32,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.xl,
     marginBottom: theme.spacing.md,
     gap: theme.spacing.md,
+  },
+  flush: {
+    paddingHorizontal: 0,
+    marginBottom: 0,
   },
   title: {
     flex: 1,

@@ -15,7 +15,8 @@
 # Not covered (cannot be, locally): Google/Apple (no credentials; their
 # "not configured" path IS covered), real e-mail delivery (an SMTP sink
 # stands in for Resend), native iOS/Android permission dialogs (the web
-# build reports notifications as unavailable).
+# build reports notifications as unavailable), real push delivery (the
+# dispatcher runs against a local fake of the Expo Push API).
 # =====================================================================
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -93,6 +94,8 @@ sed "s/'OWNER-MUST-SUPPLY-INITIAL-ADMIN-UUID',  -- PHASE1C_INITIAL_ADMIN_USER_ID
 q postgres -f "$OUT/p1c.sql" >"$OUT/p1c.log" 2>&1 && pass "Phase 1C core applied" || { fail "Phase 1C: $(tail -3 "$OUT/p1c.log")"; exit 1; }
 q postgres -f "$ROOT/supabase/migrations/20261028120000_v1_onboarding_first_order_offer.sql" >"$OUT/v1.log" 2>&1 \
   && pass "V1 onboarding/offer migration applied" || { fail "V1 migration: $(tail -3 "$OUT/v1.log")"; exit 1; }
+q postgres -f "$ROOT/supabase/migrations/20261029120000_v1_nutrition_tracking_engagement.sql" >"$OUT/nutrition.log" 2>&1 \
+  && pass "V1 nutrition tracking/engagement migration applied" || { fail "nutrition migration: $(tail -3 "$OUT/nutrition.log")"; exit 1; }
 [ "$(qa "select count(*) from public.containment_violations() where category in ('drift','containment')")" = "0" ] \
   && pass "containment_violations() = 0" || fail "containment violations present"
 
@@ -114,7 +117,8 @@ for _ in $(seq 1 30); do curl -s -o /dev/null "http://127.0.0.1:$WEB_PORT/" && b
 
 echo "=== 4. customer journey (Playwright, Chromium)"
 export E2E_OUT="$OUT" E2E_MAIL="$MAIL" E2E_WEB="http://127.0.0.1:$WEB_PORT" E2E_SMTP_PORT="$SMTP_PORT" E2E_SINK="$HERE/smtp_sink.py"
-export E2E_DB_PORT="$DB_PORT"
+export E2E_DB_PORT="$DB_PORT" E2E_REST="http://127.0.0.1:$GW_PORT/rest/v1" E2E_SERVICE_JWT="$(jwt service_role)"
+export E2E_DISPATCH="$HERE/dispatch_once.ts"
 node "$HERE/journey.js" 2>&1 | tee "$OUT/journey.log"
 grep -q "^  FAIL" "$OUT/journey.log" && STATUS=1
 grep -q "^JOURNEY COMPLETE" "$OUT/journey.log" || { STATUS=1; echo "  FAIL: journey did not complete"; }

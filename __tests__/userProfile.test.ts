@@ -2,6 +2,8 @@
 import { useUserStore } from '../src/stores/userStore';
 const mockCalls: { table: string; op: string; payload?: any; options?: any; filter?: [string, any] }[] = [];
 let mockRows: any[] = [];
+// Emulates the database trigger (same Mifflin-St Jeor rules as public.estimate_energy).
+const mockEstimate = (input: any) => jest.requireActual('../src/nutrition/energy').estimateEnergy(input);
 let mockFailNext: { op: string; error: any } | null = null;
 
 function mockBuilder(table: string) {
@@ -22,7 +24,8 @@ function mockBuilder(table: string) {
       if (!row) return { data: null, error: null };
       Object.assign(row, state.payload);
       // Server-derived values (the database trigger) for the saved answers.
-      if (row.gender === 'man' && row.age === 30) Object.assign(row, { bmr_kcal: 1649, tdee_kcal: 2556 });
+      const est = mockEstimate({ sex: row.gender, age: row.age, weightKg: row.weight, heightCm: row.height, activity: row.activity_level });
+      Object.assign(row, { bmr_kcal: est?.bmrKcal ?? null, tdee_kcal: est?.tdeeKcal ?? null });
       return { data: { ...row }, error: null };
     }
     return { data: null, error: null };
@@ -146,5 +149,20 @@ describe('saving onboarding', () => {
       .saveOnboardingAnswers('u1', { gender: 'unspecified', age: 30, weight: 70, height: 175, activity_level: 'moderate' });
     expect(useUserStore.getState().calculateBMR()).toBe(0);
     expect(useUserStore.getState().calculateDailyCalories()).toBe(0);
+  });
+
+  it('daily target policy: the target equals TDEE; a legacy goal applies no deficit or surplus', async () => {
+    useUserStore.setState({ profile: { ...useUserStore.getState().profile!, goal: 'lose_fat', bmr_kcal: 1649, tdee_kcal: 2556 } });
+    expect(useUserStore.getState().calculateDailyCalories()).toBe(2556);
+    useUserStore.setState({ profile: { ...useUserStore.getState().profile!, goal: 'gain_muscle' } });
+    expect(useUserStore.getState().calculateDailyCalories()).toBe(2556);
+  });
+
+  it('recalculates when profile answers change (server values replace the previous ones)', async () => {
+    await useUserStore.getState().saveOnboardingAnswers('u1', { gender: 'man', age: 30, weight: 70, height: 175, activity_level: 'moderate' });
+    expect(useUserStore.getState().calculateTDEE()).toBe(2556);
+    await useUserStore.getState().saveOnboardingAnswers('u1', { gender: 'man', age: 30, weight: 80, height: 175, activity_level: 'moderate' });
+    expect(useUserStore.getState().calculateBMR()).toBe(1749);
+    expect(useUserStore.getState().calculateTDEE()).toBe(2711);
   });
 });

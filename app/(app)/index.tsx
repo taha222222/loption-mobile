@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,16 +8,15 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../src/theme';
 import {
   ActionTile,
   BrandMark,
+  CalorieTodayCard,
   FirstOrderOfferBanner,
   IconBadge,
-  MacroBar,
-  ProgressRing,
   Screen,
   SectionHeader,
   SurfaceCard,
@@ -26,6 +25,7 @@ import {
 } from '../../src/components/v2';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useUserStore } from '../../src/stores/userStore';
+import { useNutritionStore } from '../../src/stores/nutritionStore';
 import { supabase } from '../../src/lib/supabase';
 
 interface Meal {
@@ -38,14 +38,15 @@ interface Meal {
 
 export default function HomeScreen() {
   const { user } = useAuthStore();
-  const { 
-    profile, 
-    loadProfile, 
-    calculateDailyCalories, 
-    calculateProteinTarget,
-    calculateCarbsTarget,
-    calculateFatsTarget 
-  } = useUserStore();
+  const { profile, loadProfile } = useUserStore();
+  const { today, history, streak, status: nutritionStatus, refresh: refreshNutrition } = useNutritionStore();
+  const todaySummary = history.find((d) => d.date === today) ?? null;
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshNutrition();
+    }, [refreshNutrition])
+  );
   const [recommendedMeals, setRecommendedMeals] = useState<Meal[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -68,18 +69,6 @@ export default function HomeScreen() {
     setLoading(false);
   };
 
-  const dailyCalories = calculateDailyCalories();
-  const proteinTarget = calculateProteinTarget();
-  const carbsTarget = calculateCarbsTarget();
-  const fatsTarget = calculateFatsTarget();
-
-  // Estimate remaining calories (assume 60% consumed by end of day)
-  const remainingCalories = Math.round(dailyCalories * 0.6);
-  const progressPercent = 40; // 40% consumed
-  const consumedCalories = dailyCalories - remainingCalories;
-  // Macro intake isn't tracked yet: show the same placeholder share as calories.
-  const consumedShare = (target: number) => Math.round((target * progressPercent) / 100);
-
   if (loading) {
     return (
       <Screen contentStyle={styles.loadingContainer}>
@@ -99,58 +88,27 @@ export default function HomeScreen() {
             {user?.email?.split('@')[0] || 'Utilisateur'}
           </Text>
         </View>
-        <TouchableOpacity style={styles.notificationButton} accessibilityLabel="Notifications">
+        <TouchableOpacity
+          style={styles.notificationButton}
+          accessibilityRole="button"
+          accessibilityLabel="Rappels de suivi"
+          onPress={() => router.push('/(app)/nutrition-reminders')}
+        >
           <Ionicons name="notifications-outline" size={22} color={theme.colors.ink} />
-          <View style={styles.notificationBadge} />
         </TouchableOpacity>
       </View>
 
       {/* First-order offer (display only; applied by the server at checkout) */}
       <FirstOrderOfferBanner status={profile?.first_order_offer_status} />
 
-      {/* Energy card */}
-      {dailyCalories > 0 ? (
-      <View style={styles.energyCard}>
-        <View style={styles.energyGlow} />
-        <View style={styles.energyTop}>
-          <View style={styles.energyText}>
-            <Text style={styles.energyLabel}>Énergie du jour</Text>
-            <Text
-              style={styles.energyValue}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.6}
-            >
-              {formatNumber(remainingCalories)}
-            </Text>
-            <Text style={styles.energyUnit} numberOfLines={1}>kcal restantes</Text>
-          </View>
-          <ProgressRing progress={progressPercent / 100} size={116} stroke={12}>
-            <Text style={styles.ringValue}>{`${progressPercent}\u00A0%`}</Text>
-            <Text style={styles.ringLabel}>CONSOMMÉ</Text>
-          </ProgressRing>
-        </View>
-        <Text style={styles.energyMeta} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-          {`${formatNumber(consumedCalories)} consommées · objectif ${formatNumber(dailyCalories)}`}
-        </Text>
-        <View style={styles.energyDivider} />
-        <View style={styles.macroRow}>
-          <MacroBar label="Protéines" value={consumedShare(proteinTarget)} target={proteinTarget} color={theme.colors.coral} />
-          <MacroBar label="Glucides" value={consumedShare(carbsTarget)} target={carbsTarget} color={theme.colors.highlight} />
-          <MacroBar label="Lipides" value={consumedShare(fatsTarget)} target={fatsTarget} color={theme.colors.textWhite} />
-        </View>
-      </View>
-      ) : (
-        <SurfaceCard style={styles.noEstimate}>
-          <IconBadge icon="nutrition-outline" />
-          <View style={styles.bannerText}>
-            <Text style={styles.bannerTitle}>Pas d’estimation énergétique</Text>
-            <Text style={styles.bannerSubtitle}>
-              Complétez votre profil nutritionnel pour voir vos besoins estimés.
-            </Text>
-          </View>
-        </SurfaceCard>
-      )}
+      {/* Today's calories (real targets and logged meals) */}
+      <CalorieTodayCard
+        targetKcal={todaySummary?.targetKcal ?? null}
+        consumedKcal={todaySummary?.consumedKcal ?? null}
+        streak={streak?.current ?? null}
+        loading={nutritionStatus !== 'ready'}
+        onPress={() => router.push('/(app)/nutrition')}
+      />
 
       {/* Quick Actions */}
       <View style={styles.actionsContainer}>
@@ -163,7 +121,7 @@ export default function HomeScreen() {
         <ActionTile
           icon="pulse"
           label="Suivre mes progrès"
-          onPress={() => router.push('/(app)/progress')}
+          onPress={() => router.push('/(app)/nutrition')}
         />
         <ActionTile icon="calendar-outline" label="Plan repas" />
       </View>
@@ -223,13 +181,6 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  noEstimate: {
-    marginHorizontal: theme.spacing.xl,
-    marginBottom: theme.spacing.xl,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.md,
-  },
   loadingContainer: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -266,87 +217,6 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.hairline,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  notificationBadge: {
-    position: 'absolute',
-    top: 11,
-    right: 12,
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    borderWidth: 1.5,
-    borderColor: theme.colors.surface,
-    backgroundColor: theme.colors.highlight,
-  },
-  energyCard: {
-    marginHorizontal: theme.spacing.xl,
-    marginBottom: theme.spacing.xl,
-    borderRadius: theme.radii.xl,
-    padding: theme.spacing.xl,
-    backgroundColor: theme.colors.brand,
-    overflow: 'hidden',
-  },
-  energyGlow: {
-    position: 'absolute',
-    top: -90,
-    right: -90,
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-  },
-  energyTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.md,
-  },
-  energyText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  energyLabel: {
-    fontSize: theme.typography.sizes.sm,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.brandOnDark,
-  },
-  energyValue: {
-    fontSize: theme.typography.sizes.display,
-    lineHeight: theme.typography.lineHeights.display,
-    fontWeight: theme.typography.weights.extrabold,
-    color: theme.colors.textWhite,
-    letterSpacing: -1.5,
-    marginTop: theme.spacing.xs,
-  },
-  energyUnit: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.brandOnDark,
-  },
-  ringValue: {
-    fontSize: theme.typography.sizes['2xl'],
-    fontWeight: theme.typography.weights.extrabold,
-    color: theme.colors.textWhite,
-  },
-  ringLabel: {
-    fontSize: 10,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.brandOnDark,
-    letterSpacing: 0.8,
-    marginTop: 2,
-  },
-  energyMeta: {
-    fontSize: theme.typography.sizes.sm,
-    color: theme.colors.brandOnDark,
-    marginTop: theme.spacing.md,
-  },
-  energyDivider: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.16)',
-    marginVertical: theme.spacing.lg,
-  },
-  macroRow: {
-    flexDirection: 'row',
-    gap: theme.spacing.md,
   },
   actionsContainer: {
     flexDirection: 'row',

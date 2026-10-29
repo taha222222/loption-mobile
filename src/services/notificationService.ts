@@ -1,17 +1,9 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 
-// Configure notification handler
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
 
 export interface NotificationData {
   title: string;
@@ -22,40 +14,32 @@ export interface NotificationData {
 class NotificationService {
   private expoPushToken: string | null = null;
 
-  // Register for push notifications
+  // Returns this device's Expo push token. Needs a physical device, a
+  // development or production build (not Expo Go) and the EAS project id
+  // from app.json (extra.eas.projectId). Does not log the token.
   async registerForPushNotificationsAsync(): Promise<string | null> {
-    // Skip push notifications in development/Expo Go
-    if (!Device.isDevice) {
-      console.log('📱 Must use physical device for Push Notifications');
-      return null;
-    }
-
-    // Skip if running in Expo Go (development build)
-    if (__DEV__) {
-      console.log('⚠️ Push notifications disabled in development mode');
-      return null;
-    }
+    if (!Device.isDevice) return null;
+    if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) return null; // Expo Go
 
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
-
     if (existingStatus !== 'granted') {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
+    if (finalStatus !== 'granted') return null;
 
-    if (finalStatus !== 'granted') {
-      console.log('❌ Failed to get push token permission');
+    const projectId =
+      (Constants.expoConfig?.extra as any)?.eas?.projectId ?? (Constants as any).easConfig?.projectId ?? null;
+    if (!projectId) {
+      console.log('Push token unavailable: EAS projectId missing');
       return null;
     }
-
     try {
-      const token = await Notifications.getExpoPushTokenAsync();
+      const token = await Notifications.getExpoPushTokenAsync({ projectId });
       this.expoPushToken = token.data;
-      console.log('✅ Expo Push Token:', this.expoPushToken);
       return this.expoPushToken;
-    } catch (error) {
-      console.log('⚠️ Push notifications not available in Expo Go');
+    } catch {
       return null;
     }
   }
@@ -73,14 +57,20 @@ class NotificationService {
     }
   }
 
-  // Save token to database for a user
+  // Save token to database for a user. Customers go through
+  // register_push_token(), which binds the device token to the account
+  // signed in on it now (a shared device moves to the new account).
   async savePushToken(userId: string, token: string, role: string) {
     if (!token) return;
-    
-    const table = role === 'driver' ? 'driver_push_tokens' : 'user_push_tokens';
-    
+
+    if (role !== 'driver') {
+      const { error } = await supabase.rpc('register_push_token', { p_token: token, p_device_type: Platform.OS });
+      if (error) console.error('Error saving push token:', error.message);
+      return;
+    }
+
     const { error } = await supabase
-      .from(table)
+      .from('driver_push_tokens')
       .upsert({
         user_id: userId,
         push_token: token,
@@ -90,6 +80,17 @@ class NotificationService {
 
     if (error) {
       console.error('Error saving push token:', error);
+    }
+  }
+
+  // Stops notifications for the signed-out account on this device
+  // (best effort; the server also deactivates tokens Expo reports invalid).
+  async deactivateCurrentToken(): Promise<void> {
+    if (!this.expoPushToken) return;
+    try {
+      await supabase.rpc('deactivate_push_token', { p_token: this.expoPushToken });
+    } catch {
+      // ignore: offline sign-out still proceeds
     }
   }
 
@@ -180,20 +181,30 @@ class NotificationService {
     }
   }
 
-  // Handle notification when app is open
-  setupNotificationListeners() {
-    const subscription = Notifications.addNotificationReceivedListener(notification => {
-      console.log('Notification received:', notification);
+  // Listeners for notifications. `onOpen` receives the data of a tapped
+  // notification (including the one that launched the app).
+  setupNotificationListeners(onOpen?: (data: Record<string, unknown>) => void) {
+    // Show notifications that arrive while the app is open.
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+      }),
     });
+    const subscription = Notifications.addNotificationReceivedListener(() => {});
 
-    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
-      const data = response.notification.request.content.data;
-      console.log('Notification response:', data);
-      
-      if (data?.orderId) {
-        // Navigation logic here
-      }
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      onOpen?.((response.notification.request.content.data ?? {}) as Record<string, unknown>);
     });
+    if (onOpen) {
+      Notifications.getLastNotificationResponseAsync()
+        .then((response) => {
+          if (response) onOpen((response.notification.request.content.data ?? {}) as Record<string, unknown>);
+        })
+        .catch(() => {});
+    }
 
     return { subscription, responseSubscription };
   }

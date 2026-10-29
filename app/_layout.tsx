@@ -11,6 +11,9 @@ import { isOnboardingComplete } from '../src/navigation/routeDecision';
 import { useSetupStore } from '../src/stores/setupStore';
 import '../src/i18n';
 import { notificationService } from '../src/services/notificationService';
+import { notificationTarget } from '../src/navigation/notificationLinks';
+import { deviceTimeZone } from '../src/nutrition/dates';
+import { syncProfileTimeZone } from '../src/services/nutritionApi';
 
 // Performs the redirects decided by the routing policy. Group layouts render
 // <RouteGate>, so screens never mount before this has settled.
@@ -41,6 +44,14 @@ function useProtectedRoute() {
     if (userId && role === 'customer' && onboarded && setupUserId !== userId) loadSetup(userId);
   }, [userId, role, onboarded, setupUserId, loadSetup]);
 
+  // "Today" and reminder times follow the device's time zone (travel).
+  const profileTimeZone = useUserStore((s) => (s.loadedUserId === userId && s.profile ? (s.profile.time_zone ?? null) : undefined));
+  useEffect(() => {
+    if (!userId || role !== 'customer' || profileTimeZone === undefined) return;
+    const tz = deviceTimeZone();
+    if (profileTimeZone !== tz) syncProfileTimeZone(userId, tz);
+  }, [userId, role, profileTimeZone]);
+
   // Keep the push token current for every sign-in method, without ever
   // prompting here (the prompt is shown only after the explanation screen).
   useEffect(() => {
@@ -61,7 +72,12 @@ export default function RootLayout() {
 
   // Setup notification listeners
   useEffect(() => {
-    const { subscription, responseSubscription } = notificationService.setupNotificationListeners();
+    // A tapped reminder opens its screen; the routing policy still decides
+    // (signed-out users see the welcome screen, staff stay in their area).
+    const { subscription, responseSubscription } = notificationService.setupNotificationListeners((data) => {
+      const target = notificationTarget(data);
+      if (target) router.push(target);
+    });
     
     return () => {
       subscription?.remove();
