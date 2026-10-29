@@ -5,7 +5,8 @@ Order of work: finish features → configure real services and credentials → v
 
 | | |
 |---|---|
-| Baseline of this checklist | branch `claude/v1-app-integration`, commit `b036461` (2026-10-28), checked 2026-10-29 |
+| Baseline of this checklist | branch `claude/v1-nutrition-tracking`, commit `b5bf441` (2026-10-29); first written at `b036461` |
+| Calorie tracking, streaks and reminders | [`CALORIE_TRACKING_AND_ENGAGEMENT.md`](CALORIE_TRACKING_AND_ENGAGEMENT.md) (section L below) |
 | Detailed provider steps | [`AUTH_PROVIDER_SETUP.md`](AUTH_PROVIDER_SETUP.md) (not repeated here) |
 | What was built and how it was tested | [`V1_ONBOARDING_AUTH_OFFER.md`](V1_ONBOARDING_AUTH_OFFER.md) |
 | Database security package | [`PHASE1C_DATABASE_SECURITY_PLAN.md`](PHASE1C_DATABASE_SECURITY_PLAN.md) (sections 10 and 11) |
@@ -29,9 +30,12 @@ Order of work: finish features → configure real services and credentials → v
 | 4 | Pricing, delivery fee, service fee, TVA and minimum order not approved; no trusted order creation → checkout must stay disabled | H |
 | 5 | First-order promotion rules not approved; enforcement exists in the database but nothing calls it yet | G |
 | 6 | Phase 1C database containment is NOT READY FOR STAGING (initial admin placeholder, staging gates, open meal-images finding) and is not deployed; the V1 migration depends on it | J |
-| 7 | V2 profile tab and home energy card show placeholder data as if it were real | I |
-| 8 | No pull request exists for `claude/v1-onboarding-auth`, `claude/v1-onboarding-auth-react-refresh` or `claude/v1-app-integration`; the repository rule needs 1 approving review that the PR author cannot give | K |
+| 7 | V2 profile tab still shows placeholder plan/reorder/upgrade/offer data as if it were real (the home calorie card and streak are now real) | I |
+| 8 | No pull request exists for `claude/v1-onboarding-auth`, `claude/v1-onboarding-auth-react-refresh`, `claude/v1-app-integration`, `claude/v1-release-checklist` or `claude/v1-nutrition-tracking`; the repository rule needs 1 approving review that the PR author cannot give | K |
 | 9 | Privacy policy, terms of use and support contact do not exist in the app; store metadata not prepared | K |
+| 10 | Tracking reminders: no APNs/FCM credentials, Edge Function `dispatch-notifications` not deployed, scheduler not created; real push delivery never tested | L, E |
+| 11 | Meal calorie/macro values (source of every tracked number) are staff-entered and unaudited | L |
+| 12 | Nutrition migration extends the Phase 1C monitor (nine reviewed entries); needs the same independent review as Phase 1C before any staging use | L, J |
 
 ---
 
@@ -138,7 +142,7 @@ Detailed console steps: [`AUTH_PROVIDER_SETUP.md`](AUTH_PROVIDER_SETUP.md) secti
 |---|---|---|---|---|---|---|---|---|
 | E1 | `assets/notification.wav` missing but referenced in `app.json` (`expo-notifications` plugin `sounds`) | OWNER ACTION REQUIRED | Owner + Dev | Choice of sound (licensed) or decision to remove the custom sound | Add the file, or remove the `sounds` entry in a reviewed change | `npx expo prebuild --clean` succeeds | **Blocking** | Pre-existing since the initial commit |
 | E2 | Notification permission prompt on real devices (iOS + Android 13+) | IMPLEMENTED — UNVERIFIED | Dev | E4 | Fresh install → onboarding → setup | Explanation first; OS prompt only on tap; denial → settings instructions; no repeated prompt | Blocking | Web has no permission; mocked unit tests only |
-| E3 | Push credentials and delivery (APNs key, FCM V1 credentials in EAS) | OWNER ACTION REQUIRED | Owner | Apple/Google accounts; decision whether push is in V1 | EAS → Credentials; Firebase project for Android | Token stored in `user_push_tokens`; a test push arrives | Blocking if push is promised at launch | **Pushes are currently sent from the customer's device** to drivers (`checkout.tsx` → `sendToAllOnlineDrivers`; Phase 0 N1). Move sending server-side before launch |
+| E3 | Push credentials and delivery (APNs key, FCM V1 credentials in EAS) | OWNER ACTION REQUIRED | Owner | Apple/Google accounts; decision whether push is in V1 | EAS → Credentials; Firebase project for Android | Token stored in `user_push_tokens`; a test push arrives on iOS and Android | Blocking if push is promised at launch | Customer tokens now go through `register_push_token()` and are deactivated at sign-out; dev builds can obtain a token (EAS projectId passed). **Pushes to drivers are still sent from the customer's device** (`checkout.tsx` → `sendToAllOnlineDrivers`; Phase 0 N1): move server-side before launch. Reminder delivery: section L |
 | E4 | Native development builds (iOS + Android) installed on devices | NOT STARTED | Dev | E1, A2.2, EAS access | `eas build --profile development` | Builds install and open; auth, onboarding, setup, home work | **Blocking** | Required by every native verification above (dev client; Expo Go is not enough) |
 | E5 | Production builds (iOS + Android) | NOT STARTED | Dev | E1, B6, K | `eas build --profile production` | Builds succeed; smoke test on devices | **Blocking** | Only `expo export` (JS bundles) has run |
 | E6 | Icons, splash, permission texts, identifiers | IMPLEMENTED — UNVERIFIED | Owner + Dev | E4 | Check on device | Icon/adaptive icon render; splash correct; `com.loption.app` on both platforms; iOS location text accurate | Blocking | Splash plugin sets colour only (no image); location text covers customers and drivers |
@@ -194,12 +198,12 @@ Detailed console steps: [`AUTH_PROVIDER_SETUP.md`](AUTH_PROVIDER_SETUP.md) secti
 ## I. Profile, UI and design integration
 | ID | Task | Status | Owner | Dependency | Instructions | Verification | Release impact | Notes |
 |---|---|---|---|---|---|---|---|---|
-| I1 | Replace V2 profile placeholders with real data | NOT STARTED | Dev | Data sources | `app/(app)/profile.tsx`: weight change −2.4 kg, 65 % plan, 7-day streak, next delivery, last order are hard-coded | No mock value visible to a real customer | **Blocking** | |
-| I2 | Home energy card shows real or no data | NOT STARTED | Dev | Owner decision | `app/(app)/index.tsx`: "40 % consommé" and macro progress are placeholders | Card shows only the estimate (or tracked intake once it exists) | **Blocking** | The daily target itself is real (server TDEE) |
+| I1 | Replace V2 profile placeholders with real data | IN PROGRESS | Dev | Data sources | `app/(app)/profile.tsx`: streak/plan-progress placeholders replaced by the real streak; still hard-coded: next delivery, last order, "Mon plan", upgrade and offers cards | No mock value visible to a real customer | **Blocking** | |
+| I2 | Home energy card shows real or no data | VERIFIED | Dev | — | — | e2e: card shows 500 consumed / 1 114 remaining from real entries (E-12) | **Blocking** | **Local only.** Placeholder "40 % consommé" and fake macro bars removed |
 | I3 | Out-of-scope screens hidden (upgrade, my-plan, progress, reorder, subscription deep link) | OWNER ACTION REQUIRED | Owner + Dev | Decision (Phase 0 X1) | Hide routes and links | Not reachable; `loption://subscription/active` no longer shows "Subscription Activated" | Blocking | |
 | I4 | Profile load/update/error states | IMPLEMENTED — UNVERIFIED | Dev | E4 | Device test incl. offline | Retry/sign-out screen on errors; no endless reload | Non-blocking | Reload loop fixed and tested |
 | I5 | V2 tabs work with hardened auth and navigation | VERIFIED | Dev | — | — | e2e opens home, menu, profile as an onboarded customer (E-03) | Blocking | **Local only.** |
-| I6 | No navigation to missing routes | VERIFIED | Dev | — | — | `tsc` with Expo Router typed routes at `b036461` (E-01); dead meal link removed | Blocking | Re-run `tsc` after every route change |
+| I6 | No navigation to missing or unreachable routes | VERIFIED | Dev | — | — | `tsc` with typed routes at `b5bf441` (E-09); browser check that checkout, order tracking and the nutrition screens open (E-12) | Blocking | Fixed: Expo Router 58 made every `href: null` tab screen unreachable (checkout, order tracking, my-plan, reorder, upgrade) |
 | I7 | Loading / empty / error / success states reviewed | IN PROGRESS | Dev | — | Review each customer screen | Checklist per screen | Non-blocking | Done for auth, onboarding, setup |
 | I8 | Small screens and keyboard | IN PROGRESS | Dev | E4 | 320 pt wide device; keyboard open on every form | No overflow; fields stay visible | Non-blocking | Auth screens checked at 320 px (web) |
 | I9 | Customer language strategy | OWNER ACTION REQUIRED | Owner | — | FR only, or FR/EN/AR | Decision | Non-blocking | V2 customer screens are French-only; EN/FR switch affects staff screens only |
@@ -230,10 +234,10 @@ Source of truth: [`PHASE1C_DATABASE_SECURITY_PLAN.md`](PHASE1C_DATABASE_SECURITY
 | ID | Task | Status | Owner | Dependency | Instructions | Verification | Release impact | Notes |
 |---|---|---|---|---|---|---|---|---|
 | K1 | Install from the committed lockfile | VERIFIED | Dev | — | `npm ci` | Exit 0; `npx expo install --check` "up to date" (E-01) | Blocking | `.npmrc` keeps `legacy-peer-deps=false` |
-| K2 | TypeScript, lint, unit tests | VERIFIED | Dev | — | `npx tsc --noEmit`; `npx eslint .`; `npx jest` | tsc 0 errors; Jest 13 suites / 131 tests; ESLint 47 errors / 48 warnings, all in files outside the V1 work (E-01) | Non-blocking (lint) | Owner decision: fix or accept the 47 pre-existing lint errors |
+| K2 | TypeScript, lint, unit tests | VERIFIED | Dev | — | `npx tsc --noEmit`; `npx eslint .`; `npx jest` | tsc 0 errors; Jest 16 suites / 162 tests; ESLint 45 errors / 47 warnings, all in files outside the V1 work (E-09) | Non-blocking (lint) | Owner decision: fix or accept the 45 pre-existing lint errors |
 | K3 | Dev-server bundling (Fast Refresh) and exports | VERIFIED | Dev | — | `npx expo start -c`; `npx expo export --platform <android, ios, web>` | iOS + Android dev bundles HTTP 200; all exports exit 0 (E-01, E-05) | Blocking | Fixed `react-refresh/babel` |
 | K4 | Phase 1C regression harness | VERIFIED | Dev | Docker | `supabase/tests/run_phase1c.sh` | "ALL PHASE 1C LOCAL CHECKS PASSED" (E-06) | Blocking | **Local only.** Supabase CLI cases skipped (CLI not installed) |
-| K5 | V1 database and app end-to-end harnesses | VERIFIED | Dev | Docker, Playwright | `supabase/tests/run_v1_onboarding_offer.sh`; `supabase/tests/e2e/run_app_e2e.sh` | All checks pass; e2e 37/37 (E-03, E-04) | Blocking | **Local only.** |
+| K5 | V1 database and app end-to-end harnesses | VERIFIED | Dev | Docker, Playwright | `supabase/tests/run_v1_onboarding_offer.sh`; `supabase/tests/run_v1_nutrition.sh`; `supabase/tests/e2e/run_app_e2e.sh` | All checks pass (E-10, E-11, E-12) | Blocking | **Local only.** |
 | K6 | Real provider integrations | BLOCKED | Dev | A1–A3 | See A1.5, A2.6, A3.5 | Evidence entries | Blocking | |
 | K7 | Native builds and device tests | NOT STARTED | Dev | E1, E4, E5 | EAS builds; device checklist covering A–I | Evidence entries per platform | **Blocking** | |
 | K8 | Clean install and upgrade / returning-user scenario | IN PROGRESS | Dev | E4, J7 | Fresh install; install over the previous build with an existing account | Returning customer keeps cart scope, skips onboarding | Blocking | Clean install + returning user verified on web locally; no device or upgrade test. Whether a previous public build exists: **OWNER ACTION REQUIRED** |
@@ -243,6 +247,28 @@ Source of truth: [`PHASE1C_DATABASE_SECURITY_PLAN.md`](PHASE1C_DATABASE_SECURITY
 | K12 | Pull requests and approvals | OWNER ACTION REQUIRED | Owner + Dev | Second GitHub account or reviewer | Open PRs for `claude/v1-app-integration` (and decide on `claude/v1-onboarding-auth`, `…-react-refresh`); review draft PRs #1–#6 | Approved PRs | **Blocking** | Ruleset "main-protection" applies to **all branches**: PR + **1 approving review**, no bypass actors. A PR author cannot approve their own PR, so a second reviewer is needed |
 | K13 | Release candidate passes every Blocking row | NOT STARTED | Dev + Owner | All | Walk this file | Every Blocking row `VERIFIED` or waived in writing | **Blocking** | |
 | K14 | Owner approval before production deployment / store submission | OWNER ACTION REQUIRED | Owner | K13 | — | Written approval | **Blocking** | |
+| K15 | Align `react-native` with Expo's current SDK 58 recommendation | NOT STARTED | Dev | — | `npx expo install --fix` in a dedicated change, then native builds | `npx expo install --check` reports up to date | Non-blocking | As of 2026-10-29 Expo expects 0.88.1; the lockfile has 0.88.0 (no app change caused this) |
+| K16 | Native prebuild | BLOCKED | Owner + Dev | E1 | `npx expo prebuild --no-install` | Succeeds for iOS and Android | **Blocking** | Ran at `b5bf441`: fails only with ENOENT `assets/notification.wav` (E-13) |
+
+---
+
+## L. Calorie tracking, streaks and engagement notifications
+Details: [`CALORIE_TRACKING_AND_ENGAGEMENT.md`](CALORIE_TRACKING_AND_ENGAGEMENT.md). Migration `20261029120000_v1_nutrition_tracking_engagement.sql` (proposal; not applied anywhere); rollback `supabase/rollback/v1_nutrition_tracking_rollback.sql` (run before the onboarding and Phase 1C rollbacks).
+
+| ID | Task | Status | Owner | Dependency | Instructions | Verification | Release impact | Notes |
+|---|---|---|---|---|---|---|---|---|
+| L1 | BMR / TDEE engine (Mifflin–St Jeor, existing multipliers), server-computed, recalculated on profile edits | VERIFIED | Dev | — | — | SQL tests N01–N05, T10; Jest energy/profile tests; e2e shows 1 345 / 1 614 kcal from the database (E-10, E-11, E-12) | Blocking | **Local only.** "Prefer not to say" → no estimate |
+| L2 | Daily target policy | OWNER ACTION REQUIRED | Owner | Product/medical decision | Approve `tdee_baseline_v1` (target = TDEE) or define goal adjustments | Written decision | Blocking | Implemented: target = TDEE; the unapproved −500/+300 client adjustment removed; `goal` data kept |
+| L3 | Meal nutrition data audit (calories, protein, carbs, fat) | OWNER ACTION REQUIRED | Owner | Kitchen recipes / lab values | Review every `meals` row; fill or correct values | Spot checks recorded | **Blocking** | Meals with missing/non-positive calories cannot be logged; values are frozen per entry at logging time |
+| L4 | Consumption log (add, remove with audit, idempotent, own data only, local dates) | VERIFIED | Dev | — | — | SQL T01–T12; parallel retries → 1 entry; e2e log/remove/API probes (E-11, E-12) | Blocking | **Local only.** Logging window: today and 6 previous days |
+| L5 | History graph (7/30 days; no-log days distinct from logged days) | VERIFIED | Dev | — | — | Screen tests; SQL T08 (NULL vs value); e2e screenshots (E-02, E-11, E-12) | Non-blocking | **Local only.** |
+| L6 | Streak (persisted dates, milestones 7/14/30, removals recomputed) | VERIFIED | Dev | — | — | SQL S01–S05, N08 (E-11) | Non-blocking | **Local only.** Date-line travel can skip a calendar day |
+| L7 | Reminder preferences (opt-in, local times, quiet hours, caps) and planner | VERIFIED | Dev | — | — | SQL N01–N09, R01–R02; parallel planner runs (E-11) | Blocking (if reminders ship) | **Local only.** Default cadence in the feature doc is a proposal: **OWNER ACTION REQUIRED** to approve |
+| L8 | Dispatcher (Expo Push, tickets, receipts, invalid tokens) | IMPLEMENTED — UNVERIFIED | Dev | L9, E3 | Deploy `supabase/functions/dispatch-notifications` after approval | A real push arrives on iOS and Android; `notification_deliveries.status = sent`; a revoked device is deactivated | **Blocking** (if reminders ship) | Verified only against a local fake of the Expo Push API (E-12) and Jest |
+| L9 | Scheduler and server secrets | OWNER ACTION REQUIRED | Owner | Approval to change the hosted project | Set `NOTIFICATIONS_CRON_SECRET` (Edge Function secrets + Vault), optional `EXPO_ACCESS_TOKEN`; create the `pg_cron` job (SQL in the feature doc) | Job runs every 15 min; function returns 200; no client can call it without the secret | **Blocking** (if reminders ship) | Never put these values in the app or `EXPO_PUBLIC_*` |
+| L10 | Notification taps open the nutrition screen (cold start and background) on devices | IMPLEMENTED — UNVERIFIED | Dev | E4, L8 | Tap a delivered reminder signed in and signed out | Signed in → Mon suivi; signed out → welcome | Non-blocking | Whitelist + route gates unit-tested; web has no notifications |
+| L11 | Nutrition migration review and staging application | OWNER ACTION REQUIRED | Owner + reviewer | J1–J7 | Review the nine appended monitor entries (generator diff) and the migration; apply after Phase 1C and the onboarding migration | `postdeploy_verify_nutrition_readonly.sql` all OK (monitor md5 `1bbbc1b2…`) | **Blocking** | Phase 1C's own post-deploy file reports a different monitor fingerprint after this migration by design |
+| L12 | Minors and reminders | OWNER ACTION REQUIRED | Owner | C7 | Decide whether estimates and reminders are offered to under-18s | Written decision | Blocking | Inputs accept 13–100 |
 
 ---
 
@@ -260,8 +286,9 @@ Add one line per verification. Keep raw outputs outside the repository if they c
 | E-07 | 2026-10-26 | `46d2c3f` | Local Docker | Phase 1C rev 7 test evidence | See `PHASE1C_TEST_RUN_2026-10-26_rev7.txt` |
 | E-08 | 2026-10-29 | `b036461` | Repository | `git check-ignore` on secret file patterns; `git grep` / `git log --all -p` scan for JWT, `sb_secret_`, Google client-secret, Resend-key and private-key patterns; `git grep EXPO_PUBLIC_` | Secret files ignored; only test fixtures and documentation mentions found; app reads two public variables |
 
-## Not verifiable from this repository (as of `b036461`)
+## Not verifiable from this repository (as of `b5bf441`)
 - Anything on the hosted Supabase project (schema drift since 2026-10-15, Auth settings, Storage/CDN headers, Realtime).
 - Real Google, Apple and Resend behaviour; Apple private-relay delivery.
-- Native permission dialogs, push delivery, native builds, store review.
+- Native permission dialogs, push delivery (APNs/FCM/Expo), notification taps on devices, native builds, store review.
+- The Edge Function in the Supabase runtime and `pg_cron`/`pg_net` scheduling on a hosted project.
 - Whether a previous production build or store listing already exists.
