@@ -285,6 +285,12 @@ Add one line per verification. Keep raw outputs outside the repository if they c
 | E-06 | 2026-10-28 | `b036461` | Local Docker | `supabase/tests/run_phase1c.sh` | ALL PHASE 1C LOCAL CHECKS PASSED (CLI cases skipped) |
 | E-07 | 2026-10-26 | `46d2c3f` | Local Docker | Phase 1C rev 7 test evidence | See `PHASE1C_TEST_RUN_2026-10-26_rev7.txt` |
 | E-08 | 2026-10-29 | `b036461` | Repository | `git check-ignore` on secret file patterns; `git grep` / `git log --all -p` scan for JWT, `sb_secret_`, Google client-secret, Resend-key and private-key patterns; `git grep EXPO_PUBLIC_` | Secret files ignored; only test fixtures and documentation mentions found; app reads two public variables |
+| E-09 | 2026-10-29 | `b5bf441` | Local container | `npm ci`; `npx expo install --check`; `npx tsc --noEmit` (typed routes regenerated); `npx jest`; `npx eslint .`; `expo export` android/ios; dev-server bundles iOS + Android | OK; react-native 0.88.1 now expected (K15); 0 errors; 16 suites / 162 tests; 45 errors / 47 warnings (pre-existing files); exports exit 0; bundles HTTP 200 with Fast Refresh |
+| E-10 | 2026-10-29 | `b5bf441` | Local Docker Postgres 17.6 | `supabase/tests/run_v1_onboarding_offer.sh` | ALL V1 ONBOARDING/OFFER LOCAL CHECKS PASSED |
+| E-11 | 2026-10-29 | `b5bf441` | Local Docker Postgres 17.6 | `supabase/tests/run_v1_nutrition.sh` | ALL V1 NUTRITION LOCAL CHECKS PASSED (21 checks: 32 SQL tests; Phase 1C SQL 58/0; V1 regression; concurrency; rollback/re-apply) |
+| E-12 | 2026-10-29 | `b5bf441` | Local Docker: Postgres + GoTrue + PostgREST + SMTP sink + Chromium; fake Expo Push API | `supabase/tests/e2e/run_app_e2e.sh` | 55/55 checks pass |
+| E-13 | 2026-10-29 | `b5bf441` | Local container | `npx expo config --type public`; `npx expo prebuild --no-install --platform android` (throwaway copy) | config OK; prebuild fails: ENOENT `assets/notification.wav` |
+| E-14 | 2026-10-29 | `b5bf441` | Local Docker | `supabase/tests/run_phase1c.sh` | ALL PHASE 1C LOCAL CHECKS PASSED (215; Supabase CLI cases skipped) |
 
 ## Not verifiable from this repository (as of `b5bf441`)
 - Anything on the hosted Supabase project (schema drift since 2026-10-15, Auth settings, Storage/CDN headers, Realtime).
