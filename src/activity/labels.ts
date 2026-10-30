@@ -9,6 +9,14 @@ export const KIND_LABEL: Record<WorkoutKind, string> = {
   gym: 'Salle de sport',
 };
 
+// For narrow tiles (four in a row).
+export const KIND_SHORT: Record<WorkoutKind, string> = {
+  walk: 'Marche',
+  run: 'Course',
+  cycle: 'Vélo',
+  gym: 'Salle',
+};
+
 export const KIND_ICON: Record<WorkoutKind, string> = {
   walk: 'walk-outline',
   run: 'flash-outline',

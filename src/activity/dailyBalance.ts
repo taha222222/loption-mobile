@@ -76,6 +76,13 @@ export const METHOD_LABEL: Record<EnergyMethod, string> = {
   tdee_baseline: 'Estimation habituelle (TDEE)',
 };
 
+// Short form for the card's chip (the full label is shown under the card).
+export const METHOD_SHORT: Record<EnergyMethod, string> = {
+  platform_total: 'Mesuré',
+  bmr_plus_active: 'BMR + activité',
+  tdee_baseline: 'Estimation TDEE',
+};
+
 export const METHOD_EXPLAINED: Record<EnergyMethod, string> = {
   platform_total: 'Votre plateforme santé a mesuré votre dépense totale de la journée.',
   bmr_plus_active:

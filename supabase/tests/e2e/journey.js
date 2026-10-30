@@ -351,7 +351,8 @@ let sink = null; // SMTP sink process, always stopped on exit
   // ------------------------------------------- daily tracking + basket
   await page2.goto(WEB + '/');
   await waitForText(page2, 'Livraison offerte sur votre première commande', 20000);
-  check((await page2.getByText('Suivi', { exact: true }).count()) >= 1 && (await page2.getByText('Panier', { exact: true }).count()) === 0,
+  check((await page2.getByRole('tab', { name: 'Suivi', exact: true }).count()) === 1 && (await page2.getByRole('tab', { name: 'Panier', exact: true }).count()) === 0
+    && (await page2.getByRole('tab').count()) === 5,
     'tab bar: "Suivi" (Daily Tracking) replaces the "Panier" tab');
   check((await page2.getByLabel('Panier vide').count()) === 1, 'home header shows the basket');
   await page2.goto(WEB + '/menu');
@@ -365,7 +366,7 @@ let sink = null; // SMTP sink process, always stopped on exit
   pass('basket opens the cart with its items preserved');
   await shot(page2, '12-cart-from-basket');
 
-  await page2.getByText('Suivi', { exact: true }).first().click();
+  await page2.getByRole('tab', { name: 'Suivi', exact: true }).click();
   await page2.waitForURL((u) => u.pathname === '/tracking', { timeout: 15000 });
   await waitForText(page2, 'Mon bilan', 20000);
   pass('the Suivi tab opens Daily Tracking');
@@ -398,19 +399,21 @@ let sink = null; // SMTP sink process, always stopped on exit
   await waitForText(page2, 'Démarrer · Salle de sport', 15000);
   await page2.getByText('Démarrer · Salle de sport').click();
   await waitForText(page2, 'En cours', 15000);
+  await shot(page2, '16-workout-running');
   await page2.getByText('Pause', { exact: true }).click();
   await waitForText(page2, 'En pause');
   await page2.getByText('Reprendre', { exact: true }).click();
   await page2.waitForTimeout(62000);
   await page2.getByText('Terminer', { exact: true }).click();
   await waitForText(page2, 'Séance enregistrée', 20000);
-  const ws = sql(`select kind || ':' || energy_source || ':' || (energy_kcal is not null) || ':' || weight_kg from public.workout_sessions where user_id = '${userId}'`);
-  check(/^gym:met_estimate:true:60/.test(ws), `gym session stored with a server MET estimate (${ws})`);
+  await page2.waitForTimeout(1000);
+  const ws = sql(`select concat_ws(':', kind, energy_source, energy_kcal, weight_kg, active_seconds) from public.workout_sessions where user_id = '${userId}'`);
+  check(/^gym:met_estimate:\d+:60(\.0)?:\d+$/.test(ws), `gym session stored with a server MET estimate (${ws || 'no row'})`);
   await page2.goto(WEB + '/tracking');
   await waitForText(page2, 'Mon bilan', 20000);
   await page2.waitForTimeout(1500);
   check((await balanceLabel()).includes(`Budget ${bmr + 310} kilocalories`), 'the workout does not change the daily budget (no double counting)');
-  check((await page2.getByText(/estimation \(MET × poids × durée\)/).count()) >= 1, 'timeline shows the workout energy labelled as an estimate');
+  check((await page2.getByText(/^\d+ kcal — estimation \(MET × poids × durée\)$/).count()) >= 1, 'timeline shows the workout energy labelled as an estimate');
 
   // "J’ai mangé ce repas" only for a received order.
   const orderOk = sql(`with o as (insert into public.orders (order_number, total, subtotal, delivery_fee, status, payment_method, user_id) values ('E2E-1', 60, 60, 0, 'served', 'cash', '${userId}') returning id) select id from o`);
@@ -432,6 +435,12 @@ let sink = null; // SMTP sink process, always stopped on exit
   check((await balanceLabel()).includes(`${consumedToday + 500} consommées, ${bmr + 310 - consumedToday - 500} restantes`),
     `consumed and remaining follow the logged meal (${await balanceLabel()})`);
   await shot(page2, '15-tracking-after-meal');
+  for (const name of ['17-tracking-workouts-journal', '18-tracking-trends']) {
+    await page2.mouse.move(195, 420);
+    await page2.mouse.wheel(0, 650);
+    await page2.waitForTimeout(700);
+    await shot(page2, name);
+  }
 
   check(pageErrors.length === 0, `no uncaught page errors${pageErrors.length ? ': ' + pageErrors.slice(0, 3).join(' | ') : ''}`);
   sink.kill();

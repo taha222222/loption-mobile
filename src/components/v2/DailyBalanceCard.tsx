@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../theme';
-import { activityShareOfBudget, DailyBalance, intakeShare, METHOD_LABEL } from '../../activity/dailyBalance';
+import { activityShareOfBudget, DailyBalance, intakeShare, METHOD_LABEL, METHOD_SHORT } from '../../activity/dailyBalance';
 import { BrandButton } from './BrandButton';
 import { formatNumber } from './format';
 
@@ -42,7 +42,7 @@ export const DailyBalanceCard: React.FC<DailyBalanceCardProps> = ({ day, title, 
         {day?.method ? (
           <View style={styles.method}>
             <Text style={styles.methodText} numberOfLines={1}>
-              {METHOD_LABEL[day.method]}
+              {METHOD_SHORT[day.method]}
             </Text>
           </View>
         ) : null}

@@ -17,9 +17,9 @@ import {
   WeeklyBalanceChart,
   formatNumber,
 } from '../../src/components/v2';
-import { METHOD_EXPLAINED, movementState, weekTotals } from '../../src/activity/dailyBalance';
+import { METHOD_EXPLAINED, METHOD_LABEL, movementState, weekTotals } from '../../src/activity/dailyBalance';
 import { formatDuration } from '../../src/activity/gps';
-import { energyLabel, KIND_ICON, KIND_LABEL, WORKOUT_SOURCE_LABEL } from '../../src/activity/labels';
+import { energyLabel, KIND_ICON, KIND_LABEL, KIND_SHORT, WORKOUT_SOURCE_LABEL } from '../../src/activity/labels';
 import type { WorkoutKind } from '../../src/activity/types';
 import { dayLabel } from '../../src/nutrition/dates';
 import { formatServings } from '../../src/nutrition/tracking';
@@ -112,13 +112,16 @@ export default function TrackingScreen() {
       />
       {day?.method ? (
         <View style={styles.section}>
-          <Text style={styles.explain}>{METHOD_EXPLAINED[day.method]}</Text>
+          <Text style={styles.explain}>
+            <Text style={styles.explainLead}>{METHOD_LABEL[day.method]}</Text>
+            {` — ${METHOD_EXPLAINED[day.method]}`}
+          </Text>
         </View>
       ) : null}
 
-      <View style={[styles.section, styles.row]}>
-        <BrandButton title="Ajouter un repas" onPress={() => router.push('/(app)/log-meal')} style={styles.flex} />
-        <BrandButton title="Détails nutrition" variant="soft" onPress={() => router.push('/(app)/nutrition')} style={styles.flex} />
+      <View style={styles.section}>
+        <BrandButton title="Ajouter un repas mangé" onPress={() => router.push('/(app)/log-meal')} />
+        <BrandButton title="Détails nutrition" variant="soft" onPress={() => router.push('/(app)/nutrition')} />
       </View>
 
       {/* 4. Steps and distance */}
@@ -157,7 +160,7 @@ export default function TrackingScreen() {
                   <Ionicons name={KIND_ICON[k] as any} size={22} color={theme.colors.brand} />
                 </View>
                 <Text style={styles.kindLabel} numberOfLines={1}>
-                  {KIND_LABEL[k]}
+                  {KIND_SHORT[k]}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -253,17 +256,15 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.md,
     flexDirection: 'row',
   },
-  row: {
-    flexDirection: 'row',
-  },
-  flex: {
-    flex: 1,
-  },
   explain: {
     marginTop: -theme.spacing.sm,
     fontSize: theme.typography.sizes.xs,
     lineHeight: theme.typography.lineHeights.xs,
     color: theme.colors.inkMuted,
+  },
+  explainLead: {
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.ink,
   },
   activeWorkout: {
     flexDirection: 'row',

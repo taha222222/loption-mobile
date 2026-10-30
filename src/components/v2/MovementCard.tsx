@@ -53,9 +53,12 @@ export const MovementCard: React.FC<MovementCardProps> = ({ day, state, syncing,
         <>
           <View style={styles.metrics}>
             <Metric value={day.steps === null ? '—' : formatNumber(day.steps)} label="pas" />
-            <Metric value={formatDistance(day.distanceM) ?? '—'} label={day.activitySource === 'apple_health' ? 'marche et course' : 'distance'} />
+            <Metric value={formatDistance(day.distanceM) ?? '—'} label="distance" />
             <Metric value={day.activeKcal === null ? '—' : formatNumber(day.activeKcal)} label="kcal actives" />
           </View>
+          {day.activitySource === 'apple_health' && day.distanceM !== null ? (
+            <Text style={styles.meta}>Distance de marche et de course.</Text>
+          ) : null}
           <Text style={styles.meta}>
             {state === 'stale'
               ? `Données du ${timeLabel(day.syncedAt)} : synchronisez pour les mettre à jour.`
@@ -124,12 +127,14 @@ const styles = StyleSheet.create({
   },
   metric: {
     flex: 1,
-    padding: theme.spacing.md,
+    minWidth: 0,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.sm,
     borderRadius: theme.radii.md,
     backgroundColor: theme.colors.canvas,
   },
   metricValue: {
-    fontSize: theme.typography.sizes.xl,
+    fontSize: theme.typography.sizes.lg,
     fontWeight: theme.typography.weights.extrabold,
     color: theme.colors.ink,
     fontVariant: ['tabular-nums'],

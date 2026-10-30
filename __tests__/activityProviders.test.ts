@@ -87,6 +87,7 @@ describe('Apple Health', () => {
       jest.doMock('@kingstinct/react-native-healthkit', () => {
         throw new Error('NitroModules are not available in Expo Go');
       });
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- fresh module registry
       fresh = require('../src/activity/providers/healthKit').healthKitProvider;
     });
     await expect(fresh!.availability()).resolves.toBe('needs_native_build');
