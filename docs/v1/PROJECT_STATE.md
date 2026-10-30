@@ -3,9 +3,10 @@
 Update this file incrementally when the state changes. Last verified: 2026-10-30 (activity tracking).
 
 ## Current branch
-- Cumulative branch: `claude/v1-activity-tracking-docs` = `claude/v1-activity-tracking` (batches A `e49cb59`, B `447334e`,
-  C `c35da39`) + layout fixes `ca759f8` + docs. Both sit on `claude/v1-engineering-context` (`636fe26`). The ruleset blocks
-  pushes to existing branches, so later commits go to a new branch named in the latest delivery report.
+- Cumulative branch: `claude/v1-activity-tracking-final` (activity batches A `e49cb59`, B `447334e`, C `c35da39`,
+  layout fixes `ca759f8`, docs) on `claude/v1-engineering-context` (`636fe26`). `claude/v1-activity-tracking` stops at
+  `c35da39` and `claude/v1-activity-tracking-docs` before the last docs fix: the ruleset blocks pushes to existing
+  branches, so each follow-up is pushed as a new branch.
 - `main` is still `0cb0fe0` (initial commit). Nothing is merged.
 - Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md` (latest: E-15 to E-19).
 
@@ -26,7 +27,7 @@ Update this file incrementally when the state changes. Last verified: 2026-10-30
 `claude/*` branches stack in this order, each containing the previous one:
 `v1-integration` → `v1-onboarding-auth` → `v1-onboarding-auth-react-refresh` → `v1-app-integration` →
 `v1-release-checklist` → `v1-nutrition-tracking` → `v1-engineering-context` → `v1-activity-tracking` →
-`v1-activity-tracking-docs`. None has a PR.
+`v1-activity-tracking-docs` → `v1-activity-tracking-final`. None has a PR.
 
 Open PRs (none merged):
 
