@@ -3,9 +3,9 @@
 Update this file incrementally when the state changes. Last verified: 2026-10-30 (activity tracking).
 
 ## Current branch
-- Cumulative branch: `claude/v1-activity-tracking` (batches A `e49cb59`, B `447334e`, C `c35da39`, fixes `ca759f8`) on top of
-  `claude/v1-engineering-context` (`636fe26`). The ruleset blocks pushes to existing branches, so later commits go to
-  a new branch named in the latest delivery report (`claude/v1-activity-tracking-docs` for the docs of this phase).
+- Cumulative branch: `claude/v1-activity-tracking-docs` = `claude/v1-activity-tracking` (batches A `e49cb59`, B `447334e`,
+  C `c35da39`) + layout fixes `ca759f8` + docs. Both sit on `claude/v1-engineering-context` (`636fe26`). The ruleset blocks
+  pushes to existing branches, so later commits go to a new branch named in the latest delivery report.
 - `main` is still `0cb0fe0` (initial commit). Nothing is merged.
 - Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md` (latest: E-15 to E-19).
 

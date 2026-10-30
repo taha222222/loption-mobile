@@ -5,7 +5,7 @@ Order of work: finish features → configure real services and credentials → v
 
 | | |
 |---|---|
-| Baseline of this checklist | branch `claude/v1-activity-tracking` (docs on `claude/v1-activity-tracking-docs`), commit `ca759f8` (2026-10-30); first written at `b036461` |
+| Baseline of this checklist | branch `claude/v1-activity-tracking-docs`, commit `ca759f8` (2026-10-30); first written at `b036461` |
 | Calorie tracking, streaks and reminders | [`CALORIE_TRACKING_AND_ENGAGEMENT.md`](CALORIE_TRACKING_AND_ENGAGEMENT.md) (section L below) |
 | Activity, workouts, Daily Tracking tab | [`ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md`](ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md) (section M below) |
 | Detailed provider steps | [`AUTH_PROVIDER_SETUP.md`](AUTH_PROVIDER_SETUP.md) (not repeated here) |
