@@ -211,3 +211,162 @@ do $$ declare r text; begin
   perform atests.reset();
   perform atests.rec('A17', 'security', 'the sync time cannot be set by a client', r like 'err:42501%', r);
 end $$;
+
+-- ============================ Workouts ============================
+-- A workout insert as PostgREST sends it (client columns only), relative
+-- to now(): started p_ago_min minutes ago, lasting p_len_min minutes.
+create or replace function atests.workout_sql(p_source text, p_kind text, p_ago_min int, p_len_min int, p_active_s int,
+                                              p_dist text default 'null', p_energy text default 'null',
+                                              p_csid text default null, p_ext text default null,
+                                              p_tz text default 'Africa/Casablanca')
+returns text language sql stable as $$
+  select format($f$insert into public.workout_sessions (source, client_session_id, external_id, kind, started_at, ended_at,
+                     active_seconds, time_zone, distance_m, distance_source, provider_energy_kcal)
+                   values (%L, %s, %s, %L, now() - interval '%s minutes', now() - interval '%s minutes', %s, %L, %s, %s, %s)
+                   on conflict do nothing$f$,
+                p_source, coalesce(quote_literal(p_csid), 'null'), coalesce(quote_literal(p_ext), 'null'), p_kind,
+                p_ago_min, p_ago_min - p_len_min, p_active_s, p_tz, p_dist,
+                case when p_dist = 'null' then 'null' when p_source = 'app' then '''gps''' else '''provider''' end, p_energy)
+$$;
+grant execute on all functions in schema atests to anon, authenticated, service_role;
+
+do $$ declare r text; w record; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f01');
+  r := atests.attempt(atests.workout_sql('app', 'walk', 600, 30, 1800, 'null', 'null', '22222222-0000-0000-0000-000000000001'));
+  perform atests.reset();
+  select * into w from public.workout_sessions where client_session_id = '22222222-0000-0000-0000-000000000001';
+  perform atests.rec('W01', 'workouts', 'an app walk gets a server MET estimate (3.5 MET, net of rest, 70 kg, 30 min = 88 kcal)',
+    r = 'ok:1' and w.energy_source = 'met_estimate' and w.met = 3.5 and w.energy_kcal = 88 and w.weight_kg = 70
+      and w.local_date = (w.started_at at time zone 'Africa/Casablanca')::date,
+    r || ' ' || coalesce(w.energy_kcal::text, 'null') || ' ' || coalesce(w.energy_source, '?'));
+end $$;
+
+do $$ declare r text; w record; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f01');
+  r := atests.attempt(atests.workout_sql('app', 'run', 300, 25, 1500, '5000', 'null', '22222222-0000-0000-0000-000000000002'));
+  perform atests.reset();
+  select * into w from public.workout_sessions where client_session_id = '22222222-0000-0000-0000-000000000002';
+  perform atests.rec('W02', 'workouts', 'an app run with GPS distance uses the speed tier (12 km/h = 11.0 MET, 292 kcal)',
+    r = 'ok:1' and w.met = 11.0 and w.energy_kcal = 292 and w.distance_source = 'gps',
+    r || ' ' || coalesce(w.met::text, 'null') || ' ' || coalesce(w.energy_kcal::text, 'null'));
+end $$;
+
+do $$ declare r1 text; r2 text; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f01');
+  r1 := atests.attempt(atests.workout_sql('app', 'gym', 900, 45, 2700, 'null', '400', '22222222-0000-0000-0000-000000000003'));
+  r2 := atests.attempt($q$insert into public.workout_sessions (source, client_session_id, kind, started_at, ended_at, active_seconds, time_zone, energy_kcal)
+                          values ('app', gen_random_uuid(), 'gym', now() - interval '20 hours', now() - interval '19 hours', 3600, 'Africa/Casablanca', 999)$q$);
+  perform atests.reset();
+  perform atests.rec('W03', 'security', 'a client cannot send the energy of an app workout (neither field)',
+    r1 like 'err:22023%' and r2 like 'err:42501%', r1 || ' | ' || r2);
+end $$;
+
+do $$ declare r text; n int; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f01');
+  r := atests.attempt(atests.workout_sql('app', 'walk', 600, 30, 1800, 'null', 'null', '22222222-0000-0000-0000-000000000001'));
+  perform atests.reset();
+  select count(*) into n from public.workout_sessions where client_session_id = '22222222-0000-0000-0000-000000000001';
+  perform atests.rec('W04', 'integrity', 'a retried upload of the same session creates no duplicate', r = 'ok:0' and n = 1, r || ' rows=' || n);
+end $$;
+
+do $$ declare r text; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f01');
+  r := atests.attempt(atests.workout_sql('app', 'cycle', 590, 20, 1200, 'null', 'null', '22222222-0000-0000-0000-000000000004'));
+  perform atests.reset();
+  perform atests.rec('W05', 'integrity', 'an app session overlapping another app session is refused', r like 'err:22023%overlaps%', r);
+end $$;
+
+do $$ declare r text; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f01');
+  r := atests.attempt(atests.workout_sql('app', 'walk', 1200, 20, 1200, '10000', 'null', '22222222-0000-0000-0000-000000000005'));
+  perform atests.reset();
+  perform atests.rec('W06', 'integrity', 'an implausible distance (a 30 km/h walk) is refused', r like 'err:22023%implausible%', r);
+end $$;
+
+do $$ declare r text; w record; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f01');
+  r := atests.attempt(atests.workout_sql('apple_health', 'run', 302, 27, 1600, '5100', '330', null, 'HK-RUN-1'));
+  perform atests.reset();
+  select * into w from public.workout_sessions where external_id = 'HK-RUN-1';
+  perform atests.rec('W07', 'workouts', 'an imported run keeps the provider''s measured energy',
+    r = 'ok:1' and w.energy_source = 'provider_measured' and w.energy_kcal = 330 and w.met is null and w.distance_source = 'provider',
+    r || ' ' || coalesce(w.energy_source, '?'));
+end $$;
+
+do $$ declare r text; n int; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f01');
+  r := atests.attempt(atests.workout_sql('apple_health', 'run', 302, 27, 1600, '5100', '330', null, 'HK-RUN-1'));
+  perform atests.reset();
+  select count(*) into n from public.workout_sessions where external_id = 'HK-RUN-1';
+  perform atests.rec('W08', 'integrity', 're-importing the same provider workout creates no duplicate', r = 'ok:0' and n = 1, r || ' rows=' || n);
+end $$;
+
+do $$ declare app record; imp record; n int; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f01');
+  select * into app from public.activity_workouts(atests.d(-2), atests.d(0)) where source = 'app' and kind = 'run';
+  select * into imp from public.activity_workouts(atests.d(-2), atests.d(0)) where source = 'apple_health';
+  select count(*) into n from public.activity_workouts(atests.d(-2), atests.d(0)) where duplicate_of is null and kind = 'run';
+  perform atests.reset();
+  perform atests.rec('W09', 'deduplication', 'the app run and the same run imported from Apple Health count once (the measured one)',
+    app.duplicate_of = imp.id and imp.duplicate_of is null and n = 1,
+    coalesce(app.duplicate_of::text, 'null') || ' counted=' || n);
+end $$;
+
+do $$ declare r text; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f01');
+  r := atests.attempt(atests.workout_sql('apple_health', 'gym', 1500, 40, 2400, '300', 'null', null, 'HK-GYM-1'));
+  perform atests.reset();
+  perform atests.rec('W10', 'integrity', 'a gym session cannot carry a distance', r like 'err:23514%' or r like 'err:22023%', r);
+end $$;
+
+do $$ declare r text; w record; begin
+  update public.user_profiles set weight = null where user_id = '00000000-0000-0000-0000-000000000f04';
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f04');
+  r := atests.attempt(atests.workout_sql('app', 'gym', 120, 50, 3000, 'null', 'null', '22222222-0000-0000-0000-000000000006'));
+  perform atests.reset();
+  select * into w from public.workout_sessions where client_session_id = '22222222-0000-0000-0000-000000000006';
+  perform atests.rec('W11', 'workouts', 'without a valid body weight no calories are invented (energy unavailable)',
+    r = 'ok:1' and w.energy_kcal is null and w.energy_source = 'none', r || ' ' || coalesce(w.energy_source, '?'));
+end $$;
+
+do $$ declare n text; r text; left_n int; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f02');
+  n := atests.scalar('select count(*) from public.workout_sessions');
+  r := atests.attempt('delete from public.workout_sessions');
+  perform atests.reset();
+  select count(*) into left_n from public.workout_sessions where user_id = '00000000-0000-0000-0000-000000000f01';
+  perform atests.rec('W12', 'security', 'another customer can neither see nor delete these workouts', n = '0' and r = 'ok:0' and left_n >= 3,
+    n || ' | ' || r || ' left=' || left_n);
+end $$;
+
+do $$ declare r1 text; r2 text; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f02');
+  r1 := atests.attempt(atests.workout_sql('app', 'walk', 32 * 1440, 30, 1800, 'null', 'null', '22222222-0000-0000-0000-000000000007'));
+  r2 := atests.attempt(atests.workout_sql('app', 'walk', 10, 20, 600, 'null', 'null', '22222222-0000-0000-0000-000000000008'));
+  perform atests.reset();
+  perform atests.rec('W13', 'integrity', 'sessions older than 30 days or ending in the future are refused',
+    r1 like 'err:22023%' and r2 like 'err:22023%', r1 || ' | ' || r2);
+end $$;
+
+do $$ declare r text; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f02');
+  r := atests.attempt(atests.workout_sql('app', 'walk', 100, 10, 1800, 'null', 'null', '22222222-0000-0000-0000-000000000009'));
+  perform atests.reset();
+  perform atests.rec('W14', 'integrity', 'active time longer than the session is refused', r like 'err:22023%active time%', r);
+end $$;
+
+do $$ declare r text; w record; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f02');
+  r := atests.attempt(atests.workout_sql('app', 'cycle', 200, 60, 3600, '18000', 'null', '22222222-0000-0000-0000-00000000000a', null, 'Pacific/Kiritimati'));
+  perform atests.reset();
+  select * into w from public.workout_sessions where client_session_id = '22222222-0000-0000-0000-00000000000a';
+  perform atests.rec('W15', 'time zones', 'a session belongs to the local date of its start in the zone it was recorded in (18 km/h ride = 6.8 MET)',
+    r = 'ok:1' and w.local_date = (w.started_at at time zone 'Pacific/Kiritimati')::date and w.met = 6.8,
+    r || ' ' || coalesce(w.local_date::text, '?'));
+end $$;
+
+do $$ begin
+  perform atests.rec('W16', 'workouts', 'MET tiers per kind and speed',
+    public.activity_met('walk', null) = 3.5 and public.activity_met('walk', 1.7) = 4.3 and public.activity_met('run', 4.5) = 14.5
+      and public.activity_met('cycle', 7.0) = 10.0 and public.activity_met('gym', null) = 3.5, 'tiers');
+end $$;

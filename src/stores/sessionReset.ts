@@ -14,16 +14,18 @@ import { useSetupStore } from './setupStore';
 import { useDriverEarningsStore } from './driverEarningsStore';
 import { useSubscriptionStore } from './subscriptionStore';
 import { useUserStore } from './userStore';
+import { useWorkoutStore } from './workoutStore';
 
 export async function resetUserScopedState(
   options: { keepPersistedCart?: boolean } = {}
 ): Promise<void> {
-  // The persisted cart (and the health connection choice) is kept only when
-  // no user was active in memory (cold start); claimForUser() then discards
-  // it if it belongs to someone else.
+  // The persisted cart, health connection choice and workout in progress are
+  // kept only when no user was active in memory (cold start); claimForUser()
+  // then discards them if they belong to someone else.
   if (!options.keepPersistedCart) {
     useCartStore.getState().reset();
     useActivityStore.getState().reset();
+    useWorkoutStore.getState().reset();
   }
   useUserStore.getState().reset();
   useSetupStore.getState().reset();

@@ -49,6 +49,9 @@ ACTIVITY_POLICIES = [
     f"activity_daily_totals|activity_days_owner_insert|PERMISSIVE|{{authenticated}}|INSERT|-|{OWNER}",
     f"activity_daily_totals|activity_days_owner_read|PERMISSIVE|{{authenticated}}|SELECT|{OWNER}|-",
     f"activity_daily_totals|activity_days_owner_update|PERMISSIVE|{{authenticated}}|UPDATE|{OWNER}|{OWNER}",
+    f"workout_sessions|workouts_owner_delete|PERMISSIVE|{{authenticated}}|DELETE|{OWNER}|-",
+    f"workout_sessions|workouts_owner_insert|PERMISSIVE|{{authenticated}}|INSERT|-|{OWNER}",
+    f"workout_sessions|workouts_owner_read|PERMISSIVE|{{authenticated}}|SELECT|{OWNER}|-",
 ]
 ACTIVITY_DEFINER_FUNCTIONS: list = []
 

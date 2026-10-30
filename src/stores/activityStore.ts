@@ -9,9 +9,10 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { providerById, providersForPlatform } from '../activity/providers';
 import { SyncOutcome, syncActivity } from '../activity/sync';
-import type { ActivitySource, ProviderAvailability, ProviderPermission } from '../activity/types';
+import { WORKOUT_SOURCE_FOR, type ActivitySource, type ProviderAvailability, type ProviderPermission } from '../activity/types';
 import { deviceTimeZone, localDate } from '../nutrition/dates';
 import { deleteActivitySource, upsertActivityDays } from '../services/activityApi';
+import { deleteImportedWorkouts, importProviderWorkouts } from '../services/workoutApi';
 
 export interface ProviderState {
   id: ActivitySource;
@@ -85,6 +86,8 @@ export const useActivityStore = create<ActivityState>()(
         if (deleteImported) {
           const r = await deleteActivitySource(source);
           if (r.error) return { ok: false };
+          const workoutSource = WORKOUT_SOURCE_FOR[source];
+          if (workoutSource && (await deleteImportedWorkouts(workoutSource)).error) return { ok: false };
         }
         set({ source: null, connectedAt: null, lastSync: null, permission: null });
         return { ok: true };
@@ -99,11 +102,13 @@ export const useActivityStore = create<ActivityState>()(
           try {
             if ((await provider.availability()) !== 'available') return null;
             const timeZone = deviceTimeZone();
+            const workoutSource = WORKOUT_SOURCE_FOR[provider.id];
             const outcome = await syncActivity({
               provider,
               timeZone,
               today: localDate(timeZone),
               upsertDays: upsertActivityDays,
+              upsertWorkouts: workoutSource ? (w) => importProviderWorkouts(w, workoutSource, timeZone) : undefined,
             });
             set({ lastSync: outcome });
             return outcome;

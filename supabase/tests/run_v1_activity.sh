@@ -144,7 +144,7 @@ echo "=== 4. SQL tests"
 q postgres -f "$TESTS" >"$OUT/tests.out" 2>&1 || fail "test file error: $(tail -3 "$OUT/tests.out")"
 qa "select id || ' ' || case when passed then 'PASS' else 'FAIL' end || ' ' || expectation || ' [' || coalesce(detail, '') || ']' from atests.results order by id" | sed 's/^/  /'
 nf="$(qa "select count(*) from atests.results where not passed")"; np="$(qa "select count(*) from atests.results where passed")"
-[ "$nf" = "0" ] && [ "$np" -ge 17 ] && pass "$np SQL tests passed" || fail "$nf failed, $np passed"
+[ "$nf" = "0" ] && [ "$np" -ge 33 ] && pass "$np SQL tests passed" || fail "$nf failed, $np passed"
 
 echo "=== 5. regression on fresh databases"
 start_db nreg
@@ -190,14 +190,24 @@ for k in 1 2 3 4; do
 done; wait
 [ "$(qa "select count(*) from public.activity_daily_totals where user_id = '$U'")" = "1" ] \
   && pass "4 parallel syncs of one day and source leave exactly one row" || { fail "parallel syncs duplicated a day"; cat "$OUT"/day-*.out | sed 's/^/    /'; }
-[ -n "${EXTRA_CONCURRENCY:-}" ] && . "$EXTRA_CONCURRENCY"
+wsql() {  # wsql <client_session_id> <started minutes ago>
+  echo "insert into public.workout_sessions (source, client_session_id, kind, started_at, ended_at, active_seconds, time_zone)
+        values ('app', '$1', 'walk', now() - interval '$2 minutes', now() - interval '$2 minutes' + interval '30 minutes', 1800, 'Africa/Casablanca')
+        on conflict (user_id, client_session_id) do nothing; select pg_sleep(0.2)"
+}
+for k in 1 2 3; do (as_user "$U" "$(wsql 33333333-0000-0000-0000-000000000001 300)" >"$OUT/w-$k.out" 2>&1) & done; wait
+[ "$(qa "select count(*) from public.workout_sessions where client_session_id = '33333333-0000-0000-0000-000000000001'")" = "1" ] \
+  && pass "3 parallel uploads of one workout create exactly one session" || { fail "duplicate workout sessions"; cat "$OUT"/w-*.out | sed 's/^/    /'; }
+for k in 2 3 4; do (as_user "$U" "$(wsql 33333333-0000-0000-0000-00000000000$k 200)" >"$OUT/o-$k.out" 2>&1) & done; wait
+[ "$(qa "select count(*) from public.workout_sessions where user_id = '$U' and started_at > now() - interval '201 minutes'")" = "1" ] \
+  && pass "3 parallel overlapping sessions: exactly one is kept, the others are refused" || { fail "overlapping sessions were stored"; cat "$OUT"/o-*.out | sed 's/^/    /'; }
 
 echo "=== 7. rollback"
 start_db rollback
 setup
 q postgres -f "$MIG" >/dev/null 2>&1
 q postgres -f "$TESTS" >/dev/null 2>&1
-days="$(qa "select count(*) from public.activity_daily_totals")"
+days="$(qa "select count(*) from public.activity_daily_totals")"; workouts="$(qa "select count(*) from public.workout_sessions")"
 if q postgres -f "$RB_N" >"$OUT/rbn.log" 2>&1; then fail "the nutrition rollback ran while the activity migration is applied"; else
   [ "$(qa "select to_regclass('public.nutrition_log_entries') is not null and to_regclass('public.activity_daily_totals') is not null")" = "t" ] \
     && pass "the nutrition rollback is refused while this migration is applied; nothing changed" || fail "nutrition rollback left a partial state"; fi
@@ -205,6 +215,8 @@ if q postgres -f "$RB" >"$OUT/rb.log" 2>&1; then
   pass "rollback committed"
   [ "$(qa "select count(*) from v1_activity_rollback_archive.activity_daily_totals")" = "$days" ] \
     && pass "archive holds every activity day ($days)" || fail "archive incomplete"
+  [ "$(qa "select count(*) from v1_activity_rollback_archive.workout_sessions")" = "$workouts" ] && [ "$workouts" -gt 0 ] \
+    && pass "archive holds every workout session ($workouts)" || fail "workout archive incomplete"
   [ "$(monitor_md5)" = "$NUTRITION_MD5" ] && pass "nutrition monitor restored (1bbbc1b2…)" || fail "monitor not restored"
   [ "$(violations)" = "0" ] && pass "containment_violations() = 0 after rollback" || fail "violations after rollback"
   [ "$(qa "select has_table_privilege('service_role', 'v1_activity_rollback_archive.activity_daily_totals', 'SELECT')")" = "f" ] \

@@ -52,6 +52,7 @@ $pre$;
 create schema v1_activity_rollback_archive;
 revoke all on schema v1_activity_rollback_archive from public;
 create table v1_activity_rollback_archive.activity_daily_totals as select * from public.activity_daily_totals;
+create table v1_activity_rollback_archive.workout_sessions as select * from public.workout_sessions;
 do $acl$
 declare t text;
 begin
@@ -426,6 +427,12 @@ $cv$;
 -- END GENERATED MONITOR
 
 -- Drop (triggers, functions, tables)
+drop function public.activity_workouts(date, date);
+drop trigger trg_workout_session_prepare on public.workout_sessions;
+drop function public.workout_session_prepare();
+drop table public.workout_sessions;
+drop function public.activity_max_speed(text);
+drop function public.activity_met(text, numeric);
 drop trigger trg_activity_daily_capture_target on public.activity_daily_totals;
 drop trigger trg_activity_daily_prepare on public.activity_daily_totals;
 drop function public.activity_daily_capture_target();
@@ -453,7 +460,7 @@ begin
   if bad is not null then
     raise exception 'V1 activity rollback postcondition failed; aborting the rollback transaction: %', bad;
   end if;
-  if to_regclass('public.activity_daily_totals') is not null then
+  if to_regclass('public.activity_daily_totals') is not null or to_regclass('public.workout_sessions') is not null then
     raise exception 'V1 activity rollback postcondition failed: objects remain';
   end if;
   if current_user <> 'postgres' then

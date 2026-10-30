@@ -11,7 +11,7 @@
 -- the migration (run_v1_activity.sh checks it).
 -- =====================================================================
 with
-expected(monitor_md5) as (values ('ACTIVITY_MONITOR_MD5:863776fcd63a02d640fddf98177b39d8')),
+expected(monitor_md5) as (values ('ACTIVITY_MONITOR_MD5:79b9e433ed0e38d803cdeb89b9847d89')),
 mon as (
   select md5(p.prosrc) as body_md5, p.prosecdef, p.proconfig, pg_get_userbyid(p.proowner) as owner,
          has_function_privilege('anon', p.oid, 'EXECUTE') or has_function_privilege('authenticated', p.oid, 'EXECUTE') as client_exec

@@ -25,3 +25,5 @@ export { CalorieHistoryChart } from './CalorieHistoryChart';
 export { CalorieTodayCard } from './CalorieTodayCard';
 export { Stepper } from './Stepper';
 export { StreakCard } from './StreakCard';
+export { IconButton } from './IconButton';
+export { confirmAction } from './confirm';

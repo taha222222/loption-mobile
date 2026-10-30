@@ -49,6 +49,8 @@ function AppTabs() {
       <Tabs.Screen name="log-meal" />
       <Tabs.Screen name="nutrition-profile" />
       <Tabs.Screen name="nutrition-reminders" />
+      <Tabs.Screen name="workout" />
+      <Tabs.Screen name="workout-history" />
     </Tabs>
   );
 }
