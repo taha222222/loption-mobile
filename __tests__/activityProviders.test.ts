@@ -37,11 +37,17 @@ const mockPedometer = {
 jest.mock('@kingstinct/react-native-healthkit', () => mockHk);
 jest.mock('react-native-health-connect', () => mockHc);
 jest.mock('expo-sensors', () => ({ Pedometer: mockPedometer }));
+const mockNative = { present: true };
+jest.mock('../src/activity/providers/nativeModules', () => ({
+  ...jest.requireActual('../src/activity/providers/nativeModules'),
+  hasNativeModule: () => mockNative.present,
+}));
 
 const setOS = (os: string) => Object.defineProperty(Platform, 'OS', { get: () => os, configurable: true });
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockNative.present = true;
   __resetHealthKitModule();
   __resetHealthConnectModule();
   __resetPedometerModule();
@@ -81,7 +87,25 @@ describe('Apple Health', () => {
   const past = dayWindow('2026-10-28', 'Africa/Casablanca');
   const today = { date: '2099-01-01', start: new Date('2099-01-01T00:00:00Z'), end: new Date('2099-01-02T00:00:00Z') };
 
-  it('reports a missing native module as needing a development build (Expo Go)', async () => {
+  it('in Expo Go (no native module) never loads the library and asks for a development build', async () => {
+    mockNative.present = false;
+    let loaded = false;
+    let fresh: typeof healthKitProvider;
+    jest.isolateModules(() => {
+      jest.doMock('@kingstinct/react-native-healthkit', () => {
+        loaded = true; // loading it without its native module puts an error on screen
+        throw new Error('Failed to get NitroModules');
+      });
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- fresh module registry
+      fresh = require('../src/activity/providers/healthKit').healthKitProvider;
+    });
+    await expect(fresh!.availability()).resolves.toBe('needs_native_build');
+    await expect(fresh!.permission()).resolves.toBe('not_requested');
+    expect(loaded).toBe(false);
+    jest.doMock('@kingstinct/react-native-healthkit', () => mockHk);
+  });
+
+  it('reports a library that fails to load as needing a development build', async () => {
     let fresh: typeof healthKitProvider;
     jest.isolateModules(() => {
       jest.doMock('@kingstinct/react-native-healthkit', () => {
@@ -165,6 +189,14 @@ describe('Health Connect', () => {
   beforeEach(() => {
     setOS('android');
     mockHc.initialize.mockResolvedValue(true);
+  });
+
+  it('in Expo Go (no native module) never touches the library', async () => {
+    mockNative.present = false;
+    await expect(healthConnectProvider.availability()).resolves.toBe('needs_native_build');
+    await expect(healthConnectProvider.permission()).resolves.toBe('not_requested');
+    expect(mockHc.getSdkStatus).not.toHaveBeenCalled();
+    expect(mockHc.initialize).not.toHaveBeenCalled();
   });
 
   it('maps the SDK status to install / update / available', async () => {

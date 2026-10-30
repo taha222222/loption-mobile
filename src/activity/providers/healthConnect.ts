@@ -4,6 +4,7 @@
 // installed (built into Android 14+). Aggregates with no data origin mean
 // "no data" and are reported as null, not 0.
 import { Platform } from 'react-native';
+import { hasNativeModule, NATIVE_MODULE } from './nativeModules';
 import type { ActivityProvider, DailyReading, ImportedWorkout, ProviderPermission, WorkoutKind } from '../types';
 
 export const HEALTH_CONNECT_READ = [
@@ -32,14 +33,15 @@ let initialized = false;
 function load(): HealthConnectModule | null {
   if (cached !== undefined) return cached;
   if (Platform.OS !== 'android') return (cached = null);
+  // Never load the library without its native module (see nativeModules.ts).
+  if (!hasNativeModule(NATIVE_MODULE.healthConnect)) return (cached = null);
   try {
-    // Lazy: the native module is absent in Expo Go and on other platforms.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    cached = require('react-native-health-connect');
+    cached = require('react-native-health-connect') ?? null;
   } catch {
     cached = null;
   }
-  return cached ?? null;
+  return cached;
 }
 
 // For tests only.

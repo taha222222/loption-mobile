@@ -8,6 +8,7 @@
 // after the request the state is 'requested', and a denied type simply
 // returns no samples. The UI says so instead of claiming access.
 import { Platform } from 'react-native';
+import { hasNativeModule, NATIVE_MODULE } from './nativeModules';
 import type { ActivityProvider, DailyReading, DayWindow, ImportedWorkout, ProviderPermission, WorkoutKind } from '../types';
 
 const STEPS = 'HKQuantityTypeIdentifierStepCount';
@@ -34,14 +35,15 @@ let cached: HealthKitModule | null | undefined;
 function load(): HealthKitModule | null {
   if (cached !== undefined) return cached;
   if (Platform.OS !== 'ios') return (cached = null);
+  // Never load the library without its native module (see nativeModules.ts).
+  if (!hasNativeModule(NATIVE_MODULE.healthKit)) return (cached = null);
   try {
-    // Lazy: the native module is absent in Expo Go and on other platforms.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    cached = require('@kingstinct/react-native-healthkit');
+    cached = require('@kingstinct/react-native-healthkit') ?? null;
   } catch {
     cached = null;
   }
-  return cached ?? null;
+  return cached;
 }
 
 // For tests only.
