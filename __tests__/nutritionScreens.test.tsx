@@ -179,3 +179,18 @@ describe('log meal screen', () => {
     expect(mockApi.logMeal.mock.calls[0][0].requestId).toBe(mockApi.logMeal.mock.calls[1][0].requestId);
   });
 });
+
+describe('server without the nutrition migration', () => {
+  it('the store reports "unavailable" (not a connection error) and the screen says the update is pending', async () => {
+    mockApi.fetchSummary.mockResolvedValue({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.nutrition_daily_summary' } });
+    mockApi.fetchEntries.mockResolvedValue({ data: null, error: { code: 'PGRST205', message: 'Could not find the table public.nutrition_log_entries' } });
+    useUserStore.setState({ profile: { id: 'p', user_id: 'u', gender: 'man', age: 30, weight: 70, height: 175, activity_level: 'moderate' } as any });
+    await useNutritionStore.getState().refresh();
+    expect(useNutritionStore.getState().status).toBe('unavailable');
+    await render(<NutritionScreen />);
+    await waitFor(() => expect(screen.getByText(/mise à jour de la base de données en attente/)).toBeTruthy());
+    expect(screen.queryByText(/Vérifiez votre connexion/)).toBeNull();
+    expect(screen.getByText(/Vos réponses sont enregistrées/)).toBeTruthy();
+    expect(screen.queryByText('Compléter mon profil')).toBeNull();
+  });
+});

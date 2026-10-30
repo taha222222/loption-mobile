@@ -291,3 +291,42 @@ describe('“I ate this meal” from an order', () => {
     await waitFor(() => expect(screen.getByText('Commande pas encore livrée')).toBeTruthy());
   });
 });
+
+describe('server without the tracking migrations (hosted project before the V1 rollout)', () => {
+  const missing = { code: 'PGRST202', message: 'Could not find the function public.activity_daily_summary(p_from, p_to, p_today) in the schema cache' };
+
+  it('recognises a missing function, table or column, and nothing else', () => {
+    const { isMissingServerFeature } = jest.requireActual('../src/lib/serverFeatures');
+    expect(isMissingServerFeature(missing)).toBe(true);
+    expect(isMissingServerFeature({ code: 'PGRST205', message: 'Could not find the table' })).toBe(true);
+    expect(isMissingServerFeature({ code: '42703' })).toBe(true);
+    expect(isMissingServerFeature({ message: 'Network request failed' })).toBe(false);
+    expect(isMissingServerFeature({ code: '42501', message: 'permission denied' })).toBe(false);
+    expect(isMissingServerFeature(null)).toBe(false);
+  });
+
+  it('Suivi says the feature is not enabled yet: no "check your connection", no "complete your profile"', async () => {
+    mockApi.fetchDailyBalance.mockResolvedValue({ data: null, error: missing });
+    await render(<TrackingScreen />);
+    await waitFor(() => expect(screen.getByText('Suivi quotidien pas encore disponible')).toBeTruthy());
+    expect(screen.queryByText(/Vérifiez votre connexion/)).toBeNull();
+    expect(screen.queryByText(/Compléter mon profil/)).toBeNull();
+    expect(screen.queryByTestId('daily-balance-card')).toBeNull();
+  });
+
+  it('a network failure without data shows the retry message and no placeholder balance', async () => {
+    mockApi.fetchDailyBalance.mockResolvedValue({ data: null, error: { message: 'Network request failed' } });
+    await render(<TrackingScreen />);
+    await waitFor(() => expect(screen.getByText('Bilan indisponible')).toBeTruthy());
+    expect(screen.queryByTestId('daily-balance-card')).toBeNull();
+    expect(screen.queryByText(/Compléter mon profil/)).toBeNull();
+  });
+
+  it('the home card is not stuck loading: it says calorie tracking is not available yet', async () => {
+    const { CalorieTodayCard } = jest.requireActual('../src/components/v2');
+    await render(<CalorieTodayCard targetKcal={null} consumedKcal={null} unavailable />);
+    expect(screen.getByText('Suivi des calories')).toBeTruthy();
+    expect(screen.getByText(/mise à jour du serveur L’OPTION est en attente/)).toBeTruthy();
+    expect(screen.queryByText('…')).toBeNull();
+  });
+});

@@ -8,8 +8,10 @@ import { randomUUID } from 'expo-crypto';
 import { addDays, deviceTimeZone, localDate } from '../nutrition/dates';
 import { DaySummary, StreakInfo, trackingErrorMessage } from '../nutrition/tracking';
 import * as api from '../services/nutritionApi';
+import { isMissingServerFeature, SERVER_UPDATE_PENDING } from '../lib/serverFeatures';
 
-export type LoadStatus = 'idle' | 'loading' | 'ready' | 'error';
+// 'unavailable': the server does not have the tracking feature yet (migration not applied).
+export type LoadStatus = 'idle' | 'loading' | 'ready' | 'error' | 'unavailable';
 export type HistoryRange = 7 | 30;
 
 interface NutritionState {
@@ -69,6 +71,10 @@ export const useNutritionStore = create<NutritionState>((set, get) => ({
     ]);
     if (run !== generation) return; // a newer refresh (or a reset) superseded this one
     if (summary.error || entries.error || streak.error) {
+      if ([summary.error, entries.error, streak.error].some(isMissingServerFeature)) {
+        set({ status: 'unavailable', error: SERVER_UPDATE_PENDING });
+        return;
+      }
       set({ status: 'error', error: 'Impossible de charger votre suivi. Vérifiez votre connexion et réessayez.' });
       return;
     }

@@ -11,6 +11,8 @@
 # Containers and processes are removed on exit.
 # Requires: docker, psql, node (Playwright preinstalled), python3, npx.
 # Usage: supabase/tests/e2e/run_app_e2e.sh   (KEEP_OUTPUT=<dir> keeps logs/screens)
+#   E2E_SCHEMA=baseline: only the staging baseline (what a hosted project has
+#   before the V1 migrations); runs journey_baseline.js instead.
 #
 # Not covered (cannot be, locally): Google/Apple (no credentials; their
 # "not configured" path IS covered), real e-mail delivery (an SMTP sink
@@ -89,17 +91,21 @@ q postgres -f "$ROOT/supabase/baseline/staging_schema_2026-10-15.sql" >"$OUT/bas
 sed 's/^update auth.users set confirmed_at = now()/update auth.users set email_confirmed_at = now()/' "$TESTS/fixtures_staging_like.sql" > "$OUT/fixtures.sql"
 [ "$(diff "$TESTS/fixtures_staging_like.sql" "$OUT/fixtures.sql" | grep -c '^[<>]')" = "2" ] || { echo "fixture adaptation: expected one changed line"; exit 2; }
 q supabase_admin -f "$OUT/fixtures.sql" >"$OUT/fixtures.log" 2>&1 || { fail "fixtures"; tail -5 "$OUT/fixtures.log"; exit 1; }
-sed "s/'OWNER-MUST-SUPPLY-INITIAL-ADMIN-UUID',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$INITIAL_ADMIN',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" \
-  "$ROOT/supabase/migrations/20261016170000_phase1c_security_containment.sql" > "$OUT/p1c.sql"
-q postgres -f "$OUT/p1c.sql" >"$OUT/p1c.log" 2>&1 && pass "Phase 1C core applied" || { fail "Phase 1C: $(tail -3 "$OUT/p1c.log")"; exit 1; }
-q postgres -f "$ROOT/supabase/migrations/20261028120000_v1_onboarding_first_order_offer.sql" >"$OUT/v1.log" 2>&1 \
-  && pass "V1 onboarding/offer migration applied" || { fail "V1 migration: $(tail -3 "$OUT/v1.log")"; exit 1; }
-q postgres -f "$ROOT/supabase/migrations/20261029120000_v1_nutrition_tracking_engagement.sql" >"$OUT/nutrition.log" 2>&1 \
-  && pass "V1 nutrition tracking/engagement migration applied" || { fail "nutrition migration: $(tail -3 "$OUT/nutrition.log")"; exit 1; }
-q postgres -f "$ROOT/supabase/migrations/20261030120000_v1_activity_tracking.sql" >"$OUT/activity.log" 2>&1 \
-  && pass "V1 activity tracking migration applied" || { fail "activity migration: $(tail -3 "$OUT/activity.log")"; exit 1; }
-[ "$(qa "select count(*) from public.containment_violations() where category in ('drift','containment')")" = "0" ] \
-  && pass "containment_violations() = 0" || fail "containment violations present"
+if [ "${E2E_SCHEMA:-full}" = "baseline" ]; then
+  pass "baseline only: no Phase 1C or V1 migration (hosted project before the V1 rollout)"
+else
+  sed "s/'OWNER-MUST-SUPPLY-INITIAL-ADMIN-UUID',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$INITIAL_ADMIN',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" \
+    "$ROOT/supabase/migrations/20261016170000_phase1c_security_containment.sql" > "$OUT/p1c.sql"
+  q postgres -f "$OUT/p1c.sql" >"$OUT/p1c.log" 2>&1 && pass "Phase 1C core applied" || { fail "Phase 1C: $(tail -3 "$OUT/p1c.log")"; exit 1; }
+  q postgres -f "$ROOT/supabase/migrations/20261028120000_v1_onboarding_first_order_offer.sql" >"$OUT/v1.log" 2>&1 \
+    && pass "V1 onboarding/offer migration applied" || { fail "V1 migration: $(tail -3 "$OUT/v1.log")"; exit 1; }
+  q postgres -f "$ROOT/supabase/migrations/20261029120000_v1_nutrition_tracking_engagement.sql" >"$OUT/nutrition.log" 2>&1 \
+    && pass "V1 nutrition tracking/engagement migration applied" || { fail "nutrition migration: $(tail -3 "$OUT/nutrition.log")"; exit 1; }
+  q postgres -f "$ROOT/supabase/migrations/20261030120000_v1_activity_tracking.sql" >"$OUT/activity.log" 2>&1 \
+    && pass "V1 activity tracking migration applied" || { fail "activity migration: $(tail -3 "$OUT/activity.log")"; exit 1; }
+  [ "$(qa "select count(*) from public.containment_violations() where category in ('drift','containment')")" = "0" ] \
+    && pass "containment_violations() = 0" || fail "containment violations present"
+fi
 
 docker run -d --name "$REST" --network "$NET" -p 127.0.0.1::3000 \
   -e PGRST_DB_URI="postgres://authenticator:postgres@db:5432/postgres" -e PGRST_DB_SCHEMAS=public \
@@ -121,7 +127,8 @@ echo "=== 4. customer journey (Playwright, Chromium)"
 export E2E_OUT="$OUT" E2E_MAIL="$MAIL" E2E_WEB="http://127.0.0.1:$WEB_PORT" E2E_SMTP_PORT="$SMTP_PORT" E2E_SINK="$HERE/smtp_sink.py"
 export E2E_DB_PORT="$DB_PORT" E2E_REST="http://127.0.0.1:$GW_PORT/rest/v1" E2E_SERVICE_JWT="$(jwt service_role)"
 export E2E_DISPATCH="$HERE/dispatch_once.ts"
-node "$HERE/journey.js" 2>&1 | tee "$OUT/journey.log"
+JOURNEY="$HERE/journey.js"; [ "${E2E_SCHEMA:-full}" = "baseline" ] && JOURNEY="$HERE/journey_baseline.js"
+node "$JOURNEY" 2>&1 | tee "$OUT/journey.log"
 grep -q "^  FAIL" "$OUT/journey.log" && STATUS=1
 grep -q "^JOURNEY COMPLETE" "$OUT/journey.log" || { STATUS=1; echo "  FAIL: journey did not complete"; }
 

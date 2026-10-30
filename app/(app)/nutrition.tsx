@@ -39,6 +39,8 @@ export default function NutritionScreen() {
   const target = todaySummary?.targetKcal ?? null;
   const bmr = typeof profile?.bmr_kcal === 'number' ? profile.bmr_kcal : null;
   const tdee = typeof profile?.tdee_kcal === 'number' ? profile.tdee_kcal : null;
+  // The profile has no estimate columns at all: the server lacks the migration.
+  const serverPending = !!profile && !('bmr_kcal' in profile);
 
   const confirmRemove = (entry: LogEntry) => {
     const doRemove = async () => {
@@ -85,7 +87,7 @@ export default function NutritionScreen() {
         }
       />
 
-      {status === 'error' ? (
+      {status === 'error' || status === 'unavailable' ? (
         <View style={styles.block}>
           <FormMessage title="Suivi indisponible" message={error ?? ''} actionLabel="Réessayer" onAction={refresh} />
         </View>
@@ -95,6 +97,7 @@ export default function NutritionScreen() {
         targetKcal={target}
         consumedKcal={todaySummary?.consumedKcal ?? null}
         streak={streak?.current ?? null}
+        unavailable={status === 'unavailable'}
       />
 
       <View style={styles.block}>
@@ -122,11 +125,15 @@ export default function NutritionScreen() {
             <View style={styles.missing}>
               <Text style={styles.missingTitle}>Estimation personnalisée indisponible</Text>
               <Text style={styles.missingText}>
-                {profile?.gender === 'unspecified'
-                  ? 'Sans le sexe utilisé par la formule, nous ne calculons pas d’estimation. Vous pouvez quand même enregistrer vos repas.'
-                  : 'Complétez votre âge, poids, taille et niveau d’activité pour obtenir une estimation.'}
+                {serverPending
+                  ? 'Vos réponses sont enregistrées. L’estimation est calculée par le serveur, dont la mise à jour est en attente.'
+                  : profile?.gender === 'unspecified'
+                    ? 'Sans le sexe utilisé par la formule, nous ne calculons pas d’estimation. Vous pouvez quand même enregistrer vos repas.'
+                    : 'Complétez votre âge, poids, taille et niveau d’activité pour obtenir une estimation.'}
               </Text>
-              <BrandButton title="Compléter mon profil" variant="soft" onPress={() => router.push('/(app)/nutrition-profile')} />
+              {serverPending ? null : (
+                <BrandButton title="Compléter mon profil" variant="soft" onPress={() => router.push('/(app)/nutrition-profile')} />
+              )}
             </View>
           )}
         </SurfaceCard>

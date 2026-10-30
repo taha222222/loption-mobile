@@ -3,7 +3,8 @@
 Update this file incrementally when the state changes. Last verified: 2026-10-30 (activity tracking).
 
 ## Current branch
-- Cumulative branch: `claude/v1-activity-expo-go-fix` = `claude/v1-activity-tracking-final` (activity batches A `e49cb59`,
+- Cumulative branch: `claude/v1-baseline-server-fix` = `claude/v1-activity-expo-go-fix` + honest states when the server
+  lacks the V1 migrations (the hosted project today). `claude/v1-activity-expo-go-fix` = `claude/v1-activity-tracking-final` (activity batches A `e49cb59`,
   B `447334e`, C `c35da39`, layout fixes `ca759f8`, docs) + the Expo Go fix (health libraries are loaded only when
   their native module exists), on `claude/v1-engineering-context` (`636fe26`). `claude/v1-activity-tracking` stops at
   `c35da39` and `claude/v1-activity-tracking-docs` before the last docs fix: the ruleset blocks pushes to existing
@@ -28,7 +29,7 @@ Update this file incrementally when the state changes. Last verified: 2026-10-30
 `claude/*` branches stack in this order, each containing the previous one:
 `v1-integration` → `v1-onboarding-auth` → `v1-onboarding-auth-react-refresh` → `v1-app-integration` →
 `v1-release-checklist` → `v1-nutrition-tracking` → `v1-engineering-context` → `v1-activity-tracking` →
-`v1-activity-tracking-docs` → `v1-activity-tracking-final` → `v1-activity-expo-go-fix`. None has a PR.
+`v1-activity-tracking-docs` → `v1-activity-tracking-final` → `v1-activity-expo-go-fix` → `v1-baseline-server-fix`. None has a PR.
 
 Open PRs (none merged):
 
@@ -54,6 +55,9 @@ The repository ruleset covers all branches: PR + 1 approving review, no bypass, 
 5. Trusted server-side order creation once pricing is approved (checklist H4–H10).
 
 ## Blockers
+- **The hosted Supabase project has none of the V1 migrations**, so calorie tracking, Suivi, estimates, the delivery
+  address and the first-order offer cannot work there (reproduced locally, evidence E-20). Applying them needs the
+  owner's approval and Phase 1C first (initial-admin UUID, staging gates).
 - Phase 1C NOT READY FOR STAGING: initial-admin UUID missing, staging gates, meal-images finding M2 open.
 - No Google, Apple, Resend, APNs or FCM credentials; real sign-in, e-mail and push never tested.
 - No native build has been made (prebuild now succeeds: the missing sound reference was removed). HealthKit capability,

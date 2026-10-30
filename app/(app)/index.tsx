@@ -117,7 +117,8 @@ export default function HomeScreen() {
         targetName={todayBalance?.method && todayBalance.method !== 'tdee_baseline' ? 'budget' : 'objectif'}
         consumedKcal={todaySummary?.consumedKcal ?? null}
         streak={streak?.current ?? null}
-        loading={nutritionStatus !== 'ready'}
+        loading={nutritionStatus === 'idle' || nutritionStatus === 'loading'}
+        unavailable={nutritionStatus === 'unavailable'}
         onPress={() => router.push('/(app)/tracking')}
       />
 

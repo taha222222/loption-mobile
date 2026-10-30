@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import type { DailyBalance } from '../activity/dailyBalance';
 import { addDays, deviceTimeZone, localDate } from '../nutrition/dates';
 import { fetchDailyBalance } from '../services/activityApi';
+import { isMissingServerFeature } from '../lib/serverFeatures';
 import { fetchEntries, LogEntry } from '../services/nutritionApi';
 import { fetchWorkouts, WorkoutRecord } from '../services/workoutApi';
 import { useActivityStore } from './activityStore';
@@ -21,7 +22,8 @@ interface TrackingState {
   days: DailyBalance[];
   meals: LogEntry[];
   workouts: WorkoutRecord[];
-  status: 'idle' | 'loading' | 'ready' | 'error';
+  // 'unavailable': the server does not have the feature yet (migration not applied).
+  status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable';
   dayStatus: 'idle' | 'loading' | 'ready' | 'error';
   refresh: (options?: { sync?: boolean }) => Promise<void>;
   setRange: (range: TrackingRange) => Promise<void>;
@@ -67,7 +69,7 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
     ]);
     if (run !== generation) return;
     if (days.error) {
-      set({ status: 'error' });
+      set({ status: isMissingServerFeature(days.error) ? 'unavailable' : 'error' });
       return;
     }
     set({ days: days.data, status: 'ready' });

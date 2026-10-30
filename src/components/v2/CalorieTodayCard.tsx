@@ -12,6 +12,7 @@ interface CalorieTodayCardProps {
   consumedKcal: number | null; // null = nothing logged today
   streak?: number | null;
   loading?: boolean;
+  unavailable?: boolean; // the server does not have calorie tracking yet
   onPress?: () => void;
 }
 
@@ -24,6 +25,7 @@ export const CalorieTodayCard: React.FC<CalorieTodayCardProps> = ({
   consumedKcal,
   streak,
   loading,
+  unavailable,
   onPress,
 }) => {
   const name = targetName;
@@ -44,6 +46,17 @@ export const CalorieTodayCard: React.FC<CalorieTodayCardProps> = ({
       : `${consumed} kilocalories consommées sur un ${name} de ${targetKcal}. ${
           over ? `Objectif dépassé de ${Math.abs(remaining!)}` : `${remaining} restantes`
         }.`;
+
+  if (unavailable) {
+    return (
+      <View style={styles.card} accessible accessibilityLabel="Suivi des calories pas encore disponible." testID="calorie-today-card">
+        <View style={styles.glow} />
+        <Text style={styles.label}>Suivi des calories</Text>
+        <Text style={styles.value}>—</Text>
+        <Text style={styles.meta}>Pas encore disponible : la mise à jour du serveur L’OPTION est en attente.</Text>
+      </View>
+    );
+  }
 
   const content = (
     <View style={styles.card} accessible accessibilityLabel={a11y} testID="calorie-today-card">
