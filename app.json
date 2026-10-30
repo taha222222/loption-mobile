@@ -14,7 +14,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.loption.app",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "L'OPTION uses your location to suggest your delivery address and, for drivers, to track deliveries in progress.",
+        "NSLocationWhenInUseUsageDescription": "L'OPTION uses your location to suggest your delivery address, to measure the distance of an outdoor workout you start (only while that workout is running), and, for drivers, to track deliveries in progress.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "usesAppleSignIn": true
@@ -27,7 +27,12 @@
       "package": "com.loption.app",
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.health.READ_STEPS",
+        "android.permission.health.READ_DISTANCE",
+        "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
+        "android.permission.health.READ_TOTAL_CALORIES_BURNED",
+        "android.permission.health.READ_EXERCISE"
       ]
     },
     "web": {
@@ -40,10 +45,7 @@
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
-          "color": "#111827",
-          "sounds": [
-            "./assets/notification.wav"
-          ]
+          "color": "#111827"
         }
       ],
       "expo-localization",
@@ -57,7 +59,30 @@
         }
       ],
       "expo-web-browser",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "L'OPTION lit vos pas, votre distance, votre énergie active et vos séances d'entraînement pour afficher votre bilan énergétique du jour. Ces données ne sont jamais partagées.",
+          "NSHealthUpdateUsageDescription": false,
+          "background": false
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "L'OPTION lit le nombre de pas mesuré par votre iPhone lorsque Santé n'est pas autorisé."
+        }
+      ],
+      "react-native-health-connect",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

@@ -5,6 +5,7 @@
 // from one account to the next on a shared device.
 import { supabase } from '../lib/supabase';
 import { locationService } from '../services/locationService';
+import { useActivityStore } from './activityStore';
 import { useAdminStore } from './adminStore';
 import { useCartStore } from './cartStore';
 import { useCollaboratorStore } from './collaboratorStore';
@@ -17,9 +18,13 @@ import { useUserStore } from './userStore';
 export async function resetUserScopedState(
   options: { keepPersistedCart?: boolean } = {}
 ): Promise<void> {
-  // The persisted cart is kept only when no user was active in memory (cold
-  // start); cartStore.claimForUser() then discards it if it belongs to someone else.
-  if (!options.keepPersistedCart) useCartStore.getState().reset();
+  // The persisted cart (and the health connection choice) is kept only when
+  // no user was active in memory (cold start); claimForUser() then discards
+  // it if it belongs to someone else.
+  if (!options.keepPersistedCart) {
+    useCartStore.getState().reset();
+    useActivityStore.getState().reset();
+  }
   useUserStore.getState().reset();
   useSetupStore.getState().reset();
   useNutritionStore.getState().reset();

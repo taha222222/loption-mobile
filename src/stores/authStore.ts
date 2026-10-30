@@ -5,6 +5,7 @@ import { useCartStore } from './cartStore';
 import { notificationService } from '../services/notificationService';
 import { clearOnboardingDraft } from './onboardingDraft';
 import { resetUserScopedState } from './sessionReset';
+import { useActivityStore } from './activityStore';
 
 export type UserRole = 'customer' | 'driver' | 'collaborator' | 'admin';
 export type RoleStatus = 'idle' | 'loading' | 'resolved' | 'error';
@@ -81,6 +82,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         if (get().user?.id !== userId) return;
         // Drops any persisted cart that belongs to a different account.
         await useCartStore.getState().claimForUser(userId);
+        await useActivityStore.getState().claimForUser(userId);
         if (get().user?.id !== userId) return;
         set({ role, roleStatus: 'resolved' });
       } catch (error: any) {

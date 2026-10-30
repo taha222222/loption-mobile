@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Generates the Phase 1C monitor blocks used by the V1 nutrition migration.
+"""Generates the Phase 1C monitor blocks used by the V1 migrations.
 
 The Phase 1C function public.containment_violations() reports every RLS
 policy and client-callable SECURITY DEFINER function that is not in its
-reviewed lists. The nutrition migration adds seven owner-only policies and
-two client-callable functions, so it re-creates the monitor with exactly
-those entries appended and nothing else changed. The rollback re-creates the
-original Phase 1C function.
+reviewed lists. Each later V1 migration re-creates the monitor with exactly
+its own reviewed entries appended to those of the migrations before it, and
+nothing else changed; its rollback re-creates the previous monitor.
+  * nutrition (20261029120000): seven owner-only policies, two client-callable
+    functions. Rollback: the original Phase 1C function.
+  * activity (20261030120000): owner-only policies on the activity tables.
+    Rollback: the nutrition monitor.
 
 Both blocks are copied mechanically from the committed Phase 1C migration so
 that a reviewer only has to read the appended entries below.
@@ -22,6 +25,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 PHASE1C = ROOT / "supabase/migrations/20261016170000_phase1c_security_containment.sql"
 MIGRATION = ROOT / "supabase/migrations/20261029120000_v1_nutrition_tracking_engagement.sql"
 ROLLBACK = ROOT / "supabase/rollback/v1_nutrition_tracking_rollback.sql"
+ACTIVITY_MIGRATION = ROOT / "supabase/migrations/20261030120000_v1_activity_tracking.sql"
+ACTIVITY_ROLLBACK = ROOT / "supabase/rollback/v1_activity_tracking_rollback.sql"
 BEGIN, END = "-- BEGIN GENERATED MONITOR\n", "-- END GENERATED MONITOR\n"
 
 # Reviewed definitions added by the nutrition migration, as PostgreSQL 17
@@ -38,6 +43,15 @@ NEW_POLICIES = [
 ]
 NEW_DEFINER_FUNCTIONS = ["public.register_push_token(text,text)", "public.deactivate_push_token(text)"]
 
+# Reviewed definitions added by the activity migration (owner-only).
+ACTIVITY_POLICIES = [
+    f"activity_daily_totals|activity_days_owner_delete|PERMISSIVE|{{authenticated}}|DELETE|{OWNER}|-",
+    f"activity_daily_totals|activity_days_owner_insert|PERMISSIVE|{{authenticated}}|INSERT|-|{OWNER}",
+    f"activity_daily_totals|activity_days_owner_read|PERMISSIVE|{{authenticated}}|SELECT|{OWNER}|-",
+    f"activity_daily_totals|activity_days_owner_update|PERMISSIVE|{{authenticated}}|UPDATE|{OWNER}|{OWNER}",
+]
+ACTIVITY_DEFINER_FUNCTIONS: list = []
+
 
 def original_monitor() -> str:
     text = PHASE1C.read_text()
@@ -46,19 +60,25 @@ def original_monitor() -> str:
     return text[start:end]
 
 
-def extended_monitor() -> str:
+def extended_monitor(policies=None, definers=None) -> str:
+    policies = NEW_POLICIES if policies is None else policies
+    definers = NEW_DEFINER_FUNCTIONS if definers is None else definers
     block = original_monitor()
     policies_end = "'];\n  reviewed_storage_policies"
     assert block.count(policies_end) == 1, "policy list end not found exactly once"
-    added = "".join(f",\n    '{p}'" for p in NEW_POLICIES)
+    added = "".join(f",\n    '{p}'" for p in policies)
     block = block.replace(policies_end, "'" + added + "];\n  reviewed_storage_policies")
     definer_end = "'public.set_driver_availability(boolean)'];"
     assert block.count(definer_end) == 1, "definer list end not found exactly once"
     block = block.replace(
         definer_end,
-        "'public.set_driver_availability(boolean)',\n    " + ",".join(f"'{f}'" for f in NEW_DEFINER_FUNCTIONS) + "];",
+        "'public.set_driver_availability(boolean)',\n    " + ",".join(f"'{f}'" for f in definers) + "];",
     )
     return block
+
+
+def activity_monitor() -> str:
+    return extended_monitor(NEW_POLICIES + ACTIVITY_POLICIES, NEW_DEFINER_FUNCTIONS + ACTIVITY_DEFINER_FUNCTIONS)
 
 
 def render(path: pathlib.Path, body: str) -> str:
@@ -69,7 +89,12 @@ def render(path: pathlib.Path, body: str) -> str:
 
 
 def main() -> int:
-    targets = {MIGRATION: extended_monitor(), ROLLBACK: original_monitor()}
+    targets = {
+        MIGRATION: extended_monitor(),
+        ROLLBACK: original_monitor(),
+        ACTIVITY_MIGRATION: activity_monitor(),
+        ACTIVITY_ROLLBACK: extended_monitor(),
+    }
     check = "--check" in sys.argv
     stale = []
     for path, body in targets.items():
