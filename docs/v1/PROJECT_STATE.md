@@ -1,13 +1,15 @@
 # L'OPTION — project state
 
-Update this file incrementally when the state changes. Last verified: 2026-10-30.
+Update this file incrementally when the state changes. Last verified: 2026-10-30 (activity tracking).
 
 ## Current branch
-- Working branch: `claude/v1-engineering-context`, branched from `claude/v1-nutrition-tracking` at `077952c`.
-- `claude/v1-nutrition-tracking` contains all V1 work; `main` is still `0cb0fe0` (initial commit). Nothing is merged.
-- Last full verification: `b5bf441`. Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md`.
+- Cumulative branch: `claude/v1-activity-tracking` (batches A `e49cb59`, B `447334e`, C `c35da39`, fixes `ca759f8`) on top of
+  `claude/v1-engineering-context` (`636fe26`). The ruleset blocks pushes to existing branches, so later commits go to
+  a new branch named in the latest delivery report (`claude/v1-activity-tracking-docs` for the docs of this phase).
+- `main` is still `0cb0fe0` (initial commit). Nothing is merged.
+- Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md` (latest: E-15 to E-19).
 
-## Integrated on `claude/v1-nutrition-tracking`
+## Integrated on the cumulative branch
 | Feature | Status | Reference |
 |---|---|---|
 | Phase 1A client hardening, COD-only checkout | Merged into the branch | `PHASE1A_REPORT.md` |
@@ -17,12 +19,14 @@ Update this file incrementally when the state changes. Last verified: 2026-10-30
 | Auth (Google, Apple, e-mail verification), 5-step onboarding, BMR/TDEE, permissions | Implemented, local e2e only | `V1_ONBOARDING_AUTH_OFFER.md` |
 | First-order free delivery (server enforcement, not yet called) | Implemented, local only | same |
 | Calorie log, history chart, streaks, opt-in reminders, push dispatcher | Implemented, local only | `CALORIE_TRACKING_AND_ENGAGEMENT.md` |
-| Release checklist | Current at `b5bf441` | `REMAINING_SETUP_AND_RELEASE_TASKS.md` |
+| Daily Tracking tab (replaces the Cart tab; basket in headers), daily energy budget, Apple Health / Health Connect / iPhone motion sync, workouts (walk, run, cycling, gym), meals from delivered orders | Implemented; local tests and web e2e only; **no device or native build verification** | `ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md` |
+| Release checklist | Current at the activity branch | `REMAINING_SETUP_AND_RELEASE_TASKS.md` |
 
 ## Branches and PRs
 `claude/*` branches stack in this order, each containing the previous one:
 `v1-integration` → `v1-onboarding-auth` → `v1-onboarding-auth-react-refresh` → `v1-app-integration` →
-`v1-release-checklist` → `v1-nutrition-tracking` → `v1-engineering-context`. None has a PR.
+`v1-release-checklist` → `v1-nutrition-tracking` → `v1-engineering-context` → `v1-activity-tracking` →
+`v1-activity-tracking-docs`. None has a PR.
 
 Open PRs (none merged):
 
@@ -41,20 +45,23 @@ the V1 stack), `claude/peaceful-shannon-ewahm3` (superseded Phase 1C package), `
 The repository ruleset covers all branches: PR + 1 approving review, no bypass, so push only new branches.
 
 ## Active priorities
-1. Get the V1 stack reviewed: Phase 1C first, then the two V1 migrations, then the app.
-2. Remove remaining fake data from customer screens (checklist I1, I3).
-3. Owner decisions and credentials that unblock staging (`DECISIONS.md`, checklist A–C, H, L).
-4. Trusted server-side order creation once pricing is approved (checklist H4–H10).
+1. Get the V1 stack reviewed: Phase 1C first, then the three V1 migrations, then the app.
+2. First EAS development builds and the device checklist of `ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md` §10.
+3. Remove remaining fake data from customer screens (checklist I1, I3).
+4. Owner decisions and credentials that unblock staging (`DECISIONS.md`, checklist A–C, H, L, M).
+5. Trusted server-side order creation once pricing is approved (checklist H4–H10).
 
 ## Blockers
 - Phase 1C NOT READY FOR STAGING: initial-admin UUID missing, staging gates, meal-images finding M2 open.
 - No Google, Apple, Resend, APNs or FCM credentials; real sign-in, e-mail and push never tested.
-- `assets/notification.wav` missing, so `expo prebuild` / EAS build fail. No native build has been made.
+- No native build has been made (prebuild now succeeds: the missing sound reference was removed). HealthKit capability,
+  Health Connect Play declaration and privacy texts are owner actions (checklist M).
 - Pricing, fees, TVA and minimum order not approved, so checkout cannot be enabled.
 - No reviewer other than the author for PRs (ruleset needs 1 approval).
-- `expo install --check` expects react-native 0.88.1 (lockfile 0.88.0). Lint: 45 pre-existing errors.
+- Order lifecycle undecided: the app uses `delivered`, the staging schema allows `served` (both count as received).
+- Lint: 45 pre-existing errors (none in new files). `expo install --check` is up to date (react-native 0.88.1).
 
 ## Exact next task
-Checklist I1: replace the hard-coded "next delivery" and "last order" cards in `app/(app)/profile.tsx` with the
+With EAS access: build development clients and run the activity device checklist (M7–M9). Without it, checklist I1: replace the hard-coded "next delivery" and "last order" cards in `app/(app)/profile.tsx` with the
 customer's real orders (RLS-scoped read) or an empty state, with Jest tests and an e2e check. Leave the "Mon plan",
 upgrade and offers cards unchanged until the owner decides I3 (hide out-of-scope screens).

@@ -5,8 +5,9 @@ Order of work: finish features → configure real services and credentials → v
 
 | | |
 |---|---|
-| Baseline of this checklist | branch `claude/v1-nutrition-tracking`, commit `b5bf441` (2026-10-29); first written at `b036461` |
+| Baseline of this checklist | branch `claude/v1-activity-tracking` (docs on `claude/v1-activity-tracking-docs`), commit `ca759f8` (2026-10-30); first written at `b036461` |
 | Calorie tracking, streaks and reminders | [`CALORIE_TRACKING_AND_ENGAGEMENT.md`](CALORIE_TRACKING_AND_ENGAGEMENT.md) (section L below) |
+| Activity, workouts, Daily Tracking tab | [`ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md`](ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md) (section M below) |
 | Detailed provider steps | [`AUTH_PROVIDER_SETUP.md`](AUTH_PROVIDER_SETUP.md) (not repeated here) |
 | What was built and how it was tested | [`V1_ONBOARDING_AUTH_OFFER.md`](V1_ONBOARDING_AUTH_OFFER.md) |
 | Database security package | [`PHASE1C_DATABASE_SECURITY_PLAN.md`](PHASE1C_DATABASE_SECURITY_PLAN.md) (sections 10 and 11) |
@@ -25,7 +26,7 @@ Order of work: finish features → configure real services and credentials → v
 | # | Blocker | Section |
 |---|---|---|
 | 1 | No Google, Apple or Resend credentials; real sign-in and real e-mail delivery never tested | A, C |
-| 2 | `assets/notification.wav` is referenced by `app.json` but missing → native prebuild/EAS build fails | E |
+| 2 | ~~`assets/notification.wav` missing~~ — resolved 2026-10-30: the unused reference was removed; prebuild succeeds (E-18) | E |
 | 3 | No native iOS/Android build has ever been produced or tested on a device | E, K |
 | 4 | Pricing, delivery fee, service fee, TVA and minimum order not approved; no trusted order creation → checkout must stay disabled | H |
 | 5 | First-order promotion rules not approved; enforcement exists in the database but nothing calls it yet | G |
@@ -36,6 +37,7 @@ Order of work: finish features → configure real services and credentials → v
 | 10 | Tracking reminders: no APNs/FCM credentials, Edge Function `dispatch-notifications` not deployed, scheduler not created; real push delivery never tested | L, E |
 | 11 | Meal calorie/macro values (source of every tracked number) are staff-entered and unaudited | L |
 | 12 | Nutrition migration extends the Phase 1C monitor (nine reviewed entries); needs the same independent review as Phase 1C before any staging use | L, J |
+| 13 | Activity tracking: HealthKit / Health Connect never run on a device; HealthKit capability, Play Console Health Connect declaration and health-data privacy texts missing; the activity migration adds seven monitor entries needing review | M |
 
 ---
 
@@ -140,7 +142,7 @@ Detailed console steps: [`AUTH_PROVIDER_SETUP.md`](AUTH_PROVIDER_SETUP.md) secti
 ## E. Notifications and native app readiness
 | ID | Task | Status | Owner | Dependency | Instructions | Verification | Release impact | Notes |
 |---|---|---|---|---|---|---|---|---|
-| E1 | `assets/notification.wav` missing but referenced in `app.json` (`expo-notifications` plugin `sounds`) | OWNER ACTION REQUIRED | Owner + Dev | Choice of sound (licensed) or decision to remove the custom sound | Add the file, or remove the `sounds` entry in a reviewed change | `npx expo prebuild --clean` succeeds | **Blocking** | Pre-existing since the initial commit |
+| E1 | `assets/notification.wav` missing but referenced in `app.json` | VERIFIED | Dev | — | Removed the unused `sounds` entry (the code always used the default sound) | `npx expo prebuild --no-install --platform all` succeeds (E-18) | Non-blocking | Done 2026-10-30. A licensed custom sound remains optional (DECISIONS #12) |
 | E2 | Notification permission prompt on real devices (iOS + Android 13+) | IMPLEMENTED — UNVERIFIED | Dev | E4 | Fresh install → onboarding → setup | Explanation first; OS prompt only on tap; denial → settings instructions; no repeated prompt | Blocking | Web has no permission; mocked unit tests only |
 | E3 | Push credentials and delivery (APNs key, FCM V1 credentials in EAS) | OWNER ACTION REQUIRED | Owner | Apple/Google accounts; decision whether push is in V1 | EAS → Credentials; Firebase project for Android | Token stored in `user_push_tokens`; a test push arrives on iOS and Android | Blocking if push is promised at launch | Customer tokens now go through `register_push_token()` and are deactivated at sign-out; dev builds can obtain a token (EAS projectId passed). **Pushes to drivers are still sent from the customer's device** (`checkout.tsx` → `sendToAllOnlineDrivers`; Phase 0 N1): move server-side before launch. Reminder delivery: section L |
 | E4 | Native development builds (iOS + Android) installed on devices | NOT STARTED | Dev | E1, A2.2, EAS access | `eas build --profile development` | Builds install and open; auth, onboarding, setup, home work | **Blocking** | Required by every native verification above (dev client; Expo Go is not enough) |
@@ -234,10 +236,10 @@ Source of truth: [`PHASE1C_DATABASE_SECURITY_PLAN.md`](PHASE1C_DATABASE_SECURITY
 | ID | Task | Status | Owner | Dependency | Instructions | Verification | Release impact | Notes |
 |---|---|---|---|---|---|---|---|---|
 | K1 | Install from the committed lockfile | VERIFIED | Dev | — | `npm ci` | Exit 0; `npx expo install --check` "up to date" (E-01) | Blocking | `.npmrc` keeps `legacy-peer-deps=false` |
-| K2 | TypeScript, lint, unit tests | VERIFIED | Dev | — | `npx tsc --noEmit`; `npx eslint .`; `npx jest` | tsc 0 errors; Jest 16 suites / 162 tests; ESLint 45 errors / 47 warnings, all in files outside the V1 work (E-09) | Non-blocking (lint) | Owner decision: fix or accept the 45 pre-existing lint errors |
+| K2 | TypeScript, lint, unit tests | VERIFIED | Dev | — | `npx tsc --noEmit`; `npx eslint .`; `npx jest` | tsc 0 errors; Jest 19 suites / 221 tests; ESLint 45 errors / 47 warnings, all in files outside the V1 work (E-15) | Non-blocking (lint) | Lint clean-up needs an owner decision (Phase 1A §5) |
 | K3 | Dev-server bundling (Fast Refresh) and exports | VERIFIED | Dev | — | `npx expo start -c`; `npx expo export --platform <android, ios, web>` | iOS + Android dev bundles HTTP 200; all exports exit 0 (E-01, E-05) | Blocking | Fixed `react-refresh/babel` |
 | K4 | Phase 1C regression harness | VERIFIED | Dev | Docker | `supabase/tests/run_phase1c.sh` | "ALL PHASE 1C LOCAL CHECKS PASSED" (E-06) | Blocking | **Local only.** Supabase CLI cases skipped (CLI not installed) |
-| K5 | V1 database and app end-to-end harnesses | VERIFIED | Dev | Docker, Playwright | `supabase/tests/run_v1_onboarding_offer.sh`; `supabase/tests/run_v1_nutrition.sh`; `supabase/tests/e2e/run_app_e2e.sh` | All checks pass (E-10, E-11, E-12) | Blocking | **Local only.** |
+| K5 | V1 database and app end-to-end harnesses | VERIFIED | Dev | Docker, Playwright | `supabase/tests/run_v1_onboarding_offer.sh`; `run_v1_nutrition.sh`; `run_v1_activity.sh`; `supabase/tests/e2e/run_app_e2e.sh` | All checks pass (E-17, E-19) | Blocking | **Local only.** |
 | K6 | Real provider integrations | BLOCKED | Dev | A1–A3 | See A1.5, A2.6, A3.5 | Evidence entries | Blocking | |
 | K7 | Native builds and device tests | NOT STARTED | Dev | E1, E4, E5 | EAS builds; device checklist covering A–I | Evidence entries per platform | **Blocking** | |
 | K8 | Clean install and upgrade / returning-user scenario | IN PROGRESS | Dev | E4, J7 | Fresh install; install over the previous build with an existing account | Returning customer keeps cart scope, skips onboarding | Blocking | Clean install + returning user verified on web locally; no device or upgrade test. Whether a previous public build exists: **OWNER ACTION REQUIRED** |
@@ -247,8 +249,8 @@ Source of truth: [`PHASE1C_DATABASE_SECURITY_PLAN.md`](PHASE1C_DATABASE_SECURITY
 | K12 | Pull requests and approvals | OWNER ACTION REQUIRED | Owner + Dev | Second GitHub account or reviewer | Open PRs for `claude/v1-app-integration` (and decide on `claude/v1-onboarding-auth`, `…-react-refresh`); review draft PRs #1–#6 | Approved PRs | **Blocking** | Ruleset "main-protection" applies to **all branches**: PR + **1 approving review**, no bypass actors. A PR author cannot approve their own PR, so a second reviewer is needed |
 | K13 | Release candidate passes every Blocking row | NOT STARTED | Dev + Owner | All | Walk this file | Every Blocking row `VERIFIED` or waived in writing | **Blocking** | |
 | K14 | Owner approval before production deployment / store submission | OWNER ACTION REQUIRED | Owner | K13 | — | Written approval | **Blocking** | |
-| K15 | Align `react-native` with Expo's current SDK 58 recommendation | NOT STARTED | Dev | — | `npx expo install --fix` in a dedicated change, then native builds | `npx expo install --check` reports up to date | Non-blocking | As of 2026-10-29 Expo expects 0.88.1; the lockfile has 0.88.0 (no app change caused this) |
-| K16 | Native prebuild | BLOCKED | Owner + Dev | E1 | `npx expo prebuild --no-install` | Succeeds for iOS and Android | **Blocking** | Ran at `b5bf441`: fails only with ENOENT `assets/notification.wav` (E-13) |
+| K15 | Align `react-native` with Expo's current SDK 58 recommendation | VERIFIED | Dev | — | `npx expo install react-native` | `npx expo install --check`: dependencies up to date (E-15) | Non-blocking | 0.88.0 → 0.88.1 on 2026-10-30; native builds still to run (E4) |
+| K16 | Native prebuild | VERIFIED | Dev | E1 | `npx expo prebuild --no-install --platform all` (throwaway copy) | Succeeds for iOS and Android; HealthKit entitlement, Health Connect permissions, minSdk 26 present (E-18) | **Blocking** | **Local only.** Not a build: E4/E5 still needed |
 
 ---
 
@@ -272,6 +274,28 @@ Details: [`CALORIE_TRACKING_AND_ENGAGEMENT.md`](CALORIE_TRACKING_AND_ENGAGEMENT.
 
 ---
 
+## M. Daily activity, workouts and the Daily Tracking tab
+Details: [`ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md`](ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md). Migration `20261030120000_v1_activity_tracking.sql` (proposal; not applied anywhere); rollback `supabase/rollback/v1_activity_tracking_rollback.sql` (run before the nutrition rollback).
+
+| ID | Task | Status | Owner | Dependency | Instructions | Verification | Release impact | Notes |
+|---|---|---|---|---|---|---|---|---|
+| M1 | Daily Tracking tab replaces Cart; basket with live count in Home and Menu headers; cart contents preserved | VERIFIED | Dev | — | — | Jest navigation tests; e2e tab, basket, cart (E-16, E-19) | Blocking | **Local only (web).** |
+| M2 | Daily energy budget (platform total / BMR + active / TDEE), negative remaining, snapshots, no double counting | VERIFIED | Dev | L2 | — | SQL E01–E11; e2e TDEE → BMR + active, workout leaves budget unchanged (E-17, E-19) | Blocking | **Local only.** Real provider totals unverified (M7–M8) |
+| M3 | Meals from orders only after delivery, partial portions, never beyond quantity, missing nutrition shown as unavailable | VERIFIED | Dev | H10 (order lifecycle) | — | SQL M01–M06; Jest; e2e served vs confirmed order (E-16, E-17, E-19) | Blocking | `delivered` is not allowed by the staging `orders_status_check`; owner to confirm received statuses |
+| M4 | Activity storage and security (owner-only RLS, server-stamped sync, coverage, 30-day window, disconnect deletes) | VERIFIED | Dev | — | — | SQL A01–A17; postdeploy check; rollback (E-17) | Blocking | **Local only.** |
+| M5 | Workouts: walk, run, cycling, gym; pause/resume, interruption, upload queue, MET estimate, overlap and duplicate rules | VERIFIED | Dev | M10 | — | SQL W01–W16; Jest workout suite; e2e gym session (E-16, E-17, E-19) | Blocking | **Local only.** GPS distance on a device unverified (M9) |
+| M6 | EAS development builds with HealthKit and Health Connect | OWNER ACTION REQUIRED | Owner + Dev | E4, Apple/Google accounts | Enable HealthKit on App ID `com.loption.app`; `eas build --profile development` | Builds install; connection screen shows "available" | **Blocking** | Expo Go cannot run these integrations |
+| M7 | Apple Health on iPhone (+ Apple Watch): values match the Health app; methods per day; workouts imported once | NOT STARTED | Dev | M6 | Device checklist §10 items 1–2 | Evidence entry with screenshots | **Blocking** | Includes "access denied" and motion-sensor fallback |
+| M8 | Health Connect on Android 14 and Android 9–13 | NOT STARTED | Dev | M6, M11 | Device checklist §10 items 3–4 | Evidence entry | **Blocking** | Granted / partial / revoked / not installed |
+| M9 | GPS workout outdoors; app kill mid-session; time zone change | NOT STARTED | Dev | M6 | Device checklist §10 items 5–7 | Evidence entry | Blocking | Foreground-only GPS (DECISIONS #15) |
+| M10 | MET tiers, plausibility limits, duplicate rule, received statuses | OWNER ACTION REQUIRED | Owner | — | Review `DECISIONS.md` proposals | Written decision | Non-blocking | Implemented as proposed |
+| M11 | Play Console Health Connect declaration; App Store health privacy answers; privacy policy covering health data | OWNER ACTION REQUIRED | Owner | K9, K10 | Play Console → App content → Health Connect; App Store Connect → App Privacy | Approved declaration | **Blocking** | Google approval about 1 week + allow-list propagation |
+| M12 | Retention period for health and activity data | OWNER ACTION REQUIRED | Owner | Legal (CNDP) | Decide; Dev adds a purge job | Written decision | Blocking | No automatic purge today |
+| M13 | Activity notifications (movement update, workout completed, weekly summary) | OWNER ACTION REQUIRED | Owner | L7 | Approve any frequency increase | Written decision | Non-blocking | Not implemented |
+| M14 | Activity migration review and staging application | OWNER ACTION REQUIRED | Owner + reviewer | L11 | Review the seven appended monitor entries and the replaced meal-log trigger; apply after the nutrition migration | `postdeploy_verify_activity_readonly.sql` all ok | **Blocking** | Fingerprint `79b9e433…` |
+
+---
+
 ## Evidence log
 Add one line per verification. Keep raw outputs outside the repository if they contain personal data.
 
@@ -291,10 +315,16 @@ Add one line per verification. Keep raw outputs outside the repository if they c
 | E-12 | 2026-10-29 | `b5bf441` | Local Docker: Postgres + GoTrue + PostgREST + SMTP sink + Chromium; fake Expo Push API | `supabase/tests/e2e/run_app_e2e.sh` | 55/55 checks pass |
 | E-13 | 2026-10-29 | `b5bf441` | Local container | `npx expo config --type public`; `npx expo prebuild --no-install --platform android` (throwaway copy) | config OK; prebuild fails: ENOENT `assets/notification.wav` |
 | E-14 | 2026-10-29 | `b5bf441` | Local Docker | `supabase/tests/run_phase1c.sh` | ALL PHASE 1C LOCAL CHECKS PASSED (215; Supabase CLI cases skipped) |
+| E-15 | 2026-10-30 | `ca759f8` | Local container | `npx expo install --check`; `npx tsc --noEmit` (typed routes regenerated); `npx jest`; `npx eslint .` | Dependencies up to date (react-native 0.88.1); 0 errors; 19 suites / 221 tests; 45 errors / 47 warnings, none in files of this work |
+| E-16 | 2026-10-30 | `ca759f8` | Jest (mocked native modules and services) | Activity providers (22), workouts (21), Daily Tracking (16) | Pass. Proves mapping and app logic only, not HealthKit, Health Connect, GPS or devices |
+| E-17 | 2026-10-30 | `ca759f8` | Local Docker Postgres 17.6 | `supabase/tests/run_v1_activity.sh`; `run_v1_nutrition.sh`; `run_v1_onboarding_offer.sh`; `run_phase1c.sh` | ALL V1 ACTIVITY CHECKS PASSED (50 SQL tests; refusals; fingerprint `79b9e433…`; nutrition/V1/Phase 1C regression with T12 changed on purpose; parallel sync/upload/overlap; rollback, re-apply); nutrition, onboarding and Phase 1C harnesses all passed |
+| E-18 | 2026-10-30 | `ca759f8` | Local container | `npx expo export -p web/ios/android`; `npx expo prebuild --no-install --platform all` (throwaway copy) | Exports exit 0; prebuild succeeds (HealthKit entitlement, Health Connect permissions and rationale activity, minSdk 26, motion and HealthKit usage texts) |
+| E-19 | 2026-10-30 | `ca759f8` | Local Docker: Postgres + GoTrue + PostgREST + SMTP sink + Chromium (web build) | `supabase/tests/e2e/run_app_e2e.sh` | 63/63 journey checks (71 with service checks): Suivi tab replaces Panier, basket count and cart preserved, TDEE → BMR + active budget, partial-day total dropped, gym session with server MET estimate leaves the budget unchanged, undelivered order refused, delivered order logged once. **Web only: no HealthKit, Health Connect or GPS** |
 
-## Not verifiable from this repository (as of `b5bf441`)
+## Not verifiable from this repository (as of `ca759f8`)
 - Anything on the hosted Supabase project (schema drift since 2026-10-15, Auth settings, Storage/CDN headers, Realtime).
 - Real Google, Apple and Resend behaviour; Apple private-relay delivery.
 - Native permission dialogs, push delivery (APNs/FCM/Expo), notification taps on devices, native builds, store review.
+- Apple Health, Health Connect, the iPhone motion sensor and workout GPS on real devices (checklist M6–M9).
 - The Edge Function in the Supabase runtime and `pg_cron`/`pg_net` scheduling on a hosted project.
 - Whether a previous production build or store listing already exists.

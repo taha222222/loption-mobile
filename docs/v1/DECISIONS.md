@@ -14,6 +14,10 @@ with date and source. Details live in the linked docs; do not copy them here.
 | Sign-in with Google, Apple and e-mail with verification; 5-step onboarding (sex input incl. "prefer not to say", age, weight, height, activity); Mifflin–St Jeor BMR/TDEE | Owner task brief, 2026-10-28 |
 | First order gets free delivery, enforced by the server | Owner task brief, 2026-10-28 (rules still open, below) |
 | Daily target = TDEE when no goal policy is approved; tracking reminders are opt-in | Owner Phase 2 brief, 2026-10-29 |
+| Daily Tracking replaces the Cart tab; the cart stays reachable from a header basket; checkout stays disabled | Owner activity brief, 2026-10-30 |
+| Daily energy budget: platform total energy, else BMR + platform active energy, else the TDEE baseline; never TDEE + steps + workouts; remaining not clamped | Owner activity brief, 2026-10-30 ([details](ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md#5-daily-energy-calculation)) |
+| Health permissions optional and read-only; GPS only during a workout the customer started; no sharing or public feed in this phase | Owner activity brief, 2026-10-30 |
+| A meal from an order counts only after delivery, never automatically, never beyond the ordered quantity | Owner activity brief, 2026-10-30 |
 
 ## Proposed, not approved
 | Proposal | Where |
@@ -23,6 +27,12 @@ with date and source. Details live in the linked docs; do not copy them here.
 | Onboarding input ranges (age 13–100 etc.) are data validation only, not an age policy | `REMAINING_SETUP_AND_RELEASE_TASKS.md` C7 |
 | Phase 1C staging compatibility test plan | `PHASE1C_DATABASE_SECURITY_PLAN.md` §7b |
 | Disable "Place Order" with an explanation until checkout is ready | checklist H11 |
+| Order statuses that mean "received": `delivered` (app driver flow) and `served` (counter flow); `delivered` is not allowed by the staging `orders_status_check` | `order_received()` in the activity migration; checklist H10 |
+| Workout MET tiers (Compendium 2011, net of rest) and the plausibility limits (walk 3.5, run 7, cycle 25 m/s) | `ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md` §7 |
+| Platform total energy is ignored when below BMR; activity data older than 120 min today is shown as stale; sync window 7 days, write window 30 days | same, §4–§5 |
+| App vs imported duplicate rule: same kind, ≥ 50 % overlap; measured provider > provider > app | same, §6 |
+| No step goal (no settings for it exist; actual steps shown without a goal) | same, §1 |
+| Custom notification sound: the unused, missing `notification.wav` reference was removed so native builds work; a licensed sound can be added later | `app.json`, 2026-10-30 |
 
 ## Security constraints (always apply)
 - No secret in the app, in `EXPO_PUBLIC_*` or in git; the Resend key lives only in Supabase SMTP / server secrets.
@@ -46,4 +56,8 @@ with date and source. Details live in the linked docs; do not copy them here.
 | 9 | Hide out-of-scope screens (upgrade, my-plan, reorder, subscription deep link) | I3, Phase 0 X1 |
 | 10 | Phase 1C: independent review, initial-admin UUID, staging gates, meal-images (M2) mitigation | J |
 | 11 | Driver pay and cash handling | `PHASE0_AUDIT.md` §4 |
-| 12 | Licensed `notification.wav` or remove the custom sound | E |
+| 12 | Optional: a licensed custom notification sound (the missing reference was removed) | E |
+| 13 | Activity notifications (daily movement update, workout completed, weekly summary): each adds notifications, not implemented | L |
+| 14 | Retention period for health and activity data (no automatic purge yet) | M |
+| 15 | Background GPS during a workout (needs "Always"/foreground-service declarations in both stores); today GPS is foreground-only | M |
+| 16 | MET tiers and the received-order statuses above | M, H10 |

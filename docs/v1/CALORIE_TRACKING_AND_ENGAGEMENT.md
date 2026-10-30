@@ -2,6 +2,12 @@
 
 Status: **implemented and verified locally; not deployed.** Branch `claude/v1-nutrition-tracking` (based on `claude/v1-release-checklist` → `claude/v1-app-integration`, which already integrates Phase 1A, Phase 1C revision 7 and redesign V2 / Expo SDK 58). Phase 1C remains **NOT READY FOR STAGING**; this work depends on it and does not change that. Checkout stays disabled. No hosted Supabase project, Expo account or provider was contacted.
 
+> **Changed by the activity phase (2026-10-30, [`ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md`](ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md)):**
+> (1) the Daily Tracking tab and the home card show a daily *budget* that uses measured platform energy when available
+> (platform total, else BMR + active energy, else this TDEE target); the stored target snapshot and the reminders are
+> unchanged; (2) a meal from an order can be logged only once the order was received (`delivered` or `served`);
+> (3) the Cart tab became the Suivi tab.
+
 ## 1. Calculation engine
 
 | | |
