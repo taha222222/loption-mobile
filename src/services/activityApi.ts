@@ -4,6 +4,7 @@
 // the owner, sync time and day coverage.
 import { supabase } from '../lib/supabase';
 import type { ActivitySource, DailyReading } from '../activity/types';
+import { DailyBalance, toDailyBalances } from '../activity/dailyBalance';
 
 export type ApiError = { code?: string; message?: string };
 export type Result<T> = { data: T; error: null } | { data: null; error: ApiError };
@@ -43,4 +44,11 @@ export async function deleteActivitySource(source: ActivitySource): Promise<Resu
   const { error } = await supabase.from('activity_daily_totals').delete().eq('source', source);
   if (error) return { data: null, error };
   return { data: true, error: null };
+}
+
+// Daily balance (budget, consumed, remaining, movement, workouts) for each day.
+export async function fetchDailyBalance(from: string, to: string, today: string): Promise<Result<DailyBalance[]>> {
+  const { data, error } = await supabase.rpc('activity_daily_summary', { p_from: from, p_to: to, p_today: today });
+  if (error) return { data: null, error };
+  return { data: toDailyBalances(data as any[], from, to), error: null };
 }

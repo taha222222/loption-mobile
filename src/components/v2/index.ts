@@ -27,3 +27,7 @@ export { Stepper } from './Stepper';
 export { StreakCard } from './StreakCard';
 export { IconButton } from './IconButton';
 export { confirmAction } from './confirm';
+export { BasketButton } from './BasketButton';
+export { DailyBalanceCard } from './DailyBalanceCard';
+export { MovementCard } from './MovementCard';
+export { WeeklyBalanceChart } from './WeeklyBalanceChart';

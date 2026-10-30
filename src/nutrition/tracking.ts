@@ -97,6 +97,7 @@ export function trackingErrorMessage(error: { code?: string; message?: string } 
   if (/previous 6 days/i.test(msg)) return 'Vous pouvez enregistrer un repas pour aujourd’hui et les 6 jours précédents.';
   if (/more servings logged than were ordered/i.test(msg)) return 'Toutes les portions de cette commande sont déjà enregistrées.';
   if (/order item not found/i.test(msg)) return 'Cette commande n’est pas liée à votre compte.';
+  if (/not been delivered/i.test(msg)) return 'Cette commande n’a pas encore été livrée.';
   if (/unknown time zone/i.test(msg)) return 'Le fuseau horaire de l’appareil n’est pas reconnu.';
   if (/already removed/i.test(msg)) return 'Ce repas a déjà été retiré.';
   if (error?.code === '23514') return 'Quantité non valide (par quarts de portion, jusqu’à 10).';

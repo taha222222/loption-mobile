@@ -426,7 +426,78 @@ end
 $cv$;
 -- END GENERATED MONITOR
 
+-- Nutrition log trigger as defined by the nutrition migration (generated
+-- from that migration by supabase/tools/generate_nutrition_monitor.py).
+-- BEGIN GENERATED NUTRITION LOG TRIGGER
+create or replace function public.nutrition_log_entry_prepare()
+returns trigger
+language plpgsql set search_path = ''
+as $$
+declare
+  m record;
+  oi record;
+  today date;
+  already numeric;
+begin
+  if current_user in ('anon', 'authenticated') then
+    if auth.uid() is null then
+      raise exception 'not signed in' using errcode = '42501';
+    end if;
+    new.user_id := auth.uid();
+  end if;
+  if not public.is_valid_time_zone(new.time_zone) then
+    raise exception 'unknown time zone' using errcode = '22023';
+  end if;
+  today := (now() at time zone new.time_zone)::date;
+  if new.local_date > today or new.local_date < today - 6 then
+    raise exception 'meals can be logged for today and the previous 6 days only' using errcode = '22023';
+  end if;
+  if new.meal_id is null then
+    raise exception 'a meal is required' using errcode = '22023';
+  end if;
+  select name, calories, protein, carbs, fat into m from public.meals where id = new.meal_id;
+  if not found then
+    raise exception 'unknown meal' using errcode = '22023';
+  end if;
+  if m.calories is null or m.calories <= 0 then
+    raise exception 'this meal has no reliable calorie value' using errcode = '22023';
+  end if;
+  if new.order_item_id is not null then
+    select i.meal_id, i.quantity into oi
+      from public.order_items i join public.orders o on o.id = i.order_id
+     where i.id = new.order_item_id and o.user_id = new.user_id;
+    if not found then
+      raise exception 'order item not found for this account' using errcode = '42501';
+    end if;
+    if oi.meal_id is distinct from new.meal_id then
+      raise exception 'order item and meal do not match' using errcode = '22023';
+    end if;
+    -- Serialise concurrent logs of the same order item.
+    perform pg_advisory_xact_lock(hashtextextended('nutrition.order_item:' || new.order_item_id::text, 0));
+    select coalesce(sum(servings), 0) into already from public.nutrition_log_entries
+     where order_item_id = new.order_item_id and deleted_at is null;
+    if already + new.servings > oi.quantity then
+      raise exception 'more servings logged than were ordered' using errcode = '22023';
+    end if;
+  end if;
+  new.meal_name := m.name;
+  new.kcal_per_serving := m.calories;
+  new.kcal := round(m.calories * new.servings)::integer;
+  new.protein_g := case when m.protein is null then null else round(m.protein * new.servings, 1) end;
+  new.carbs_g := case when m.carbs is null then null else round(m.carbs * new.servings, 1) end;
+  new.fat_g := case when m.fat is null then null else round(m.fat * new.servings, 1) end;
+  new.logged_at := now();
+  new.deleted_at := null;
+  return new;
+end;
+$$;
+-- END GENERATED NUTRITION LOG TRIGGER
+revoke all on function public.nutrition_log_entry_prepare() from public, anon, authenticated;
+
 -- Drop (triggers, functions, tables)
+drop function public.order_received(text);
+drop function public.activity_daily_summary(date, date, date);
+drop function public.activity_energy_estimate(integer, integer, integer, integer, text);
 drop function public.activity_workouts(date, date);
 drop trigger trg_workout_session_prepare on public.workout_sessions;
 drop function public.workout_session_prepare();
@@ -459,6 +530,10 @@ begin
     from public.containment_violations() v where v.category in ('drift', 'containment');
   if bad is not null then
     raise exception 'V1 activity rollback postcondition failed; aborting the rollback transaction: %', bad;
+  end if;
+  if (select md5(prosrc) from pg_proc where oid = 'public.nutrition_log_entry_prepare()'::regprocedure)
+     <> '18e9c3b8ae9e91358617bbe024a2c9f2' then
+    raise exception 'V1 activity rollback postcondition failed: nutrition_log_entry_prepare() is not the nutrition-migration version';
   end if;
   if to_regclass('public.activity_daily_totals') is not null or to_regclass('public.workout_sessions') is not null then
     raise exception 'V1 activity rollback postcondition failed: objects remain';

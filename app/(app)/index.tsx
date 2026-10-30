@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../src/theme';
 import {
   ActionTile,
+  BasketButton,
   BrandMark,
   CalorieTodayCard,
   FirstOrderOfferBanner,
@@ -26,6 +27,7 @@ import {
 import { useAuthStore } from '../../src/stores/authStore';
 import { useUserStore } from '../../src/stores/userStore';
 import { useNutritionStore } from '../../src/stores/nutritionStore';
+import { useTrackingStore } from '../../src/stores/trackingStore';
 import { supabase } from '../../src/lib/supabase';
 
 interface Meal {
@@ -41,11 +43,15 @@ export default function HomeScreen() {
   const { profile, loadProfile } = useUserStore();
   const { today, history, streak, status: nutritionStatus, refresh: refreshNutrition } = useNutritionStore();
   const todaySummary = history.find((d) => d.date === today) ?? null;
+  const trackingDays = useTrackingStore((s) => s.days);
+  const todayBalance = trackingDays.find((d) => d.date === today) ?? null;
 
+  const refreshTracking = useTrackingStore((s) => s.refresh);
   useFocusEffect(
     useCallback(() => {
       refreshNutrition();
-    }, [refreshNutrition])
+      refreshTracking();
+    }, [refreshNutrition, refreshTracking])
   );
   const [recommendedMeals, setRecommendedMeals] = useState<Meal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,26 +94,31 @@ export default function HomeScreen() {
             {user?.email?.split('@')[0] || 'Utilisateur'}
           </Text>
         </View>
-        <TouchableOpacity
-          style={styles.notificationButton}
-          accessibilityRole="button"
-          accessibilityLabel="Rappels de suivi"
-          onPress={() => router.push('/(app)/nutrition-reminders')}
-        >
-          <Ionicons name="notifications-outline" size={22} color={theme.colors.ink} />
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={styles.notificationButton}
+            accessibilityRole="button"
+            accessibilityLabel="Rappels de suivi"
+            onPress={() => router.push('/(app)/nutrition-reminders')}
+          >
+            <Ionicons name="notifications-outline" size={22} color={theme.colors.ink} />
+          </TouchableOpacity>
+          <BasketButton />
+        </View>
       </View>
 
       {/* First-order offer (display only; applied by the server at checkout) */}
       <FirstOrderOfferBanner status={profile?.first_order_offer_status} />
 
-      {/* Today's calories (real targets and logged meals) */}
+      {/* Today's calories: the Daily Tracking budget when known (it follows
+          measured activity), else the nutrition target; logged meals. */}
       <CalorieTodayCard
-        targetKcal={todaySummary?.targetKcal ?? null}
+        targetKcal={todayBalance ? todayBalance.budgetKcal : (todaySummary?.targetKcal ?? null)}
+        targetName={todayBalance?.method && todayBalance.method !== 'tdee_baseline' ? 'budget' : 'objectif'}
         consumedKcal={todaySummary?.consumedKcal ?? null}
         streak={streak?.current ?? null}
         loading={nutritionStatus !== 'ready'}
-        onPress={() => router.push('/(app)/nutrition')}
+        onPress={() => router.push('/(app)/tracking')}
       />
 
       {/* Quick Actions */}
@@ -121,7 +132,7 @@ export default function HomeScreen() {
         <ActionTile
           icon="pulse"
           label="Suivre mes progrès"
-          onPress={() => router.push('/(app)/nutrition')}
+          onPress={() => router.push('/(app)/tracking')}
         />
         <ActionTile icon="calendar-outline" label="Plan repas" />
       </View>
@@ -207,6 +218,10 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.extrabold,
     color: theme.colors.ink,
     letterSpacing: -0.4,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
   },
   notificationButton: {
     width: 48,

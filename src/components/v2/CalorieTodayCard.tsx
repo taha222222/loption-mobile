@@ -8,6 +8,7 @@ import { progressShare, remainingKcal } from '../../nutrition/tracking';
 
 interface CalorieTodayCardProps {
   targetKcal: number | null;
+  targetName?: 'objectif' | 'budget'; // 'budget' when it follows measured activity
   consumedKcal: number | null; // null = nothing logged today
   streak?: number | null;
   loading?: boolean;
@@ -17,7 +18,15 @@ interface CalorieTodayCardProps {
 // Today at a glance: remaining calories, progress toward the target, and
 // what was logged. Every value is real (server data); unknown values are
 // shown as unknown, never as placeholders.
-export const CalorieTodayCard: React.FC<CalorieTodayCardProps> = ({ targetKcal, consumedKcal, streak, loading, onPress }) => {
+export const CalorieTodayCard: React.FC<CalorieTodayCardProps> = ({
+  targetKcal,
+  targetName = 'objectif',
+  consumedKcal,
+  streak,
+  loading,
+  onPress,
+}) => {
+  const name = targetName;
   const consumed = consumedKcal ?? 0;
   const remaining = remainingKcal(targetKcal, consumedKcal);
   const share = progressShare(targetKcal, consumedKcal);
@@ -26,13 +35,13 @@ export const CalorieTodayCard: React.FC<CalorieTodayCardProps> = ({ targetKcal, 
     targetKcal === null
       ? 'Consommé aujourd’hui'
       : over
-        ? 'Au-delà de l’objectif'
+        ? `Au-delà ${name === 'budget' ? 'du budget' : 'de l’objectif'}`
         : 'Calories restantes';
   const big = targetKcal === null ? consumed : Math.abs(remaining ?? 0);
   const a11y =
     targetKcal === null
       ? `${consumed} kilocalories consommées aujourd’hui. Objectif indisponible.`
-      : `${consumed} kilocalories consommées sur un objectif de ${targetKcal}. ${
+      : `${consumed} kilocalories consommées sur un ${name} de ${targetKcal}. ${
           over ? `Objectif dépassé de ${Math.abs(remaining!)}` : `${remaining} restantes`
         }.`;
 
@@ -50,7 +59,7 @@ export const CalorieTodayCard: React.FC<CalorieTodayCardProps> = ({ targetKcal, 
         {targetKcal !== null ? (
           <ProgressRing progress={share} size={108} stroke={11}>
             <Text style={styles.ringValue}>{`${Math.round((consumed / targetKcal) * 100)} %`}</Text>
-            <Text style={styles.ringLabel}>DE L’OBJECTIF</Text>
+            <Text style={styles.ringLabel}>{name === 'budget' ? 'DU BUDGET' : 'DE L’OBJECTIF'}</Text>
           </ProgressRing>
         ) : null}
       </View>
@@ -60,8 +69,8 @@ export const CalorieTodayCard: React.FC<CalorieTodayCardProps> = ({ targetKcal, 
             ? 'Aucun repas enregistré aujourd’hui · objectif indisponible'
             : 'Objectif indisponible : complétez votre profil nutritionnel'
           : consumedKcal === null
-            ? `Aucun repas enregistré aujourd’hui · objectif ${formatNumber(targetKcal)} kcal`
-            : `${formatNumber(consumed)} consommées · objectif ${formatNumber(targetKcal)} kcal`}
+            ? `Aucun repas enregistré aujourd’hui · ${name} ${formatNumber(targetKcal)} kcal`
+            : `${formatNumber(consumed)} consommées · ${name} ${formatNumber(targetKcal)} kcal`}
       </Text>
       {streak !== undefined && streak !== null ? (
         <View style={styles.footer}>
@@ -76,7 +85,7 @@ export const CalorieTodayCard: React.FC<CalorieTodayCardProps> = ({ targetKcal, 
   );
 
   return onPress ? (
-    <TouchableOpacity activeOpacity={0.9} onPress={onPress} accessibilityRole="button" accessibilityHint="Ouvre votre suivi nutritionnel">
+    <TouchableOpacity activeOpacity={0.9} onPress={onPress} accessibilityRole="button" accessibilityHint="Ouvre votre suivi quotidien">
       {content}
     </TouchableOpacity>
   ) : (

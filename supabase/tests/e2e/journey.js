@@ -348,6 +348,91 @@ let sink = null; // SMTP sink process, always stopped on exit
   }
   await shot(page2, '09-profile');
 
+  // ------------------------------------------- daily tracking + basket
+  await page2.goto(WEB + '/');
+  await waitForText(page2, 'Livraison offerte sur votre première commande', 20000);
+  check((await page2.getByText('Suivi', { exact: true }).count()) >= 1 && (await page2.getByText('Panier', { exact: true }).count()) === 0,
+    'tab bar: "Suivi" (Daily Tracking) replaces the "Panier" tab');
+  check((await page2.getByLabel('Panier vide').count()) === 1, 'home header shows the basket');
+  await page2.goto(WEB + '/menu');
+  await page2.getByLabel('Ajouter au panier').first().waitFor({ timeout: 20000 });
+  await page2.getByLabel('Ajouter au panier').first().click();
+  await page2.getByLabel('Ajouter au panier').first().click();
+  check((await page2.getByLabel('Panier, 2 articles').count()) === 1, 'menu basket shows the live item count (2)');
+  await page2.getByLabel('Panier, 2 articles').click();
+  await page2.waitForURL((u) => u.pathname === '/cart', { timeout: 15000 });
+  await waitForText(page2, 'Panier (2)');
+  pass('basket opens the cart with its items preserved');
+  await shot(page2, '12-cart-from-basket');
+
+  await page2.getByText('Suivi', { exact: true }).first().click();
+  await page2.waitForURL((u) => u.pathname === '/tracking', { timeout: 15000 });
+  await waitForText(page2, 'Mon bilan', 20000);
+  pass('the Suivi tab opens Daily Tracking');
+  const consumedToday = Number(sql(`select coalesce(sum(kcal), 0) from public.nutrition_log_entries where user_id = '${userId}' and deleted_at is null and local_date = '${todayLocal}'`));
+  const balanceLabel = async () => (await page2.getByTestId('daily-balance-card').getAttribute('aria-label')) || '';
+  await page2.waitForTimeout(1500);
+  check((await balanceLabel()).includes(`Budget 1614 kilocalories, ${consumedToday} consommées, ${1614 - consumedToday} restantes`) && (await balanceLabel()).includes('Estimation habituelle (TDEE)'),
+    `no activity data: budget = TDEE 1 614, consumed ${consumedToday}, remaining ${1614 - consumedToday} (${await balanceLabel()})`);
+  check((await page2.getByText('Activité non disponible ici').count()) === 1, 'web: no health provider, said in words (no fake steps)');
+  await shot(page2, '13-tracking-tdee');
+
+  // A day synced from the phone (the web build cannot read HealthKit): steps and active energy.
+  const syncDay = await page2.evaluate(async ([u, t, d]) => {
+    const r = await fetch(u, { method: 'POST', headers: { Authorization: `Bearer ${t}`, apikey: 'x', 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ local_date: d, source: 'apple_health', time_zone: 'Africa/Casablanca', steps: 6230, distance_m: 4480, active_energy_kcal: 310, total_energy_kcal: 2400 }) });
+    return r.status;
+  }, [`${REST}/activity_daily_totals?on_conflict=user_id,local_date,source`, token2, todayLocal]);
+  check(syncDay < 300 && sql(`select coverage || ':' || coalesce(total_energy_kcal::text, 'null') from public.activity_daily_totals where user_id = '${userId}'`) === 'partial:null',
+    `activity sync stored; today is partial and its "total" energy was dropped by the server (${syncDay})`);
+  const bmr = Number(sql(`select bmr_kcal from public.user_profiles where user_id = '${userId}'`));
+  await page2.reload();
+  await page2.getByText(/6\s230/).first().waitFor({ timeout: 20000 });
+  const withActivity = await balanceLabel();
+  check(withActivity.includes(`Budget ${bmr + 310} kilocalories`) && withActivity.includes(`${bmr + 310 - consumedToday} restantes`) && withActivity.includes('Métabolisme de base + activité mesurée'),
+    `with measured activity: budget = BMR ${bmr} + active 310, no TDEE added (${withActivity})`);
+  await shot(page2, '14-tracking-activity');
+
+  // A gym session recorded in the app (timer; >= 1 minute): server MET estimate, budget unchanged.
+  await page2.getByLabel('Démarrer : Salle de sport').click();
+  await waitForText(page2, 'Démarrer · Salle de sport', 15000);
+  await page2.getByText('Démarrer · Salle de sport').click();
+  await waitForText(page2, 'En cours', 15000);
+  await page2.getByText('Pause', { exact: true }).click();
+  await waitForText(page2, 'En pause');
+  await page2.getByText('Reprendre', { exact: true }).click();
+  await page2.waitForTimeout(62000);
+  await page2.getByText('Terminer', { exact: true }).click();
+  await waitForText(page2, 'Séance enregistrée', 20000);
+  const ws = sql(`select kind || ':' || energy_source || ':' || (energy_kcal is not null) || ':' || weight_kg from public.workout_sessions where user_id = '${userId}'`);
+  check(/^gym:met_estimate:true:60/.test(ws), `gym session stored with a server MET estimate (${ws})`);
+  await page2.goto(WEB + '/tracking');
+  await waitForText(page2, 'Mon bilan', 20000);
+  await page2.waitForTimeout(1500);
+  check((await balanceLabel()).includes(`Budget ${bmr + 310} kilocalories`), 'the workout does not change the daily budget (no double counting)');
+  check((await page2.getByText(/estimation \(MET × poids × durée\)/).count()) >= 1, 'timeline shows the workout energy labelled as an estimate');
+
+  // "J’ai mangé ce repas" only for a received order.
+  const orderOk = sql(`with o as (insert into public.orders (order_number, total, subtotal, delivery_fee, status, payment_method, user_id) values ('E2E-1', 60, 60, 0, 'served', 'cash', '${userId}') returning id) select id from o`);
+  sql(`insert into public.order_items (order_id, meal_id, meal_name, quantity, price) values ('${orderOk}', '00000000-0000-0000-0000-00000000aa01', 'Test bowl', 1, 60)`);
+  const orderLate = sql(`with o as (insert into public.orders (order_number, total, subtotal, delivery_fee, status, payment_method, user_id) values ('E2E-2', 60, 60, 0, 'confirmed', 'cash', '${userId}') returning id) select id from o`);
+  await page2.goto(`${WEB}/log-meal?orderId=${orderLate}`);
+  await waitForText(page2, 'Commande pas encore livrée', 20000);
+  pass('an order not yet delivered cannot be logged as eaten');
+  await page2.goto(`${WEB}/log-meal?orderId=${orderOk}`);
+  await waitForText(page2, 'Cette commande', 20000);
+  await page2.getByLabel(/^Test bowl\. 500 kcal \/ portion · commandé ×1$/).click();
+  await page2.getByText('Enregistrer', { exact: true }).click();
+  await page2.waitForTimeout(2000);
+  check(sql(`select count(*) || ':' || sum(kcal) from public.nutrition_log_entries e join public.order_items i on i.id = e.order_item_id where i.order_id = '${orderOk}'`) === '1:500',
+    'delivered order: "I ate this meal" logged once with the meal record’s 500 kcal');
+  await page2.goto(WEB + '/tracking');
+  await waitForText(page2, 'Mon bilan', 20000);
+  await page2.waitForTimeout(1500);
+  check((await balanceLabel()).includes(`${consumedToday + 500} consommées, ${bmr + 310 - consumedToday - 500} restantes`),
+    `consumed and remaining follow the logged meal (${await balanceLabel()})`);
+  await shot(page2, '15-tracking-after-meal');
+
   check(pageErrors.length === 0, `no uncaught page errors${pageErrors.length ? ': ' + pageErrors.slice(0, 3).join(' | ') : ''}`);
   sink.kill();
   await browser.close();

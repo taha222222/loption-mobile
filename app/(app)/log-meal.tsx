@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../src/theme';
 import {
@@ -17,22 +17,26 @@ import {
 import { addDays } from '../../src/nutrition/dates';
 import { formatServings } from '../../src/nutrition/tracking';
 import { useNutritionStore } from '../../src/stores/nutritionStore';
+import { useTrackingStore } from '../../src/stores/trackingStore';
 import { fetchLoggableMeals, fetchOrderedMeals, LoggableMeal, OrderedMeal } from '../../src/services/nutritionApi';
 
 type Choice = { meal: LoggableMeal; orderItem: OrderedMeal | null };
 
 const STEP = 0.25;
 
-function loadMeals() {
+function loadMeals(orderId?: string) {
   const since = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
-  return Promise.all([fetchLoggableMeals(), fetchOrderedMeals(since)]).then(([meals, ordered]) => ({ meals, ordered }));
+  return Promise.all([fetchLoggableMeals(), fetchOrderedMeals(since, orderId)]).then(([meals, ordered]) => ({ meals, ordered }));
 }
 const MAX_SERVINGS = 10;
 
 // Log a meal the customer actually ate. Calories come from the meal's
 // nutrition data on the server; meals without a reliable calorie value are
-// not offered. An ordered meal is only logged when the customer says so.
+// not offered. An ordered meal is only logged when the customer says so,
+// and only once the order was received. With ?orderId= (from an order:
+// "J’ai mangé ce repas") only that order's meals are listed.
 export default function LogMealScreen() {
+  const { orderId } = useLocalSearchParams<{ orderId?: string }>();
   const { today, logMeal } = useNutritionStore();
   const [meals, setMeals] = useState<LoggableMeal[] | null>(null);
   const [ordered, setOrdered] = useState<OrderedMeal[]>([]);
@@ -52,15 +56,15 @@ export default function LogMealScreen() {
     setMeals(r.meals.data);
     setOrdered(r.ordered.data);
   };
-  const load = () => loadMeals().then(apply);
+  const load = () => loadMeals(orderId).then(apply);
 
   useEffect(() => {
     let active = true;
-    loadMeals().then((r) => active && apply(r));
+    loadMeals(orderId).then((r) => active && apply(r));
     return () => {
       active = false;
     };
-  }, []);
+  }, [orderId]);
 
   const byId = useMemo(() => new Map((meals ?? []).map((m) => [m.id, m])), [meals]);
   const maxServings = choice?.orderItem ? Math.min(MAX_SERVINGS, choice.orderItem.quantity) : MAX_SERVINGS;
@@ -86,6 +90,8 @@ export default function LogMealScreen() {
       setError(result.message); // a retry reuses the same request key: never a duplicate
       return;
     }
+    // The Daily Tracking balance (consumed / remaining) follows immediately.
+    useTrackingStore.getState().refresh({ sync: false });
     router.back();
   };
 
@@ -100,7 +106,7 @@ export default function LogMealScreen() {
   return (
     <Screen scroll>
       <ScreenHeader
-        title="Ajouter un repas"
+        title={orderId ? 'J’ai mangé ce repas' : 'Ajouter un repas'}
         subtitle="Ce que vous avez réellement mangé"
         right={
           <TouchableOpacity onPress={() => router.back()} style={styles.close} accessibilityRole="button" accessibilityLabel="Fermer">
@@ -122,9 +128,19 @@ export default function LogMealScreen() {
         </View>
       </View>
 
+      {orderId && meals && ordered.length === 0 ? (
+        <View style={styles.section}>
+          <FormMessage
+            title="Commande pas encore livrée"
+            message="Un repas commandé peut être enregistré une fois la commande reçue."
+            tone="info"
+          />
+        </View>
+      ) : null}
+
       {ordered.length > 0 ? (
         <View style={styles.section}>
-          <SectionHeader inset={false} title="Mes commandes récentes" />
+          <SectionHeader inset={false} title={orderId ? 'Cette commande' : 'Mes commandes reçues'} />
           <SurfaceCard style={styles.list}>
             {ordered.map((o) => {
               const meal = byId.get(o.mealId);
@@ -133,7 +149,11 @@ export default function LogMealScreen() {
                 <MealRow
                   key={o.orderItemId}
                   name={o.mealName}
-                  detail={meal ? `${formatNumber(meal.calories)} kcal / portion · commandé ×${o.quantity}` : 'Pas de valeur calorique fiable'}
+                  detail={
+                    meal
+                      ? `${formatNumber(meal.calories)} kcal / portion · commandé ×${o.quantity}`
+                      : 'Valeurs nutritionnelles indisponibles : ne peut pas être enregistré'
+                  }
                   selected={selected}
                   disabled={!meal}
                   onPress={() => meal && select({ meal, orderItem: o })}

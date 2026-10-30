@@ -370,3 +370,167 @@ do $$ begin
     public.activity_met('walk', null) = 3.5 and public.activity_met('walk', 1.7) = 4.3 and public.activity_met('run', 4.5) = 14.5
       and public.activity_met('cycle', 7.0) = 10.0 and public.activity_met('gym', null) = 3.5, 'tiers');
 end $$;
+
+-- ============================ Energy model ============================
+do $$ declare a record; b record; c record; d record; e record; f record; begin
+  select * into a from public.activity_energy_estimate(1649, 2556, 400, 2300, 'complete');
+  select * into b from public.activity_energy_estimate(1649, 2556, 400, null, 'partial');
+  select * into c from public.activity_energy_estimate(1649, 2556, null, null, null);
+  select * into d from public.activity_energy_estimate(null, null, 400, null, 'partial');
+  select * into e from public.activity_energy_estimate(null, 2556, 400, null, 'partial');
+  select * into f from public.activity_energy_estimate(1649, 2556, 400, 1200, 'complete');
+  perform atests.rec('E01', 'energy', 'platform total for a finished day; else BMR + active; else TDEE; nothing without inputs',
+    a.estimate_kcal = 2300 and a.method = 'platform_total' and b.estimate_kcal = 2049 and b.method = 'bmr_plus_active'
+      and c.estimate_kcal = 2556 and c.method = 'tdee_baseline' and d.estimate_kcal is null and d.method is null,
+    format('%s/%s %s/%s %s/%s %s/%s', a.estimate_kcal, a.method, b.estimate_kcal, b.method, c.estimate_kcal, c.method, d.estimate_kcal, d.method));
+  perform atests.rec('E02', 'energy', 'missing BMR: active energy cannot be used, the TDEE baseline remains; a total below BMR is ignored',
+    e.estimate_kcal = 2556 and e.method = 'tdee_baseline' and f.estimate_kcal = 2049 and f.method = 'bmr_plus_active',
+    format('%s/%s %s/%s', e.estimate_kcal, e.method, f.estimate_kcal, f.method));
+end $$;
+
+do $$ declare s record; r text; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f01');
+  r := atests.attempt(format($f$insert into public.nutrition_log_entries (client_request_id, local_date, time_zone, meal_id, servings)
+                                values (gen_random_uuid(), %L, 'Africa/Casablanca', '00000000-0000-0000-0000-00000000aa01', 1)$f$, atests.d(0)));
+  select * into s from public.activity_daily_summary(atests.d(0), atests.d(0), atests.d(0));
+  perform atests.reset();
+  perform atests.rec('E03', 'energy', 'today: budget = BMR 1649 + active 350 so far; consumed 500 from the meal record; remaining 1499',
+    r = 'ok:1' and s.energy_estimate_kcal = 1999 and s.energy_method = 'bmr_plus_active' and s.consumed_kcal = 500
+      and s.remaining_kcal = 1499 and s.steps = 7000 and s.activity_source = 'apple_health',
+    format('%s %s/%s consumed=%s remaining=%s', r, s.energy_estimate_kcal, s.energy_method, s.consumed_kcal, s.remaining_kcal));
+end $$;
+
+do $$ declare s record; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f01');
+  select * into s from public.activity_daily_summary(atests.d(-1), atests.d(-1), atests.d(0));
+  perform atests.reset();
+  perform atests.rec('E04', 'energy', 'a finished day with a platform total uses it (2290); no meal logged stays NULL, not 0',
+    s.energy_estimate_kcal = 2290 and s.energy_method = 'platform_total' and s.consumed_kcal is null and not s.has_meal_log
+      and s.remaining_kcal = 2290,
+    format('%s/%s consumed=%s', s.energy_estimate_kcal, s.energy_method, coalesce(s.consumed_kcal::text, 'null')));
+end $$;
+
+do $$ declare before record; after record; r text; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f01');
+  select * into before from public.activity_daily_summary(atests.d(0), atests.d(0), atests.d(0));
+  r := atests.attempt($q$insert into public.workout_sessions (source, client_session_id, kind, started_at, ended_at, active_seconds, time_zone)
+                         values ('app', '22222222-0000-0000-0000-0000000000e5', 'run',
+                                 greatest(now() - interval '40 minutes', (now() at time zone 'Africa/Casablanca')::date::timestamp at time zone 'Africa/Casablanca'),
+                                 greatest(now() - interval '40 minutes', (now() at time zone 'Africa/Casablanca')::date::timestamp at time zone 'Africa/Casablanca') + interval '30 minutes',
+                                 1800, 'Africa/Casablanca')$q$);
+  select * into after from public.activity_daily_summary(atests.d(0), atests.d(0), atests.d(0));
+  perform atests.reset();
+  perform atests.rec('E05', 'double counting', 'a workout never changes the daily budget or remaining calories (already in active energy)',
+    r = 'ok:1' and after.energy_estimate_kcal = before.energy_estimate_kcal and after.remaining_kcal = before.remaining_kcal
+      and after.workout_count = before.workout_count + 1 and after.workout_kcal > coalesce(before.workout_kcal, 0) and after.workout_kcal_estimated,
+    format('%s budget %s->%s workouts %s->%s', r, before.energy_estimate_kcal, after.energy_estimate_kcal, before.workout_count, after.workout_count));
+end $$;
+
+do $$ declare ok boolean := true; detail text := ''; s record; n_all int; n_counted int; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f01');
+  for s in select * from public.activity_daily_summary(atests.d(-1), atests.d(0), atests.d(0)) loop
+    select count(*), count(*) filter (where duplicate_of is null) into n_all, n_counted
+      from public.activity_workouts(s.local_date, s.local_date);
+    ok := ok and s.workout_count = n_counted;
+    detail := detail || format('%s: %s of %s; ', s.local_date, s.workout_count, n_all);
+  end loop;
+  select count(*) into n_all from public.activity_workouts(atests.d(-1), atests.d(0)) where duplicate_of is not null;
+  perform atests.reset();
+  perform atests.rec('E06', 'double counting', 'the daily workout count excludes a session imported and recorded twice',
+    ok and n_all >= 1, detail || 'duplicates=' || n_all);
+end $$;
+
+do $$ declare s record; r text; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f03');
+  r := atests.attempt(atests.day_sql(0, 'apple_health', '5000', '3500', '200', 'null'));
+  perform atests.attempt(format($f$insert into public.nutrition_log_entries (client_request_id, local_date, time_zone, meal_id, servings)
+                                   values (gen_random_uuid(), %L, 'Africa/Casablanca', '00000000-0000-0000-0000-00000000aa01', 1)$f$, atests.d(0)));
+  select * into s from public.activity_daily_summary(atests.d(0), atests.d(0), atests.d(0));
+  perform atests.reset();
+  perform atests.rec('E07', 'energy', 'without BMR/TDEE no budget is invented, but consumed calories and steps are still shown',
+    r = 'ok:1' and s.energy_estimate_kcal is null and s.energy_method is null and s.remaining_kcal is null
+      and s.consumed_kcal = 500 and s.steps = 5000,
+    format('%s budget=%s consumed=%s steps=%s', r, coalesce(s.energy_estimate_kcal::text, 'null'), s.consumed_kcal, s.steps));
+end $$;
+
+do $$ declare s record; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f02');
+  perform atests.attempt(format($f$insert into public.nutrition_log_entries (client_request_id, local_date, time_zone, meal_id, servings)
+                                   values (gen_random_uuid(), %L, 'Africa/Casablanca', '00000000-0000-0000-0000-00000000aa01', 4)$f$, atests.d(0)));
+  select * into s from public.activity_daily_summary(atests.d(0), atests.d(0), atests.d(0));
+  perform atests.reset();
+  perform atests.rec('E08', 'energy', 'over budget is reported as a negative remaining value (TDEE 1614 - 2000 = -386), not clamped',
+    s.energy_method = 'tdee_baseline' and s.consumed_kcal = 2000 and s.remaining_kcal = -386,
+    format('%s/%s remaining=%s', s.energy_estimate_kcal, s.energy_method, s.remaining_kcal));
+end $$;
+
+do $$ declare d1 record; d2 record; begin
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f02');
+  perform atests.attempt(atests.day_sql(-1, 'health_connect', '0', '0', '0', 'null'));
+  perform atests.attempt(atests.day_sql(-1, 'device_motion', '500', 'null', 'null', 'null'));
+  select * into d1 from public.activity_daily_summary(atests.d(-1), atests.d(-1), atests.d(0));
+  select * into d2 from public.activity_daily_summary(atests.d(-2), atests.d(-2), atests.d(0));
+  perform atests.reset();
+  perform atests.rec('E09', 'history', 'a measured zero (0 steps) differs from a day without data (NULL source and steps)',
+    d1.steps = 0 and d1.activity_source = 'health_connect' and d2.activity_source is null and d2.steps is null,
+    format('d-1 %s/%s d-2 %s/%s', d1.activity_source, d1.steps, coalesce(d2.activity_source, 'null'), coalesce(d2.steps::text, 'null')));
+  perform atests.rec('E10', 'double counting', 'one source per day: the health platform wins over the iPhone sensor, never a sum',
+    d1.steps = 0 and d1.activity_source = 'health_connect', format('%s steps from %s', d1.steps, d1.activity_source));
+end $$;
+
+-- ============================ Meals from orders ============================
+do $$ declare item uuid; r1 text; r2 text; r3 text; r4 text; r5 text; r6 text; n int; req uuid := gen_random_uuid(); begin
+  select id into item from public.order_items where order_id = '00000000-0000-0000-0000-00000000a001' limit 1;
+  update public.orders set status = 'confirmed' where id = '00000000-0000-0000-0000-00000000a001';
+  perform atests.act('authenticated', '00000000-0000-0000-0000-0000000000c1');
+  r1 := atests.attempt(format($f$insert into public.nutrition_log_entries (client_request_id, local_date, time_zone, meal_id, order_item_id, servings)
+                                 values (gen_random_uuid(), %L, 'Africa/Casablanca', '00000000-0000-0000-0000-00000000aa01', %L, 1)$f$, atests.d(0), item));
+  perform atests.reset();
+  update public.orders set status = 'served' where id = '00000000-0000-0000-0000-00000000a001';
+  perform atests.act('authenticated', '00000000-0000-0000-0000-0000000000c1');
+  r2 := atests.attempt(format($f$insert into public.nutrition_log_entries (client_request_id, local_date, time_zone, meal_id, order_item_id, servings)
+                                 values (%L, %L, 'Africa/Casablanca', '00000000-0000-0000-0000-00000000aa01', %L, 0.5)$f$, req, atests.d(0), item));
+  r3 := atests.attempt(format($f$insert into public.nutrition_log_entries (client_request_id, local_date, time_zone, meal_id, order_item_id, servings)
+                                 values (%L, %L, 'Africa/Casablanca', '00000000-0000-0000-0000-00000000aa01', %L, 0.5)
+                                 on conflict (user_id, client_request_id) do nothing$f$, req, atests.d(0), item));
+  r4 := atests.attempt(format($f$insert into public.nutrition_log_entries (client_request_id, local_date, time_zone, meal_id, order_item_id, servings)
+                                 values (gen_random_uuid(), %L, 'Africa/Casablanca', '00000000-0000-0000-0000-00000000aa01', %L, 0.5)$f$, atests.d(0), item));
+  r5 := atests.attempt(format($f$insert into public.nutrition_log_entries (client_request_id, local_date, time_zone, meal_id, order_item_id, servings)
+                                 values (gen_random_uuid(), %L, 'Africa/Casablanca', '00000000-0000-0000-0000-00000000aa01', %L, 0.25)$f$, atests.d(0), item));
+  r6 := atests.attempt(format($f$insert into public.nutrition_log_entries (client_request_id, local_date, time_zone, meal_id, order_item_id, servings)
+                                 values (gen_random_uuid(), %L, 'Africa/Casablanca', '00000000-0000-0000-0000-00000000aa02', %L, 0.25)$f$, atests.d(0), item));
+  perform atests.reset();
+  select count(*) into n from public.nutrition_log_entries where order_item_id = item and deleted_at is null;
+  perform atests.rec('M01', 'meals', 'an order that was not delivered yet cannot be logged as eaten', r1 like 'err:22023%not been delivered%', r1);
+  perform atests.rec('M02', 'meals', 'after delivery: partial portions (0.5 + 0.5 of 1), a retried request counts once, never beyond the quantity',
+    r2 = 'ok:1' and r3 = 'ok:0' and r4 = 'ok:1' and r5 like 'err:22023%more servings%' and n = 2,
+    concat_ws(' | ', r2, r3, r4, r5, 'entries=' || n));
+  perform atests.rec('M03', 'meals', 'a meal without a reliable calorie value is refused (never invented)', r6 like 'err:22023%', r6);
+  perform atests.rec('M04', 'meals', 'portion calories come from the meal record (0.5 x 500 = 250)',
+    (select bool_and(kcal = 250) from public.nutrition_log_entries where order_item_id = item and deleted_at is null), 'kcal per half portion');
+end $$;
+
+do $$ declare item uuid; r text; begin
+  select id into item from public.order_items where order_id = '00000000-0000-0000-0000-00000000a001' limit 1;
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f01');
+  r := atests.attempt(format($f$insert into public.nutrition_log_entries (client_request_id, local_date, time_zone, meal_id, order_item_id, servings)
+                                values (gen_random_uuid(), %L, 'Africa/Casablanca', '00000000-0000-0000-0000-00000000aa01', %L, 0.25)$f$, atests.d(0), item));
+  perform atests.reset();
+  perform atests.rec('M05', 'security', 'another customer cannot log someone else''s delivered order', r like 'err:42501%', r);
+  perform atests.rec('M06', 'meals', 'received statuses are delivered (app) and served (counter); others are not',
+    public.order_received('delivered') and public.order_received('served') and not public.order_received('confirmed')
+      and not public.order_received('on_the_way') and not coalesce(public.order_received(null), false), 'order_received()');
+end $$;
+
+-- ============================ History snapshots ============================
+do $$ declare y record; t record; begin
+  update public.user_profiles set weight = 80 where user_id = '00000000-0000-0000-0000-000000000f01';
+  perform atests.act('authenticated', '00000000-0000-0000-0000-000000000f01');
+  select * into y from public.activity_daily_summary(atests.d(-1), atests.d(-1), atests.d(0));
+  select * into t from public.activity_daily_summary(atests.d(0), atests.d(0), atests.d(0));
+  perform atests.reset();
+  update public.user_profiles set weight = 70 where user_id = '00000000-0000-0000-0000-000000000f01';
+  perform atests.rec('E11', 'history', 'after a profile change, past days keep their BMR snapshot and method; today is recalculated',
+    y.bmr_kcal = 1649 and y.energy_method = 'platform_total' and t.bmr_kcal = 1749 and t.energy_estimate_kcal = 1749 + 350,
+    format('yesterday bmr=%s today bmr=%s budget=%s', y.bmr_kcal, t.bmr_kcal, t.energy_estimate_kcal));
+end $$;

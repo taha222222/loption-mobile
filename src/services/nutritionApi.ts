@@ -147,13 +147,20 @@ export async function fetchLoggableMeals(): Promise<Result<LoggableMeal[]>> {
   return { data: (data ?? []) as LoggableMeal[], error: null };
 }
 
-// The customer's own recent orders (RLS) with their items.
-export async function fetchOrderedMeals(sinceIso: string): Promise<Result<OrderedMeal[]>> {
-  const { data, error } = await supabase
+// Order statuses meaning the customer has the meal; mirrors the server's
+// order_received() (an order item can only be logged after delivery).
+export const RECEIVED_ORDER_STATUSES = ['delivered', 'served'];
+
+// The customer's own recent orders (RLS) that were received, with their
+// items; optionally one order only ("I ate this meal" from that order).
+export async function fetchOrderedMeals(sinceIso: string, orderId?: string): Promise<Result<OrderedMeal[]>> {
+  let query = supabase
     .from('orders')
-    .select('id, created_at, order_items(id, meal_id, meal_name, quantity)')
-    .gte('created_at', sinceIso)
-    .order('created_at', { ascending: false });
+    .select('id, created_at, status, order_items(id, meal_id, meal_name, quantity)')
+    .in('status', RECEIVED_ORDER_STATUSES)
+    .gte('created_at', sinceIso);
+  if (orderId) query = query.eq('id', orderId);
+  const { data, error } = await query.order('created_at', { ascending: false });
   if (error) return { data: null, error };
   const out: OrderedMeal[] = [];
   for (const o of (data ?? []) as any[]) {

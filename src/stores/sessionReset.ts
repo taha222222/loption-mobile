@@ -13,6 +13,7 @@ import { useNutritionStore } from './nutritionStore';
 import { useSetupStore } from './setupStore';
 import { useDriverEarningsStore } from './driverEarningsStore';
 import { useSubscriptionStore } from './subscriptionStore';
+import { useTrackingStore } from './trackingStore';
 import { useUserStore } from './userStore';
 import { useWorkoutStore } from './workoutStore';
 
@@ -30,6 +31,7 @@ export async function resetUserScopedState(
   useUserStore.getState().reset();
   useSetupStore.getState().reset();
   useNutritionStore.getState().reset();
+  useTrackingStore.getState().reset();
   useSubscriptionStore.setState(useSubscriptionStore.getInitialState(), true);
   useCollaboratorStore.setState(useCollaboratorStore.getInitialState(), true);
   useAdminStore.setState(useAdminStore.getInitialState(), true);

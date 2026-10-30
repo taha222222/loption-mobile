@@ -96,6 +96,8 @@ q postgres -f "$ROOT/supabase/migrations/20261028120000_v1_onboarding_first_orde
   && pass "V1 onboarding/offer migration applied" || { fail "V1 migration: $(tail -3 "$OUT/v1.log")"; exit 1; }
 q postgres -f "$ROOT/supabase/migrations/20261029120000_v1_nutrition_tracking_engagement.sql" >"$OUT/nutrition.log" 2>&1 \
   && pass "V1 nutrition tracking/engagement migration applied" || { fail "nutrition migration: $(tail -3 "$OUT/nutrition.log")"; exit 1; }
+q postgres -f "$ROOT/supabase/migrations/20261030120000_v1_activity_tracking.sql" >"$OUT/activity.log" 2>&1 \
+  && pass "V1 activity tracking migration applied" || { fail "activity migration: $(tail -3 "$OUT/activity.log")"; exit 1; }
 [ "$(qa "select count(*) from public.containment_violations() where category in ('drift','containment')")" = "0" ] \
   && pass "containment_violations() = 0" || fail "containment violations present"
 

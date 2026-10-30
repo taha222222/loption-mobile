@@ -9,10 +9,9 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 import { theme } from '../../src/theme';
 import { MealCard } from '../../src/components/ui/MealCard';
-import { Chip, EmptyState, Screen, ScreenHeader } from '../../src/components/v2';
+import { BasketButton, Chip, EmptyState, Screen, ScreenHeader } from '../../src/components/v2';
 import { supabase } from '../../src/lib/supabase';
 import { useCartStore } from '../../src/stores/cartStore';
 import { useUserStore } from '../../src/stores/userStore';
@@ -46,7 +45,7 @@ export default function MenuScreen() {
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [smartFilterEnabled, setSmartFilterEnabled] = useState(false);
-  const { addItem, getItemCount } = useCartStore();
+  const { addItem } = useCartStore();
   const { profile } = useUserStore();
 
   useEffect(() => {
@@ -123,27 +122,12 @@ export default function MenuScreen() {
     }
   };
 
-  const cartItemCount = getItemCount();
-
   return (
     <Screen>
       <ScreenHeader
         subtitle="Menu"
         title="Nos repas"
-        right={
-          <TouchableOpacity
-            style={styles.cartButton}
-            onPress={() => router.push('/(app)/cart')}
-            accessibilityLabel="Panier"
-          >
-            <Ionicons name="cart-outline" size={22} color={theme.colors.ink} />
-            {cartItemCount > 0 && (
-              <View style={styles.cartBadge}>
-                <Text style={styles.cartBadgeText}>{cartItemCount}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        }
+        right={<BasketButton />}
       />
 
       {/* Smart Filter Toggle - Only show if user has a goal set */}
@@ -237,35 +221,6 @@ export default function MenuScreen() {
 }
 
 const styles = StyleSheet.create({
-  cartButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.hairline,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cartBadge: {
-    position: 'absolute',
-    top: 4,
-    right: 2,
-    backgroundColor: theme.colors.brand,
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 5,
-    borderWidth: 2,
-    borderColor: theme.colors.surface,
-  },
-  cartBadgeText: {
-    fontSize: 10,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textWhite,
-  },
   smartFilterButton: {
     flexDirection: 'row',
     alignItems: 'center',

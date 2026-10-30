@@ -14,6 +14,7 @@ import { Button } from '../../../src/components/ui/Button';
 import { supabase } from '../../../src/lib/supabase';
 import { locationService } from '../../../src/services/locationService';
 import { DriverMap } from '../../../src/components/maps/DriverMap';
+import { RECEIVED_ORDER_STATUSES } from '../../../src/services/nutritionApi';
 
 type OrderStatus = 'confirmed' | 'preparing' | 'accepted' | 'picked_up' | 'on_the_way' | 'delivered';
 
@@ -235,6 +236,14 @@ export default function OrderTrackingScreen() {
         <Text style={styles.infoTitle}>Total Amount</Text>
         <Text style={styles.infoText}>{order.total} MAD</Text>
       </View>
+
+      {RECEIVED_ORDER_STATUSES.includes(order.status) ? (
+        <Button
+          title="J’ai mangé ce repas"
+          onPress={() => router.push({ pathname: '/(app)/log-meal', params: { orderId: order.id } })}
+          style={styles.backButton}
+        />
+      ) : null}
 
       <Button
         title="Back to Orders"

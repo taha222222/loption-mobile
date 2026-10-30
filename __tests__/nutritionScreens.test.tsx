@@ -39,6 +39,7 @@ jest.mock('expo-router', () => ({
   get router() {
     return mockRouter;
   },
+  useLocalSearchParams: () => ({}),
   useFocusEffect: (cb: () => void) => {
     const React = jest.requireActual('react');
     React.useEffect(cb, [cb]);
@@ -154,8 +155,8 @@ describe('log meal screen', () => {
 
   it('logs an ordered meal only when the customer chooses it, with the chosen servings', async () => {
     await render(<LogMealScreen />);
-    await waitFor(() => expect(screen.getByText('Mes commandes récentes')).toBeTruthy());
-    expect(screen.getByLabelText(/Jus maison\. Pas de valeur calorique fiable/).props.accessibilityState).toMatchObject({ disabled: true });
+    await waitFor(() => expect(screen.getByText('Mes commandes reçues')).toBeTruthy());
+    expect(screen.getByLabelText(/Jus maison\. Valeurs nutritionnelles indisponibles/).props.accessibilityState).toMatchObject({ disabled: true });
     expect(mockApi.logMeal).not.toHaveBeenCalled();
     await fireEvent.press(screen.getByLabelText(/Bowl poulet\. 600 kcal \/ portion · commandé ×2/));
     await fireEvent.press(screen.getByLabelText('Augmenter Quantité'));

@@ -84,24 +84,42 @@ def activity_monitor() -> str:
     return extended_monitor(NEW_POLICIES + ACTIVITY_POLICIES, NEW_DEFINER_FUNCTIONS + ACTIVITY_DEFINER_FUNCTIONS)
 
 
+LOG_BEGIN, LOG_END = "-- BEGIN GENERATED NUTRITION LOG TRIGGER\n", "-- END GENERATED NUTRITION LOG TRIGGER\n"
+
+
+def original_log_trigger() -> str:
+    """The nutrition migration's nutrition_log_entry_prepare(), as CREATE OR REPLACE
+    (restored by the activity rollback)."""
+    text = MIGRATION.read_text()
+    start = text.index("create function public.nutrition_log_entry_prepare()")
+    end = text.index("$$;\n", text.index("as $$", start) + len("as $$")) + len("$$;\n")
+    return "create or replace" + text[start + len("create"):end]
+
+
 def render(path: pathlib.Path, body: str) -> str:
-    text = path.read_text()
-    head, rest = text.split(BEGIN, 1)
-    _, tail = rest.split(END, 1)
-    return head + BEGIN + body + END + tail
+    return render_string(path.read_text(), body)
+
+
+def render_string(text: str, body: str, begin: str = BEGIN, end: str = END) -> str:
+    head, rest = text.split(begin, 1)
+    _, tail = rest.split(end, 1)
+    return head + begin + body + end + tail
 
 
 def main() -> int:
-    targets = {
-        MIGRATION: extended_monitor(),
-        ROLLBACK: original_monitor(),
-        ACTIVITY_MIGRATION: activity_monitor(),
-        ACTIVITY_ROLLBACK: extended_monitor(),
+    rendered = {
+        MIGRATION: render(MIGRATION, extended_monitor()),
+        ROLLBACK: render(ROLLBACK, original_monitor()),
+        ACTIVITY_MIGRATION: render(ACTIVITY_MIGRATION, activity_monitor()),
     }
+    # The activity rollback restores both the nutrition monitor and the
+    # nutrition migration's log trigger.
+    activity_rb = render(ACTIVITY_ROLLBACK, extended_monitor())
+    activity_rb = render_string(activity_rb, original_log_trigger(), LOG_BEGIN, LOG_END)
+    rendered[ACTIVITY_ROLLBACK] = activity_rb
     check = "--check" in sys.argv
     stale = []
-    for path, body in targets.items():
-        new = render(path, body)
+    for path, new in rendered.items():
         if path.read_text() != new:
             if check:
                 stale.append(str(path.relative_to(ROOT)))

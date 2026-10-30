@@ -144,7 +144,7 @@ echo "=== 4. SQL tests"
 q postgres -f "$TESTS" >"$OUT/tests.out" 2>&1 || fail "test file error: $(tail -3 "$OUT/tests.out")"
 qa "select id || ' ' || case when passed then 'PASS' else 'FAIL' end || ' ' || expectation || ' [' || coalesce(detail, '') || ']' from atests.results order by id" | sed 's/^/  /'
 nf="$(qa "select count(*) from atests.results where not passed")"; np="$(qa "select count(*) from atests.results where passed")"
-[ "$nf" = "0" ] && [ "$np" -ge 33 ] && pass "$np SQL tests passed" || fail "$nf failed, $np passed"
+[ "$nf" = "0" ] && [ "$np" -ge 50 ] && pass "$np SQL tests passed" || fail "$nf failed, $np passed"
 
 echo "=== 5. regression on fresh databases"
 start_db nreg
@@ -154,7 +154,7 @@ fixtures; profiles; time_zones
 q postgres -f "$N_TESTS" >"$OUT/ntests.out" 2>&1 || fail "nutrition test file error: $(tail -3 "$OUT/ntests.out")"
 # Tests whose expectation this migration changes on purpose are listed in
 # N_CHANGED (with the reason) and checked by v1_activity_tests.sql instead.
-N_CHANGED="${N_CHANGED:-}"
+N_CHANGED="'T12'"  # T12: an order item of a confirmed (not delivered) order; covered by M01-M02
 nfail="$(qa "select count(*) from ntests.results where not passed${N_CHANGED:+ and id not in ($N_CHANGED)}")"
 [ "$nfail" = "0" ] && pass "nutrition SQL tests pass after the activity migration${N_CHANGED:+ (changed on purpose: $N_CHANGED)}" \
   || { fail "nutrition SQL tests: $nfail fail"; qa "select id || ' ' || coalesce(detail,'') from ntests.results where not passed" | sed 's/^/    /'; }
