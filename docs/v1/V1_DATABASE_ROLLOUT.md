@@ -70,6 +70,13 @@ must return exactly your id.
 **9. App:** close and reopen the app. Home shows today's calories, Suivi shows the daily balance, Nutrition shows your
 estimate, and the delivery address can be saved.
 
+## Alternative: applied through the Supabase Management API (connector or access token)
+When the database port is not reachable (for example from a cloud session), each migration file is sent as **one**
+request to the Management API, in the order above, after the same read-only checks. Locally verified with
+`supabase/tests/run_single_request_apply.sh`: a missing admin id, a missing dependency and a failing postcondition
+each refuse with nothing committed; the four non-storage migrations apply in order and the post-deploy check passes.
+The hosted Management API itself is not verified until it is used.
+
 ## Rollback
 Only with an approved task and the backup from step 1, newest first: `v1_activity_tracking_rollback.sql`,
 `v1_nutrition_tracking_rollback.sql`, `v1_onboarding_offer_rollback.sql`, then `supabase/rollback/phase1c_rollback.sh`
