@@ -42,6 +42,6 @@ checks(check_name, ok, detail) as (
 )
 select jsonb_pretty(jsonb_build_object(
   'generated_at', now(),
-  'all_required_checks_ok', (select bool_and(ok) from checks where check_name not like 'info:%'),
-  'checks', (select jsonb_agg(jsonb_build_object('check', check_name, 'ok', ok, 'detail', detail)) from checks)
+  'all_required_checks_ok', coalesce((select bool_and(coalesce(ok, false)) from checks where check_name not like 'info:%'), false),
+  'checks', (select jsonb_agg(jsonb_build_object('check', check_name, 'ok', coalesce(ok, false), 'detail', detail)) from checks)
 )) as phase1c_initial_admin_check;

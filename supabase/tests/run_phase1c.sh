@@ -420,6 +420,23 @@ guard H10_grantee "grant select on public.orders to dashboard_user" \
   "unexpected table grantee" "public_table_grantees_expected" "revoke select on public.orders from dashboard_user"
 guard H11_rls_off "alter table public.meals disable row level security" \
   "row level security disabled" "public_tables_rls_enabled" "alter table public.meals enable row level security"
+# 2026-11-01 fail-closed regressions: before this change a missing function
+# and a same-count table swap both passed the preflight.
+COT="public.create_order_transaction(text, uuid, jsonb, numeric, text, text)"
+guard P1_order_fn_missing "alter function $COT rename to create_order_transaction_saved" \
+  "" "create_order_transaction_signature" "alter function public.create_order_transaction_saved(text, uuid, jsonb, numeric, text, text) rename to create_order_transaction"
+guard P2_order_fn_wrong_signature "alter function $COT rename to create_order_transaction_saved; create function public.create_order_transaction(p_order_number text, p_kiosk_id uuid, p_items jsonb, p_total numeric, p_language text) returns void language sql as ''" \
+  "unreviewed create_order_transaction variant" "create_order_transaction_signature" "drop function public.create_order_transaction(text, uuid, jsonb, numeric, text); alter function public.create_order_transaction_saved(text, uuid, jsonb, numeric, text, text) rename to create_order_transaction"
+guard P3_order_fn_overload "create function public.create_order_transaction(p_order_number text) returns void language sql as ''" \
+  "unreviewed create_order_transaction variant" "create_order_transaction_signature" "drop function public.create_order_transaction(text)"
+guard P4_order_fn_other_schema "create schema p1c_guard; create function p1c_guard.create_order_transaction(p_order_number text, p_kiosk_id uuid, p_items jsonb, p_total numeric, p_language text, p_tracking_token text) returns void language sql as ''" \
+  "" "create_order_transaction_signature" "drop schema p1c_guard cascade"
+guard P5_table_renamed_same_count "alter table public.bank_accounts rename to bank_accounts_renamed" \
+  "" "public_table_set_matches_evidence" "alter table public.bank_accounts_renamed rename to bank_accounts"
+guard P6_table_missing "create schema p1c_guard; alter table public.bank_accounts set schema p1c_guard" \
+  "" "public_table_set_matches_evidence" "alter table p1c_guard.bank_accounts set schema public; drop schema p1c_guard"
+guard P7_table_unexpected "create table public.p1c_guard_extra (id int)" \
+  "" "public_table_set_matches_evidence" "drop table public.p1c_guard_extra"
 [ "$(preflight ALL skip-storage)" = "True" ] && pass "guard database clean again after all reverts" || fail "guard database not clean after reverts"
 if migrate h_final; then pass "migration applies once every injected state is reverted"; else fail "migration failed after reverts"; cat "$OUT/h_final.log"; fi
 

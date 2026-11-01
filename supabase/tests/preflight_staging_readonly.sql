@@ -69,6 +69,20 @@ expected_policies(t, n) as (values
   ('user_push_tokens','Users can view own push tokens')),
 live_policies as (
   select tablename as t, policyname as n from pg_policies where schemaname = 'public'),
+expected_tables(t) as (values
+  ('admin_logs'),('admins'),('bank_accounts'),('cash_collections'),('collaborator_analytics'),
+  ('collaborator_orders'),('collaborator_payouts'),('collaborators'),('daily_closings'),('driver_payouts'),
+  ('driver_push_tokens'),('driver_weekly_earnings'),('drivers'),('financial_transactions'),('kiosks'),
+  ('meals'),('order_items'),('order_status_updates'),('orders'),('platform_settings'),('products'),
+  ('stock_movements'),('user_profiles'),('user_push_tokens')),
+live_tables as (
+  select c.relname::text as t from pg_class c
+   where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p')),
+order_fn as (   -- every function of that name outside the system schemas
+  select n.nspname::text as nsp, p.proname::text as proname, pg_get_function_identity_arguments(p.oid) as args
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where p.proname = 'create_order_transaction'
+     and n.nspname not in ('pg_catalog','information_schema') and n.nspname !~ '^pg_'),
 cfg as (
   select
     array['anon','authenticated','authenticator','dashboard_user','pgbouncer','postgres',
@@ -142,9 +156,16 @@ checks(check_name, ok, detail) as (
          coalesce((select 'md5(prosrc)=' || md5(p.prosrc) || ' definer=' || p.prosecdef
                      from pg_proc p where p.oid = to_regprocedure('public.containment_violations()')), 'absent (expected before deployment)')
   union all
+  -- 2026-11-01: exact names, not just the count (a renamed or swapped table
+  -- with the same count used to pass). Ordinary and partitioned tables.
   select 'public_table_set_matches_evidence',
-         (select count(*) from pg_tables where schemaname = 'public') = 24,
-         (select string_agg(tablename, ',' order by tablename) from pg_tables where schemaname = 'public')
+         not exists (select t from expected_tables except select t from live_tables)
+     and not exists (select t from live_tables except select t from expected_tables),
+         coalesce((select 'missing: ' || string_agg(t, ',' order by t)
+                     from (select t from expected_tables except select t from live_tables) x), '')
+      || coalesce((select ' unexpected: ' || string_agg(t, ',' order by t)
+                     from (select t from live_tables except select t from expected_tables) y), '')
+      || ' live=' || coalesce((select string_agg(t, ',' order by t) from live_tables), 'none')
   union all
   select 'public_policy_set_matches_evidence',
          not exists (select * from expected_policies except select * from live_policies)
@@ -167,13 +188,17 @@ checks(check_name, ok, detail) as (
          (select string_agg(coalesce(status, '<null>') || '=' || n, ', ')
             from (select status, count(*) n from public.drivers group by 1) s)
   union all
+  -- 2026-11-01: fail closed. The old form ("no function with another
+  -- signature") passed when the function was missing. Now exactly one
+  -- function of that name may exist in any non-system schema, in public,
+  -- with exactly the expected identity arguments.
   select 'create_order_transaction_signature',
-         not exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace
-                       and p.proname = 'create_order_transaction'
-                       and pg_get_function_identity_arguments(p.oid) <>
-                           'p_order_number text, p_kiosk_id uuid, p_items jsonb, p_total numeric, p_language text, p_tracking_token text'),
-         (select string_agg(p.oid::regprocedure::text, '; ') from pg_proc p
-           where p.pronamespace = 'public'::regnamespace and p.proname = 'create_order_transaction')
+         (select count(*) from order_fn) = 1
+     and (select count(*) from order_fn
+           where nsp = 'public'
+             and args = 'p_order_number text, p_kiosk_id uuid, p_items jsonb, p_total numeric, p_language text, p_tracking_token text') = 1,
+         coalesce((select string_agg(nsp || '.' || proname || '(' || args || ')', '; ' order by nsp, args) from order_fn),
+                  'missing: public.create_order_transaction')
   union all
   select 'migration_role_is_postgres_non_superuser',
          current_user = 'postgres' and not (select rolsuper from pg_roles where rolname = current_user),
@@ -211,7 +236,8 @@ checks(check_name, ok, detail) as (
                       and (m.grp || '<-' || m.member) <> all (cfg.allowed_members)), 'none')
   union all
   select 'U3_no_auth_hook_functions',
-         not exists (select 1 from auth_hook_candidates),
+         to_regrole('supabase_auth_admin') is not null   -- 2026-11-01: a missing role used to pass vacuously
+     and not exists (select 1 from auth_hook_candidates),
          coalesce((select string_agg(fn, ', ') from auth_hook_candidates), 'none')
          || ' (also confirm in Dashboard: Authentication > Hooks shows no enabled hook)'
   union all
@@ -313,6 +339,9 @@ checks(check_name, ok, detail) as (
 )
 select jsonb_pretty(jsonb_build_object(
   'generated_at', now(),
-  'all_required_checks_ok', (select bool_and(ok) from checks where check_name not like 'info:%'),
-  'checks', (select jsonb_agg(jsonb_build_object('check', check_name, 'ok', ok, 'detail', detail)) from checks)
+  -- 2026-11-01: bool_and() ignores NULL, so a check whose expression is NULL
+  -- (for example a missing object) used to count as passed. NULL is now false
+  -- both per check and overall, and an empty check set is false.
+  'all_required_checks_ok', coalesce((select bool_and(coalesce(ok, false)) from checks where check_name not like 'info:%'), false),
+  'checks', (select jsonb_agg(jsonb_build_object('check', check_name, 'ok', coalesce(ok, false), 'detail', detail)) from checks)
 )) as phase1c_preflight;
