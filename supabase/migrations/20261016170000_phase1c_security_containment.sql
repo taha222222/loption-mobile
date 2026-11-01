@@ -303,7 +303,7 @@ $f$;
 --     holds no admin row yet. Transaction-local (set_config(..., true)).
 -- ---------------------------------------------------------------------
 do $admin$ begin perform set_config('phase1c.initial_admin_user_id',
-  'OWNER-MUST-SUPPLY-INITIAL-ADMIN-UUID',  -- PHASE1C_INITIAL_ADMIN_USER_ID
+  'e898d986-f8e1-4844-b43c-3996aa094113',  -- PHASE1C_INITIAL_ADMIN_USER_ID
   true); end $admin$;
 
 -- Verification of the supplied initial admin (temporary helper, dropped at
