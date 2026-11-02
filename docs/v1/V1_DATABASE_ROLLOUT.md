@@ -75,7 +75,10 @@ When the database port is not reachable (for example from a cloud session), each
 request to the Management API, in the order above, after the same read-only checks. Locally verified with
 `supabase/tests/run_single_request_apply.sh`: a missing admin id, a missing dependency and a failing postcondition
 each refuse with nothing committed; the four non-storage migrations apply in order and the post-deploy check passes.
-The hosted Management API itself is not verified until it is used.
+Used on 2026-11-02 for the project `loption-mobile` through the Supabase connector (evidence E-22): all five applied,
+post-deploy check passed, and `supabase/tests/rollout_fingerprint_readonly.sql` gave identical results on the hosted
+project and on a local database built from the same files. Record each applied version in
+`supabase_migrations.schema_migrations` so `supabase db push` does not re-send it.
 
 ## Rollback
 Only with an approved task and the backup from step 1, newest first: `v1_activity_tracking_rollback.sql`,

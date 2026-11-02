@@ -1,6 +1,6 @@
 # L'OPTION — project state
 
-Update this file incrementally when the state changes. Last verified: 2026-10-30 (activity tracking).
+Update this file incrementally when the state changes. Last verified: 2026-11-02 (V1 database applied to the hosted project).
 
 ## Current branch
 - Cumulative branch: `claude/v1-baseline-server-fix` = `claude/v1-activity-expo-go-fix` + honest states when the server
@@ -10,7 +10,9 @@ Update this file incrementally when the state changes. Last verified: 2026-10-30
   `c35da39` and `claude/v1-activity-tracking-docs` before the last docs fix: the ruleset blocks pushes to existing
   branches, so each follow-up is pushed as a new branch.
 - `main` is still `0cb0fe0` (initial commit). Nothing is merged.
-- Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md` (latest: E-15 to E-19).
+- Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md` (latest: E-20 to E-22).
+- **Hosted project `loption-mobile` (`teppcfnpkoxkudajnvad`) has all five V1 migrations since 2026-11-02** (owner-approved;
+  initial admin `e898d986-…`; evidence E-22). Branch `claude/v1-rollout-loption-mobile` holds the admin-id commit.
 
 ## Integrated on the cumulative branch
 | Feature | Status | Reference |
@@ -55,10 +57,9 @@ The repository ruleset covers all branches: PR + 1 approving review, no bypass, 
 5. Trusted server-side order creation once pricing is approved (checklist H4–H10).
 
 ## Blockers
-- **The hosted Supabase project has none of the V1 migrations**, so calorie tracking, Suivi, estimates, the delivery
-  address and the first-order offer cannot work there (reproduced locally, evidence E-20). Applying them needs the
-  owner's approval and Phase 1C first (initial-admin UUID, staging gates).
-- Phase 1C NOT READY FOR STAGING: initial-admin UUID missing, staging gates, meal-images finding M2 open.
+- Phase 1C has still had no independent review (applied on the owner's decision, E-22); meal-images finding M2 open.
+- Hosted advisors after E-22: leaked-password protection is off (Dashboard → Auth, owner action); three legacy
+  functions without a fixed `search_path` (not client-executable; untouched by V1).
 - No Google, Apple, Resend, APNs or FCM credentials; real sign-in, e-mail and push never tested.
 - No native build has been made (prebuild now succeeds: the missing sound reference was removed). HealthKit capability,
   Health Connect Play declaration and privacy texts are owner actions (checklist M).

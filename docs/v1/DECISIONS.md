@@ -61,3 +61,5 @@ with date and source. Details live in the linked docs; do not copy them here.
 | 14 | Retention period for health and activity data (no automatic purge yet) | M |
 | 15 | Background GPS during a workout (needs "Always"/foreground-service declarations in both stores); today GPS is foreground-only | M |
 | 16 | MET tiers and the received-order statuses above | M, H10 |
+| 17 | Enable leaked-password protection in Supabase Auth (hosted advisor, 2026-11-02) | C |
+| 18 | Legacy functions `calculate_collaborator_revenue_split`, `update_collaborator_analytics`, `calculate_driver_weekly_earnings`: fix their `search_path` or drop them (not client-executable since Phase 1C) | J |

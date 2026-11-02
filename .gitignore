@@ -76,3 +76,6 @@ coverage/
 # Python bytecode (supabase/tools, supabase/tests)
 __pycache__/
 *.pyc
+
+# Per-checkout Claude Code permissions (never committed)
+.claude/settings.local.json
