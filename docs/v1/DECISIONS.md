@@ -68,3 +68,8 @@ with date and source. Details live in the linked docs; do not copy them here.
 | 17 | Enable leaked-password protection in Supabase Auth (hosted advisor, 2026-11-02) | C |
 | 18 | Legacy functions `calculate_collaborator_revenue_split`, `update_collaborator_analytics`, `calculate_driver_weekly_earnings`: fix their `search_path` or drop them (not client-executable since Phase 1C) | J |
 | 19 | Approve the standalone budget constants and gym MET values above (the migration itself was applied to `loption-mobile` on the owner's instruction, 2026-11-03) | M19 |
+| 20 | Apple Health and Health Connect at launch: keep them (HealthKit capability + App Review; Play Health Connect declaration) or remove the plugins and permissions (phone sensors alone work) | `PRIVACY_AND_STORE_RELEASE.md` §2.4, §3.2 |
+| 21 | Whether Law 09-08 requires a separate, explicit health-data consent screen before the nutrition profile and activity tracking (not implemented) | K9, `PRIVACY_AND_STORE_RELEASE.md` §5 |
+| 22 | Account deletion keeps orders for accounting with the account link removed: must the order contact fields (name, phone, address) also be anonymised, and after how long? Offer redemptions are deleted with the account (cascade) | M20 |
+| 23 | Authorize applying `20261104120000_v1_account_deletion.sql` to `loption-mobile` (store requirement; tested locally only) | M20 |
+| 24 | Workout routes stay on the device (only the distance is uploaded). Storing routes on the server needs an explicit decision, a retention period and a privacy update | M17 |

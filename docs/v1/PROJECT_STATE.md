@@ -1,9 +1,14 @@
 # L'OPTION — project state
 
-Update this file incrementally when the state changes. Last verified: 2026-11-03 (standalone phone tracking, local only).
+Update this file incrementally when the state changes. Last verified: 2026-11-03 (production hardening: Android release build, all harnesses, hosted read-only checks).
 
 ## Current branch
-- **Latest: `claude/v1-standalone-tracking`** = `claude/v1-rollout-loption-mobile` + standalone tracking: phone step
+- **Latest: `claude/v1-production-hardening`** = `claude/v1-standalone-applied` + hardening: per-account phone history
+  guard, revoked-access and offline/stale states, measured Android reading stats, in-app account deletion
+  (`20261104120000_v1_account_deletion.sql`, **not applied to the hosted project**), unused Android permissions removed,
+  calorie-engine tests, privacy/store drafts (`PRIVACY_AND_STORE_RELEASE.md`) and device procedures
+  (`DEVICE_TEST_PROCEDURES.md`). Full Android release build succeeds (E-28); Swift still not compiled.
+- Previous: `claude/v1-standalone-tracking` = `claude/v1-rollout-loption-mobile` + standalone tracking: phone step
   counting without health apps (native module `modules/loption-motion`), background GPS during a workout, gym log,
   manual meals, BMR + movement budget, redesigned Daily Tracking (`STANDALONE_TRACKING.md`). Migration
   `20261103120000_v1_standalone_tracking.sql` is **applied to `loption-mobile` since 2026-11-03** (owner-authorized,
@@ -15,7 +20,7 @@ Update this file incrementally when the state changes. Last verified: 2026-11-03
   `c35da39` and `claude/v1-activity-tracking-docs` before the last docs fix: the ruleset blocks pushes to existing
   branches, so each follow-up is pushed as a new branch.
 - `main` is still `0cb0fe0` (initial commit). Nothing is merged.
-- Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md` (latest: E-20 to E-22).
+- Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md` (latest: E-27 to E-30).
 - **Hosted project `loption-mobile` (`teppcfnpkoxkudajnvad`) has all five V1 migrations since 2026-11-02** (owner-approved;
   initial admin `e898d986-…`; evidence E-22). Branch `claude/v1-rollout-loption-mobile` holds the admin-id commit.
 
@@ -31,7 +36,8 @@ Update this file incrementally when the state changes. Last verified: 2026-11-03
 | Calorie log, history chart, streaks, opt-in reminders, push dispatcher | Implemented, local only | `CALORIE_TRACKING_AND_ENGAGEMENT.md` |
 | Daily Tracking tab (replaces the Cart tab; basket in headers), daily energy budget, Apple Health / Health Connect / iPhone motion sync, workouts (walk, run, cycling, gym), meals from delivered orders | Implemented; local tests and web e2e only; **no device or native build verification** | `ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md` |
 | Standalone tracking: phone sensors first (Core Motion / Android step counter + background readings), background GPS during a workout, gym log, manual meals, BMR × 1.1 + movement budget, Daily Tracking redesign with Day/Week/Month charts | Implemented; Jest, SQL harness, web e2e, prebuild both platforms, Android Kotlin compile; **no device test, Swift not compiled** | `STANDALONE_TRACKING.md` |
-| Release checklist | Current at the activity branch | `REMAINING_SETUP_AND_RELEASE_TASKS.md` |
+| Production hardening: account switch guard, revoked/offline/stale states, reading stats, account deletion, store/privacy drafts | Implemented; Jest, all SQL harnesses, e2e, Android release build; deletion migration local only; **no device test** | `STANDALONE_TRACKING.md` §3a, `PRIVACY_AND_STORE_RELEASE.md` |
+| Release checklist | Current at the hardening branch (M20, M21) | `REMAINING_SETUP_AND_RELEASE_TASKS.md` |
 
 ## Branches and PRs
 `claude/*` branches stack in this order, each containing the previous one:
@@ -68,8 +74,8 @@ The repository ruleset covers all branches: PR + 1 approving review, no bypass, 
 - Hosted advisors after E-22: leaked-password protection is off (Dashboard → Auth, owner action); three legacy
   functions without a fixed `search_path` (not client-executable; untouched by V1).
 - No Google, Apple, Resend, APNs or FCM credentials; real sign-in, e-mail and push never tested.
-- No native build has been made (prebuild succeeds on both platforms; the Android motion module compiles; the Swift
-  module has not been compiled — no Xcode here). HealthKit capability, Health Connect and activity-recognition /
+- Android: a full `assembleRelease` succeeds (E-28, debug-key signed, never installed). iOS: never compiled (no Xcode
+  here; the first EAS iOS build is also the first Swift compile). No EAS build (no Expo token). HealthKit capability, Health Connect and activity-recognition /
   location-foreground-service Play declarations and privacy texts are owner actions (checklist M).
 - Pricing, fees, TVA and minimum order not approved, so checkout cannot be enabled.
 - No reviewer other than the author for PRs (ruleset needs 1 approval).
@@ -77,7 +83,8 @@ The repository ruleset covers all branches: PR + 1 approving review, no bypass, 
 - Lint: 45 pre-existing errors (none in new files). `expo install --check` is up to date (react-native 0.88.1).
 
 ## Exact next task
-With EAS access: build development clients and run the standalone device checklist (`STANDALONE_TRACKING.md` §9,
-checklist M15–M19). Owner: approve the standalone budget constants (DECISIONS #19). Without it, checklist I1: replace the hard-coded "next delivery" and "last order" cards in `app/(app)/profile.tsx` with the
+With EAS access: build development clients and run `DEVICE_TEST_PROCEDURES.md` (checklist M15–M18). Owner: approve the
+budget constants (DECISIONS #19), authorize the account deletion migration (#23), decide Apple Health / Health Connect
+at launch (#20) and start the CNDP / store declarations (`PRIVACY_AND_STORE_RELEASE.md` §6). Without it, checklist I1: replace the hard-coded "next delivery" and "last order" cards in `app/(app)/profile.tsx` with the
 customer's real orders (RLS-scoped read) or an empty state, with Jest tests and an e2e check. Leave the "Mon plan",
 upgrade and offers cards unchanged until the owner decides I3 (hide out-of-scope screens).

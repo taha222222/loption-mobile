@@ -1,11 +1,14 @@
 # L'OPTION V1 — Standalone activity and calorie tracking (phone sensors)
 
 The phone itself is the primary activity source. Apple Health and Health Connect remain optional
-(`ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md`). Branch `claude/v1-standalone-tracking`.
+(`ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md`). Branches `claude/v1-standalone-tracking`, hardening on
+`claude/v1-production-hardening`.
 
-**Verified status:** local only — Jest, SQL harnesses in Docker, the web e2e journey, Expo prebuild for both platforms
-and an Android compile of the native module (see the evidence log). **No physical device has been tested.** Every
-device item in §9 is NOT STARTED.
+**Verified status:** Jest, SQL harnesses in Docker, the web e2e journey, Expo prebuild for both platforms and a full
+Android **release** build (`assembleRelease`, evidence E-28). The standalone migration is applied to `loption-mobile`
+(E-27); the account deletion migration is **not** applied. **The Swift module has not been compiled** (no Xcode in
+this environment) and **no physical device has been tested**: every item of `DEVICE_TEST_PROCEDURES.md` is NOT
+VERIFIED. Privacy and store material: `PRIVACY_AND_STORE_RELEASE.md`.
 
 ## 1. What works without a health app
 
@@ -42,6 +45,27 @@ Native code: `modules/loption-motion` (Swift `LoptionMotionModule`, Kotlin `Lopt
 - Workouts are queued on the device and retried with the same `client_session_id` (no duplicates); the gym log is
   replaced atomically by `save_gym_log()` (retries are idempotent).
 - GPS: 3 s / 5 m sampling only during a running session; stops on pause, finish and discard.
+- Offline: with data already on screen, a failed refresh shows "Hors connexion" and keeps the last values.
+
+## 3a. Production hardening (branch `claude/v1-production-hardening`)
+
+- **One phone, several accounts.** The device remembers which account last read the motion sensor
+  (`src/activity/motionOwner.ts`). When a different account connects, Android readings are wiped and the account's
+  history starts at that moment (`historyFrom`, passed to `syncActivity` as `notBefore`): steps measured on the phone
+  before that account signed in are never uploaded to it. Background readings stop on sign-out and account change.
+- **Revoked access.** iOS: `E_MOTION_DENIED` (or authorization `denied`) becomes `PermissionRevokedError`; the store
+  sets the permission to denied and the dashboard says "Accès au mouvement retiré…". Android: `inspect()` re-reads the
+  runtime permission and the same warning shows; readings stored before the revocation are real and still count.
+- **Measured background behaviour, not the schedule.** `readingStats()` reports the last reading, readings and
+  background readings over 24 h, median and longest gap; the activity screen shows them and the dashboard warns when
+  the last reading is more than 60 minutes old ("En économie d'énergie, Android peut retarder les lectures…").
+- **Interrupted workouts** are restored paused with "L’application a été fermée pendant la séance…".
+- **iOS module**: no step counting → `E_MOTION_UNAVAILABLE`; a missing distance is sent as null, never 0.
+- **Account deletion** (App Store 5.1.1(v), Google Play): Profil → Supprimer mon compte → `delete_my_account('SUPPRIMER')`
+  (`20261104120000_v1_account_deletion.sql`, harness `run_v1_account_deletion.sh`, tests D01–D10). Deletes the Auth user
+  and, by cascade, the profile, activity, workouts, gym log, meals, targets, notifications, push tokens and offer
+  redemptions; orders are kept with the account link removed; staff, driver and partner accounts are refused (support
+  closes them). On success the app clears the motion readings and signs out. **Not applied to the hosted project.**
 
 ## 4. Calorie engine (`activity_daily_summary`, method `bmr_plus_movement`)
 
@@ -67,7 +91,8 @@ One method per day, never a sum of overlapping measures:
 - Remaining can be negative ("kcal au-delà"). `confidence`: measured / estimated / baseline.
 - Past days use the target snapshot (weight and height of that day).
 
-Worked example (SQL tests E01–E04): man, 70 kg, 175 cm, BMR 1 649 → base 1 814; 8 000 steps / 6 km measured →
+Worked example (SQL tests E01–E04, Jest `calorieWorkedExample.test.ts`; E12 checks a past day keeps its snapshot
+weight, E13 the confidence label of a platform total): man, 70 kg, 175 cm, BMR 1 649 → base 1 814; 8 000 steps / 6 km measured →
 210 kcal; after a 30-minute walk with 3 000 phone steps (88 kcal) → steps outside the walk 5 000 (131 kcal);
 budget 1 814 + 131 + 88 = 2 033 kcal.
 
@@ -109,7 +134,9 @@ day's workouts, Day/Week/Month with Calories, Steps and Session-minute charts (t
 as missing). Designed states: loading, no profile, Expo Go, no sensor, permission denied, not synced, no data, stale,
 server update pending.
 
-## 9. Device test checklist (all NOT STARTED)
+## 9. Device test checklist (all NOT VERIFIED)
+
+Step-by-step procedures with expected results: `DEVICE_TEST_PROCEDURES.md`. Summary:
 
 iPhone: step tracking with permission; app closed and backgrounded; daily reset at midnight; GPS walk/run/ride with the
 screen locked; permission denied and later revoked; device restart.
@@ -125,8 +152,7 @@ the server.
 
 ## 10. Owner actions
 
-- EAS development builds for iOS and Android (Expo Go cannot run the sensors).
-- Google Play: declare `ACTIVITY_RECOGNITION` use and the location foreground service
-  (`FOREGROUND_SERVICE_LOCATION`, "user-initiated workout tracking", demo video required by Play).
-- App Store: background location mode justification ("workout distance while the screen is locked").
-- Approve the calorie-engine constants (§4) and apply the migration to a project only with explicit authorization.
+- EAS development builds for iOS and Android (Expo Go cannot run the sensors); the iOS build is also the first compile
+  of the Swift module.
+- Store declarations, demo video, CNDP and privacy policy: `PRIVACY_AND_STORE_RELEASE.md` §6.
+- Approve the calorie-engine constants (§4, DECISIONS #19) and authorize the account deletion migration (DECISIONS #23).

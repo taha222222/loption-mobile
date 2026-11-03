@@ -2,6 +2,12 @@
 
 > Since 2026-11-03 the phone's own sensors are the primary source and the dashboard was redesigned: see
 > `STANDALONE_TRACKING.md`. This file stays the reference for the health-platform integrations.
+>
+> **Current status (2026-11-03, `claude/v1-production-hardening`):** the activity and standalone migrations are applied
+> to `loption-mobile` (E-27); the account deletion migration is not. A full Android release build succeeds (E-28); the
+> iOS app (Swift module, HealthKit) has not been compiled. No physical device has been tested
+> (`DEVICE_TEST_PROCEDURES.md`). Store and privacy material: `PRIVACY_AND_STORE_RELEASE.md`. The status paragraph
+> below is historical.
 
 **Status (2026-10-30, branch `claude/v1-activity-tracking`):** implemented and tested locally (Jest, SQL harness, web e2e). **Not verified on any real iPhone or Android device, no native build has been made, and nothing is applied to a hosted database.** Real HealthKit and Health Connect behaviour is therefore unverified. Do not call this feature complete until the device checklist in §10 passes.
 
@@ -45,12 +51,12 @@ Design: one original visualisation, the **energy path** (`DailyBalanceCard`). It
 1. Apple: enable the HealthKit capability on App ID `com.loption.app`. Regenerate the provisioning profiles (EAS does this on the next build when credentials are EAS-managed). Answer the App Store privacy questions for health and fitness data.
 2. Google: in the Play Console, complete the Health Connect permission declaration for the five read permissions, and link a privacy policy. Approval can take about a week, plus allow-list propagation.
 3. `eas build --profile development --platform ios` / `android`, then install on devices.
-4. Privacy policy text covering health and activity data (checklist K9; CNDP declaration in Morocco).
+4. Privacy policy text covering health and activity data (checklist K9; CNDP declaration in Morocco). Drafts of every store answer and the CNDP points: `PRIVACY_AND_STORE_RELEASE.md`.
 
 ## 3. Permissions
 - **Health data:** asked only from the connection screen, after an explanation. Read access only, using the minimum set in §2. iOS never reveals whether read access was granted. After the request the app says "Accès demandé" and, if no data arrives, explains where to enable it (Santé › Partage › Apps). Health Connect reports granted, partial and refused, and each is handled. Refusing keeps the app fully usable.
 - **Motion (iPhone fallback):** asked when connecting that source.
-- **GPS:** foreground "while in use" permission, asked when starting a walk, run or ride with "Mesurer la distance avec le GPS" on. If it is refused, the session starts without distance and says so. No background location.
+- **GPS:** foreground "while in use" permission, asked when starting a walk, run or ride with "Mesurer la distance avec le GPS" on. If it is refused, the session starts without distance and says so. No background-location *permission*; since the standalone work the session keeps measuring with the screen locked (iOS location background mode, Android location foreground service) — see `STANDALONE_TRACKING.md` §5.
 
 ## 4. Data model (migration `20261030120000_v1_activity_tracking.sql`)
 - `activity_daily_totals`: one row per customer, local date and source.
