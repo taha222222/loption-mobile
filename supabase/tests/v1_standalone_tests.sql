@@ -223,6 +223,33 @@ do $$ declare r text; s jsonb; begin
     s ->> 'step_kcal' is null and s ->> 'activity_source' is null, s::text);
 end $$;
 
+-- A weight change applies from today: yesterday's step energy keeps the
+-- weight of yesterday's snapshot (70 kg), today's uses 80 kg.
+do $$ declare y jsonb; t jsonb; begin
+  update public.user_profiles set weight = 80 where user_id = '00000000-0000-0000-0000-000000000f01';
+  y := stests.summary('00000000-0000-0000-0000-000000000f01', -1);
+  t := stests.summary('00000000-0000-0000-0000-000000000f01');
+  update public.user_profiles set weight = 70 where user_id = '00000000-0000-0000-0000-000000000f01';
+  perform stests.rec('E12', 'energy', 'past day keeps its snapshot weight: yesterday 0.5 x 70 kg x 3.63 km = 127; today 0.5 x 80 kg x 3.75 km = 150',
+    (y ->> 'step_kcal')::int = 127 and (y ->> 'bmr_kcal')::int = 1649 and (t ->> 'step_kcal')::int = 150
+    and (t ->> 'counted_workout_kcal')::int = 88,
+    format('yesterday=%s today=%s', y ->> 'step_kcal', t ->> 'step_kcal'));
+end $$;
+
+-- Confidence label per method: platform total = measured; BMR + platform
+-- active energy and BMR x 1.1 + movement = estimated; TDEE = baseline.
+do $$ declare r text; s jsonb; begin
+  perform stests.act('authenticated', '00000000-0000-0000-0000-000000000f02');
+  r := stests.attempt(format($f$insert into public.activity_daily_totals (local_date, source, time_zone, steps, distance_m, active_energy_kcal, total_energy_kcal)
+                               values (%L, 'health_connect', 'Africa/Casablanca', 7000, 5000, 300, 2100)$f$, stests.d(-3)));
+  perform stests.reset();
+  s := stests.summary('00000000-0000-0000-0000-000000000f02', -3);
+  perform stests.rec('E13', 'energy', 'a finished day with a platform total: method platform_total, confidence measured',
+    r = 'ok:1' and s ->> 'energy_method' = 'platform_total' and (s ->> 'energy_estimate_kcal')::int = 2100
+    and s ->> 'confidence' = 'measured', r || ' ' || coalesce(s::text, 'null'));
+  delete from public.activity_daily_totals where user_id = '00000000-0000-0000-0000-000000000f02' and local_date = stests.d(-3);
+end $$;
+
 -- ============================ Gym log ============================
 do $$ declare r text; n text; sess uuid; begin
   perform stests.act('authenticated', '00000000-0000-0000-0000-000000000f02');
