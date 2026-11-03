@@ -10,6 +10,9 @@ nothing else changed; its rollback re-creates the previous monitor.
     functions. Rollback: the original Phase 1C function.
   * activity (20261030120000): owner-only policies on the activity tables.
     Rollback: the nutrition monitor.
+  * standalone tracking (20261103120000): owner-only policies on the gym
+    log tables. Rollback: the activity monitor and the activity-migration
+    versions of the functions it replaced.
 
 Both blocks are copied mechanically from the committed Phase 1C migration so
 that a reviewer only has to read the appended entries below.
@@ -27,6 +30,8 @@ MIGRATION = ROOT / "supabase/migrations/20261029120000_v1_nutrition_tracking_eng
 ROLLBACK = ROOT / "supabase/rollback/v1_nutrition_tracking_rollback.sql"
 ACTIVITY_MIGRATION = ROOT / "supabase/migrations/20261030120000_v1_activity_tracking.sql"
 ACTIVITY_ROLLBACK = ROOT / "supabase/rollback/v1_activity_tracking_rollback.sql"
+STANDALONE_MIGRATION = ROOT / "supabase/migrations/20261103120000_v1_standalone_tracking.sql"
+STANDALONE_ROLLBACK = ROOT / "supabase/rollback/v1_standalone_tracking_rollback.sql"
 BEGIN, END = "-- BEGIN GENERATED MONITOR\n", "-- END GENERATED MONITOR\n"
 
 # Reviewed definitions added by the nutrition migration, as PostgreSQL 17
@@ -55,6 +60,22 @@ ACTIVITY_POLICIES = [
 ]
 ACTIVITY_DEFINER_FUNCTIONS: list = []
 
+# Reviewed definitions added by the standalone-tracking migration (owner-only).
+STANDALONE_POLICIES = [
+    f"workout_exercises|gym_exercises_owner_delete|PERMISSIVE|{{authenticated}}|DELETE|{OWNER}|-",
+    f"workout_exercises|gym_exercises_owner_insert|PERMISSIVE|{{authenticated}}|INSERT|-|{OWNER}",
+    f"workout_exercises|gym_exercises_owner_read|PERMISSIVE|{{authenticated}}|SELECT|{OWNER}|-",
+    f"workout_sets|gym_sets_owner_delete|PERMISSIVE|{{authenticated}}|DELETE|{OWNER}|-",
+    f"workout_sets|gym_sets_owner_insert|PERMISSIVE|{{authenticated}}|INSERT|-|{OWNER}",
+    f"workout_sets|gym_sets_owner_read|PERMISSIVE|{{authenticated}}|SELECT|{OWNER}|-",
+]
+# Functions the standalone migration replaces; its rollback restores the
+# activity-migration versions, copied from that migration.
+STANDALONE_REPLACED = [
+    "activity_daily_prepare", "workout_session_prepare", "nutrition_log_entry_prepare",
+    "activity_workouts", "activity_daily_summary",
+]
+
 
 def original_monitor() -> str:
     text = PHASE1C.read_text()
@@ -82,6 +103,32 @@ def extended_monitor(policies=None, definers=None) -> str:
 
 def activity_monitor() -> str:
     return extended_monitor(NEW_POLICIES + ACTIVITY_POLICIES, NEW_DEFINER_FUNCTIONS + ACTIVITY_DEFINER_FUNCTIONS)
+
+
+def standalone_monitor() -> str:
+    return extended_monitor(NEW_POLICIES + ACTIVITY_POLICIES + STANDALONE_POLICIES,
+                            NEW_DEFINER_FUNCTIONS + ACTIVITY_DEFINER_FUNCTIONS)
+
+
+def function_from(path: pathlib.Path, name: str) -> str:
+    """One function definition of a migration, as CREATE OR REPLACE."""
+    text = path.read_text()
+    starts = [text.find(f"create {k}function public.{name}(") for k in ("", "or replace ")]
+    starts = [s for s in starts if s >= 0]
+    assert len(starts) == 1, f"{name}: expected exactly one definition in {path.name}"
+    start = starts[0]
+    body = text.index("as $$", start) + len("as $$")
+    end = text.index("$$;\n", body) + len("$$;\n")
+    head = text[start:end]
+    return "create or replace" + head[len("create or replace"):] if head.startswith("create or replace") \
+        else "create or replace" + head[len("create"):]
+
+
+def activity_functions() -> str:
+    return "".join(function_from(ACTIVITY_MIGRATION, n) for n in STANDALONE_REPLACED)
+
+
+FN_BEGIN, FN_END = "-- BEGIN GENERATED ACTIVITY FUNCTIONS\n", "-- END GENERATED ACTIVITY FUNCTIONS\n"
 
 
 LOG_BEGIN, LOG_END = "-- BEGIN GENERATED NUTRITION LOG TRIGGER\n", "-- END GENERATED NUTRITION LOG TRIGGER\n"
@@ -117,6 +164,9 @@ def main() -> int:
     activity_rb = render(ACTIVITY_ROLLBACK, extended_monitor())
     activity_rb = render_string(activity_rb, original_log_trigger(), LOG_BEGIN, LOG_END)
     rendered[ACTIVITY_ROLLBACK] = activity_rb
+    rendered[STANDALONE_MIGRATION] = render(STANDALONE_MIGRATION, standalone_monitor())
+    standalone_rb = render(STANDALONE_ROLLBACK, activity_monitor())
+    rendered[STANDALONE_ROLLBACK] = render_string(standalone_rb, activity_functions(), FN_BEGIN, FN_END)
     check = "--check" in sys.argv
     stale = []
     for path, new in rendered.items():
