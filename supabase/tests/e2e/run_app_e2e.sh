@@ -105,6 +105,8 @@ else
     && pass "V1 activity tracking migration applied" || { fail "activity migration: $(tail -3 "$OUT/activity.log")"; exit 1; }
   q postgres -f "$ROOT/supabase/migrations/20261103120000_v1_standalone_tracking.sql" >"$OUT/standalone.log" 2>&1 \
     && pass "V1 standalone tracking migration applied" || { fail "standalone migration: $(tail -3 "$OUT/standalone.log")"; exit 1; }
+  q postgres -f "$ROOT/supabase/migrations/20261104120000_v1_account_deletion.sql" >"$OUT/account.log" 2>&1 \
+    && pass "V1 account deletion migration applied" || { fail "account deletion migration: $(tail -3 "$OUT/account.log")"; exit 1; }
   [ "$(qa "select count(*) from public.containment_violations() where category in ('drift','containment')")" = "0" ] \
     && pass "containment_violations() = 0" || fail "containment violations present"
 fi
