@@ -6,7 +6,8 @@ Update this file incrementally when the state changes. Last verified: 2026-11-03
 - **Latest: `claude/v1-standalone-tracking`** = `claude/v1-rollout-loption-mobile` + standalone tracking: phone step
   counting without health apps (native module `modules/loption-motion`), background GPS during a workout, gym log,
   manual meals, BMR + movement budget, redesigned Daily Tracking (`STANDALONE_TRACKING.md`). Migration
-  `20261103120000_v1_standalone_tracking.sql` is **not applied** to the hosted project (needs authorization).
+  `20261103120000_v1_standalone_tracking.sql` is **applied to `loption-mobile` since 2026-11-03** (owner-authorized,
+  evidence E-27).
 - Previous cumulative branch: `claude/v1-baseline-server-fix` = `claude/v1-activity-expo-go-fix` + honest states when the server
   lacks the V1 migrations (the hosted project today). `claude/v1-activity-expo-go-fix` = `claude/v1-activity-tracking-final` (activity batches A `e49cb59`,
   B `447334e`, C `c35da39`, layout fixes `ca759f8`, docs) + the Expo Go fix (health libraries are loaded only when
@@ -70,8 +71,6 @@ The repository ruleset covers all branches: PR + 1 approving review, no bypass, 
 - No native build has been made (prebuild succeeds on both platforms; the Android motion module compiles; the Swift
   module has not been compiled — no Xcode here). HealthKit capability, Health Connect and activity-recognition /
   location-foreground-service Play declarations and privacy texts are owner actions (checklist M).
-- The standalone migration is not on the hosted project: until it is applied, phone days are sent as steps only and
-  manual meals and the gym log are refused there (the app says so).
 - Pricing, fees, TVA and minimum order not approved, so checkout cannot be enabled.
 - No reviewer other than the author for PRs (ruleset needs 1 approval).
 - Order lifecycle undecided: the app uses `delivered`, the staging schema allows `served` (both count as received).
@@ -79,7 +78,6 @@ The repository ruleset covers all branches: PR + 1 approving review, no bypass, 
 
 ## Exact next task
 With EAS access: build development clients and run the standalone device checklist (`STANDALONE_TRACKING.md` §9,
-checklist M15–M19). With authorization: apply `20261103120000_v1_standalone_tracking.sql` to `loption-mobile` the same
-way as E-22. Without it, checklist I1: replace the hard-coded "next delivery" and "last order" cards in `app/(app)/profile.tsx` with the
+checklist M15–M19). Owner: approve the standalone budget constants (DECISIONS #19). Without it, checklist I1: replace the hard-coded "next delivery" and "last order" cards in `app/(app)/profile.tsx` with the
 customer's real orders (RLS-scoped read) or an empty state, with Jest tests and an e2e check. Leave the "Mon plan",
 upgrade and offers cards unchanged until the owner decides I3 (hide out-of-scope screens).

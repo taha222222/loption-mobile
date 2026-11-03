@@ -98,7 +98,8 @@ Extends existing tables (no competing system): `activity_daily_totals` (+ `measu
 distance allowed), `workout_sessions` (+ `steps`, `intensity`), new owner-only `workout_exercises` and
 `workout_sets`, `nutrition_log_entries.entry_source`. Monitor extended by the generator; archiving rollback
 `supabase/rollback/v1_standalone_tracking_rollback.sql`; harness `supabase/tests/run_v1_standalone.sh` (40 SQL
-tests incl. cross-account cases, refusals, concurrency, rollback, regression). Not applied to any hosted project.
+tests incl. cross-account cases, refusals, concurrency, rollback, regression). Applied to `loption-mobile` on
+2026-11-03 with the owner's authorization (evidence E-27).
 
 ## 8. Daily Tracking screen
 

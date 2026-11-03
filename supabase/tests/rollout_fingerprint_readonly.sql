@@ -22,11 +22,13 @@ fns(n) as (select unnest(array[
   'nutrition_streak_for','nutrition_target_from_tdee','order_received','register_push_token','revoke_staff_role',
   'security_audit_log_append_only','set_driver_availability','staff_roles_driver_offline','staff_roles_no_truncate',
   'staff_roles_require_admin','staff_roles_serialize','user_profiles_time_zone_guard','user_profiles_v1_derive',
-  'workout_session_prepare'])),
+  'workout_session_prepare','activity_gym_met','workout_gym_prepare','save_gym_log','activity_stride_m',
+  'activity_walk_kcal'])),
 tbls(n) as (select unnest(array[
   'activity_daily_totals','kitchens','notification_deliveries','notification_delivery_tickets','notification_preferences',
   'notification_settings','nutrition_daily_targets','nutrition_log_entries','promotion_redemptions','promotions',
-  'security_audit_log','staff_roles','workout_sessions','user_profiles','orders','order_items','drivers','meals'])),
+  'security_audit_log','staff_roles','workout_sessions','user_profiles','orders','order_items','drivers','meals',
+  'workout_exercises','workout_sets'])),
 f as (
   select string_agg(p.oid::regprocedure::text || '|' || md5(p.prosrc) || '|' || p.prosecdef || '|' ||
                     coalesce(array_to_string(p.proconfig, ','), '') || '|' || coalesce(array_to_string(p.proacl, ','), ''),

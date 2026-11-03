@@ -67,4 +67,4 @@ with date and source. Details live in the linked docs; do not copy them here.
 | 16 | MET tiers and the received-order statuses above | M, H10 |
 | 17 | Enable leaked-password protection in Supabase Auth (hosted advisor, 2026-11-02) | C |
 | 18 | Legacy functions `calculate_collaborator_revenue_split`, `update_collaborator_analytics`, `calculate_driver_weekly_earnings`: fix their `search_path` or drop them (not client-executable since Phase 1C) | J |
-| 19 | Approve the standalone budget constants and gym MET values above, and authorize applying `20261103120000_v1_standalone_tracking.sql` to `loption-mobile` | M19 |
+| 19 | Approve the standalone budget constants and gym MET values above (the migration itself was applied to `loption-mobile` on the owner's instruction, 2026-11-03) | M19 |
