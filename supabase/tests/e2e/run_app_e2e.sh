@@ -94,7 +94,7 @@ q supabase_admin -f "$OUT/fixtures.sql" >"$OUT/fixtures.log" 2>&1 || { fail "fix
 if [ "${E2E_SCHEMA:-full}" = "baseline" ]; then
   pass "baseline only: no Phase 1C or V1 migration (hosted project before the V1 rollout)"
 else
-  sed "s/'OWNER-MUST-SUPPLY-INITIAL-ADMIN-UUID',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$INITIAL_ADMIN',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" \
+  sed "s/'[^']*',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$INITIAL_ADMIN',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" \
     "$ROOT/supabase/migrations/20261016170000_phase1c_security_containment.sql" > "$OUT/p1c.sql"
   q postgres -f "$OUT/p1c.sql" >"$OUT/p1c.log" 2>&1 && pass "Phase 1C core applied" || { fail "Phase 1C: $(tail -3 "$OUT/p1c.log")"; exit 1; }
   q postgres -f "$ROOT/supabase/migrations/20261028120000_v1_onboarding_first_order_offer.sql" >"$OUT/v1.log" 2>&1 \
@@ -103,6 +103,8 @@ else
     && pass "V1 nutrition tracking/engagement migration applied" || { fail "nutrition migration: $(tail -3 "$OUT/nutrition.log")"; exit 1; }
   q postgres -f "$ROOT/supabase/migrations/20261030120000_v1_activity_tracking.sql" >"$OUT/activity.log" 2>&1 \
     && pass "V1 activity tracking migration applied" || { fail "activity migration: $(tail -3 "$OUT/activity.log")"; exit 1; }
+  q postgres -f "$ROOT/supabase/migrations/20261103120000_v1_standalone_tracking.sql" >"$OUT/standalone.log" 2>&1 \
+    && pass "V1 standalone tracking migration applied" || { fail "standalone migration: $(tail -3 "$OUT/standalone.log")"; exit 1; }
   [ "$(qa "select count(*) from public.containment_violations() where category in ('drift','containment')")" = "0" ] \
     && pass "containment_violations() = 0" || fail "containment violations present"
 fi

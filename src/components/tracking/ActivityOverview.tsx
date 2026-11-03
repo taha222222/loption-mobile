@@ -11,7 +11,7 @@ import type { DailyBalance, MovementState } from '../../activity/dailyBalance';
 const timeOf = (iso: string) => new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 
 const STATE_TEXT: Partial<Record<MovementState, string>> = {
-  unsupported: 'Ce téléphone ne compte pas les pas. Enregistrez vos marches avec une séance.',
+  unsupported: 'Cet appareil ne compte pas les pas. Enregistrez vos marches avec une séance.',
   needs_build: 'Le compteur de pas fonctionne dans l’application L’OPTION installée (pas dans Expo Go).',
   needs_install: 'Installez ou mettez à jour Health Connect, ou utilisez le compteur du téléphone.',
   not_connected: 'Comptez vos pas automatiquement avec votre téléphone, sans autre application.',
@@ -24,6 +24,7 @@ interface Props {
   day: DailyBalance | null;
   state: MovementState;
   isToday: boolean;
+  connected: boolean; // a source is connected on this device
   lastSuccessAt: string | null;
   syncing: boolean;
   onConnect: () => void;
@@ -31,7 +32,7 @@ interface Props {
   onStartWalk: () => void;
 }
 
-export function ActivityOverview({ day, state, isToday, lastSuccessAt, syncing, onConnect, onSync, onStartWalk }: Props) {
+export function ActivityOverview({ day, state, isToday, connected, lastSuccessAt, syncing, onConnect, onSync, onStartWalk }: Props) {
   const hasData = state === 'partial' || state === 'complete' || state === 'stale';
   const steps = hasData ? (day?.steps ?? null) : null;
   const distance = hasData ? (day?.walkDistanceM ?? null) : null;
@@ -60,7 +61,7 @@ export function ActivityOverview({ day, state, isToday, lastSuccessAt, syncing, 
       {STATE_TEXT[state] ? <Text style={styles.state}>{STATE_TEXT[state]}</Text> : null}
       {state === 'not_connected' || state === 'needs_install' ? <BrandButton title="Activer le compteur de pas" onPress={onConnect} /> : null}
       {state === 'unsupported' || state === 'denied' ? <BrandButton title="Démarrer une marche" variant="soft" onPress={onStartWalk} /> : null}
-      {isToday && (hasData || state === 'not_synced') ? (
+      {isToday && connected && (hasData || state === 'not_synced') ? (
         <View style={styles.syncRow}>
           <Text style={styles.sync}>
             {lastSuccessAt ? `Dernière mise à jour : ${timeOf(lastSuccessAt)}` : 'Pas encore synchronisé'}

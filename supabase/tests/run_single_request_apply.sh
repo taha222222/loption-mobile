@@ -58,7 +58,7 @@ if one_request "$M/20261030120000_v1_activity_tracking.sql" "$OUT/2.log"; then f
   [ "$(snapshot)" = "$before" ] && pass "refused; nothing committed" || fail "partial change"; fi
 
 echo "=== 3. Phase 1C with a failing postcondition, one request"
-sed "s/'OWNER-MUST-SUPPLY-INITIAL-ADMIN-UUID',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$INITIAL_ADMIN',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" \
+sed "s/'[^']*',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$INITIAL_ADMIN',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" \
   "$M/20261016170000_phase1c_security_containment.sql" > "$OUT/p1c.sql"
 grep -q "'$INITIAL_ADMIN',  -- PHASE1C_INITIAL_ADMIN_USER_ID" "$OUT/p1c.sql" || { echo "admin id not substituted"; exit 2; }
 python3 -I - "$OUT/p1c.sql" "$OUT/p1c_rogue.sql" <<'PY'

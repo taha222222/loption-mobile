@@ -276,7 +276,7 @@ describe('tracking screen', () => {
       error: null,
     });
     await render(<TrackingScreen />);
-    await waitFor(() => expect(screen.getByText('Ce téléphone ne compte pas les pas. Enregistrez vos marches avec une séance.')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Cet appareil ne compte pas les pas. Enregistrez vos marches avec une séance.')).toBeTruthy());
     expect(screen.getByLabelText(/Pas : —/)).toBeTruthy();
     await fireEvent.press(screen.getByLabelText('Démarrer : Vélo'));
     expect(mockRouter.push).toHaveBeenCalledWith({ pathname: '/(app)/workout', params: { kind: 'cycle' } });

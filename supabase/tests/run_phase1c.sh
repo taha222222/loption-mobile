@@ -114,7 +114,7 @@ setup() {   # test-only auth stand-ins, baseline (as postgres, like hosted), fix
 # with_admin <uuid> <dst>: copy of the committed core migration with only the
 # marked initial-admin line changed (asserted: exactly one line differs)
 with_admin() {
-  sed "s/'OWNER-MUST-SUPPLY-INITIAL-ADMIN-UUID',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$1',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" "$MIG" > "$2"
+  sed "s/'[^']*',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$1',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" "$MIG" > "$2"
   [ "$(diff "$MIG" "$2" | grep -c '^[<>]')" = "2" ] || { echo "with_admin: expected exactly one changed line"; exit 2; }
 }
 # migrate NAME [file]: the file controls its own transaction (BEGIN/COMMIT);
@@ -302,9 +302,16 @@ run_mode() {
     rollback_on) psql "${args[@]}" -v ON_ERROR_ROLLBACK=on -f "$2" ;;          # errors inside the transaction are ignored
   esac > "$3" 2>&1
 }
-if migrate p_committed "$MIG"; then fail "committed migration ran with the placeholder admin id"
-elif grep -q "initial administrator not supplied" "$OUT/p_committed.log" && nothing_applied "$NPOL"; then
-  pass "committed file refuses until the owner-authorized initial admin id is supplied (deployment prerequisite); nothing applied"
+# The committed file carries the owner-confirmed id of the target project
+# (commit 057987b); on this test database that account does not exist.
+sed "s/'[^']*',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'OWNER-MUST-SUPPLY-INITIAL-ADMIN-UUID',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" "$MIG" > "$OUT/p_placeholder.sql"
+if migrate p_committed "$MIG"; then fail "committed migration ran with an admin id that does not exist here"
+elif grep -q "does not exist in auth.users" "$OUT/p_committed.log" && nothing_applied "$NPOL"; then
+  pass "committed file refuses where its owner-authorized initial admin does not exist; nothing applied"
+else fail "committed file: wrong error or partial application"; cat "$OUT/p_committed.log"; fi
+if migrate p_placeholder "$OUT/p_placeholder.sql"; then fail "migration ran with the placeholder admin id"
+elif grep -q "initial administrator not supplied" "$OUT/p_placeholder.log" && nothing_applied "$NPOL"; then
+  pass "with the placeholder the file refuses until the owner-authorized initial admin id is supplied (deployment prerequisite); nothing applied"
 else fail "committed file: wrong error or partial application"; cat "$OUT/p_committed.log"; fi
 for spec in "flagged:00000000-0000-0000-0000-0000000000e1:illegitimate profile pattern" \
             "unknown:00000000-0000-0000-0000-00000000dead:does not exist in auth.users" \

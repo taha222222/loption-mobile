@@ -66,7 +66,7 @@ start_db() {
 q()  { local u="$1"; shift; psql -h 127.0.0.1 -p "$PORT" -U "$u" -d postgres -X -q -v ON_ERROR_STOP=1 "$@"; }
 qa() { q postgres -At -c "$1"; }
 mig_1c() {  # Phase 1C core with the fixture admin (same substitution as run_phase1c.sh)
-  sed "s/'OWNER-MUST-SUPPLY-INITIAL-ADMIN-UUID',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$INITIAL_ADMIN',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" "$MIG_1C" > "$OUT/p1c.sql"
+  sed "s/'[^']*',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$INITIAL_ADMIN',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" "$MIG_1C" > "$OUT/p1c.sql"
   [ "$(diff "$MIG_1C" "$OUT/p1c.sql" | grep -c '^[<>]')" = "2" ] || { echo "expected exactly one changed line"; exit 2; }
   q postgres -f "$OUT/p1c.sql" >"$OUT/p1c.log" 2>&1
 }

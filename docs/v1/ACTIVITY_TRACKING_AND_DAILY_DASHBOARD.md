@@ -1,5 +1,8 @@
 # L'OPTION V1 — Daily activity, workouts and the Daily Tracking tab
 
+> Since 2026-11-03 the phone's own sensors are the primary source and the dashboard was redesigned: see
+> `STANDALONE_TRACKING.md`. This file stays the reference for the health-platform integrations.
+
 **Status (2026-10-30, branch `claude/v1-activity-tracking`):** implemented and tested locally (Jest, SQL harness, web e2e). **Not verified on any real iPhone or Android device, no native build has been made, and nothing is applied to a hosted database.** Real HealthKit and Health Connect behaviour is therefore unverified. Do not call this feature complete until the device checklist in §10 passes.
 
 Builds on [`CALORIE_TRACKING_AND_ENGAGEMENT.md`](CALORIE_TRACKING_AND_ENGAGEMENT.md): meal logging, server-side calories, target snapshots, streaks and reminders are reused, not rebuilt.

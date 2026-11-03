@@ -67,7 +67,7 @@ setup() {  # baseline + fixtures + [nutrition fixtures] + Phase 1C core + V1 onb
   q postgres -f "$BASE" >/dev/null 2>&1
   q supabase_admin -f "$FIX" >/dev/null
   [ "${1:-}" = "plain" ] || nutrition_fixtures
-  sed "s/'OWNER-MUST-SUPPLY-INITIAL-ADMIN-UUID',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$INITIAL_ADMIN',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" "$MIG_1C" > "$OUT/p1c.sql"
+  sed "s/'[^']*',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$INITIAL_ADMIN',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" "$MIG_1C" > "$OUT/p1c.sql"
   q postgres -f "$OUT/p1c.sql" >"$OUT/p1c.log" 2>&1 || { echo "Phase 1C failed: $(tail -3 "$OUT/p1c.log")"; exit 1; }
   q postgres -f "$MIG_V1" >"$OUT/v1.log" 2>&1 || { echo "V1 onboarding failed: $(tail -3 "$OUT/v1.log")"; exit 1; }
   [ "${1:-}" = "plain" ] || nutrition_profiles
@@ -95,7 +95,7 @@ python3 -I "$ROOT/supabase/tools/generate_nutrition_monitor.py" --check >"$OUT/g
 echo "=== 2. refusals"
 start_db refuse
 q supabase_admin -f "$BOOT" >/dev/null; q postgres -f "$BASE" >/dev/null 2>&1; q supabase_admin -f "$FIX" >/dev/null
-sed "s/'OWNER-MUST-SUPPLY-INITIAL-ADMIN-UUID',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$INITIAL_ADMIN',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" "$MIG_1C" > "$OUT/p1c.sql"
+sed "s/'[^']*',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$INITIAL_ADMIN',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" "$MIG_1C" > "$OUT/p1c.sql"
 q postgres -f "$OUT/p1c.sql" >/dev/null 2>&1
 if q postgres -f "$MIG" >"$OUT/r1.log" 2>&1; then fail "applied without the V1 onboarding migration"; else
   grep -q "must be applied first" "$OUT/r1.log" && [ "$(qa "select to_regclass('public.nutrition_log_entries') is null")" = "t" ] \

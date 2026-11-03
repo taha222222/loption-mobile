@@ -89,7 +89,7 @@ base_setup() {  # baseline + fixtures + Phase 1C core + V1 onboarding (+ profile
   q postgres -f "$BASE" >/dev/null 2>&1
   q supabase_admin -f "$FIX" >/dev/null
   [ "${1:-}" = "plain" ] || fixtures
-  sed "s/'OWNER-MUST-SUPPLY-INITIAL-ADMIN-UUID',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$INITIAL_ADMIN',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" "$MIG_1C" > "$OUT/p1c.sql"
+  sed "s/'[^']*',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$INITIAL_ADMIN',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" "$MIG_1C" > "$OUT/p1c.sql"
   q postgres -f "$OUT/p1c.sql" >"$OUT/p1c.log" 2>&1 || { echo "Phase 1C failed: $(tail -3 "$OUT/p1c.log")"; exit 1; }
   q postgres -f "$MIG_V1" >"$OUT/v1.log" 2>&1 || { echo "V1 onboarding failed: $(tail -3 "$OUT/v1.log")"; exit 1; }
   [ "${1:-}" = "plain" ] || profiles

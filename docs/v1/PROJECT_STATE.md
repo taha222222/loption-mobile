@@ -1,9 +1,13 @@
 # L'OPTION — project state
 
-Update this file incrementally when the state changes. Last verified: 2026-11-02 (V1 database applied to the hosted project).
+Update this file incrementally when the state changes. Last verified: 2026-11-03 (standalone phone tracking, local only).
 
 ## Current branch
-- Cumulative branch: `claude/v1-baseline-server-fix` = `claude/v1-activity-expo-go-fix` + honest states when the server
+- **Latest: `claude/v1-standalone-tracking`** = `claude/v1-rollout-loption-mobile` + standalone tracking: phone step
+  counting without health apps (native module `modules/loption-motion`), background GPS during a workout, gym log,
+  manual meals, BMR + movement budget, redesigned Daily Tracking (`STANDALONE_TRACKING.md`). Migration
+  `20261103120000_v1_standalone_tracking.sql` is **not applied** to the hosted project (needs authorization).
+- Previous cumulative branch: `claude/v1-baseline-server-fix` = `claude/v1-activity-expo-go-fix` + honest states when the server
   lacks the V1 migrations (the hosted project today). `claude/v1-activity-expo-go-fix` = `claude/v1-activity-tracking-final` (activity batches A `e49cb59`,
   B `447334e`, C `c35da39`, layout fixes `ca759f8`, docs) + the Expo Go fix (health libraries are loaded only when
   their native module exists), on `claude/v1-engineering-context` (`636fe26`). `claude/v1-activity-tracking` stops at
@@ -25,6 +29,7 @@ Update this file incrementally when the state changes. Last verified: 2026-11-02
 | First-order free delivery (server enforcement, not yet called) | Implemented, local only | same |
 | Calorie log, history chart, streaks, opt-in reminders, push dispatcher | Implemented, local only | `CALORIE_TRACKING_AND_ENGAGEMENT.md` |
 | Daily Tracking tab (replaces the Cart tab; basket in headers), daily energy budget, Apple Health / Health Connect / iPhone motion sync, workouts (walk, run, cycling, gym), meals from delivered orders | Implemented; local tests and web e2e only; **no device or native build verification** | `ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md` |
+| Standalone tracking: phone sensors first (Core Motion / Android step counter + background readings), background GPS during a workout, gym log, manual meals, BMR × 1.1 + movement budget, Daily Tracking redesign with Day/Week/Month charts | Implemented; Jest, SQL harness, web e2e, prebuild both platforms, Android Kotlin compile; **no device test, Swift not compiled** | `STANDALONE_TRACKING.md` |
 | Release checklist | Current at the activity branch | `REMAINING_SETUP_AND_RELEASE_TASKS.md` |
 
 ## Branches and PRs
@@ -51,7 +56,8 @@ The repository ruleset covers all branches: PR + 1 approving review, no bypass, 
 
 ## Active priorities
 1. Get the V1 stack reviewed: Phase 1C first, then the three V1 migrations, then the app.
-2. First EAS development builds and the device checklist of `ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md` §10.
+2. First EAS development builds and the device checklists of `STANDALONE_TRACKING.md` §9 and
+   `ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md` §10; owner approval of the calorie-engine constants (DECISIONS).
 3. Remove remaining fake data from customer screens (checklist I1, I3).
 4. Owner decisions and credentials that unblock staging (`DECISIONS.md`, checklist A–C, H, L, M).
 5. Trusted server-side order creation once pricing is approved (checklist H4–H10).
@@ -61,14 +67,19 @@ The repository ruleset covers all branches: PR + 1 approving review, no bypass, 
 - Hosted advisors after E-22: leaked-password protection is off (Dashboard → Auth, owner action); three legacy
   functions without a fixed `search_path` (not client-executable; untouched by V1).
 - No Google, Apple, Resend, APNs or FCM credentials; real sign-in, e-mail and push never tested.
-- No native build has been made (prebuild now succeeds: the missing sound reference was removed). HealthKit capability,
-  Health Connect Play declaration and privacy texts are owner actions (checklist M).
+- No native build has been made (prebuild succeeds on both platforms; the Android motion module compiles; the Swift
+  module has not been compiled — no Xcode here). HealthKit capability, Health Connect and activity-recognition /
+  location-foreground-service Play declarations and privacy texts are owner actions (checklist M).
+- The standalone migration is not on the hosted project: until it is applied, phone days are sent as steps only and
+  manual meals and the gym log are refused there (the app says so).
 - Pricing, fees, TVA and minimum order not approved, so checkout cannot be enabled.
 - No reviewer other than the author for PRs (ruleset needs 1 approval).
 - Order lifecycle undecided: the app uses `delivered`, the staging schema allows `served` (both count as received).
 - Lint: 45 pre-existing errors (none in new files). `expo install --check` is up to date (react-native 0.88.1).
 
 ## Exact next task
-With EAS access: build development clients and run the activity device checklist (M7–M9). Without it, checklist I1: replace the hard-coded "next delivery" and "last order" cards in `app/(app)/profile.tsx` with the
+With EAS access: build development clients and run the standalone device checklist (`STANDALONE_TRACKING.md` §9,
+checklist M15–M19). With authorization: apply `20261103120000_v1_standalone_tracking.sql` to `loption-mobile` the same
+way as E-22. Without it, checklist I1: replace the hard-coded "next delivery" and "last order" cards in `app/(app)/profile.tsx` with the
 customer's real orders (RLS-scoped read) or an empty state, with Jest tests and an e2e check. Leave the "Mon plan",
 upgrade and offers cards unchanged until the owner decides I3 (hide out-of-scope screens).

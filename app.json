@@ -90,7 +90,9 @@
           "locationWhenInUsePermission": "L'OPTION utilise votre position pour proposer votre adresse de livraison, mesurer la distance d'une séance que vous démarrez (uniquement pendant cette séance, y compris écran verrouillé) et, pour les livreurs, suivre une livraison en cours.",
           "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": false,
-          "isAndroidForegroundServiceEnabled": true
+          "isAndroidForegroundServiceEnabled": true,
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false
         }
       ]
     ],

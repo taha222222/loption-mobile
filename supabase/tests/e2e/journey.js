@@ -368,14 +368,23 @@ let sink = null; // SMTP sink process, always stopped on exit
 
   await page2.getByRole('tab', { name: 'Suivi', exact: true }).click();
   await page2.waitForURL((u) => u.pathname === '/tracking', { timeout: 15000 });
-  await waitForText(page2, 'Mon bilan', 20000);
+  await waitForText(page2, 'Mes calories du jour', 20000);
   pass('the Suivi tab opens Daily Tracking');
   const consumedToday = Number(sql(`select coalesce(sum(kcal), 0) from public.nutrition_log_entries where user_id = '${userId}' and deleted_at is null and local_date = '${todayLocal}'`));
-  const balanceLabel = async () => (await page2.getByTestId('daily-balance-card').getAttribute('aria-label')) || '';
+  const balanceLabel = async () => (await page2.locator('[aria-label^="Objectif"]').first().getAttribute('aria-label')) || '';
+  const methodText = async () => {
+    await page2.getByLabel('Comment est calculé mon objectif ?').click();
+    await page2.waitForTimeout(300);
+    const text = await page2.getByTestId('daily-balance-card').innerText();
+    await page2.getByLabel('Comment est calculé mon objectif ?').click();
+    return text;
+  };
   await page2.waitForTimeout(1500);
-  check((await balanceLabel()).includes(`Budget 1614 kilocalories, ${consumedToday} consommées, ${1614 - consumedToday} restantes`) && (await balanceLabel()).includes('Estimation habituelle (TDEE)'),
-    `no activity data: budget = TDEE 1 614, consumed ${consumedToday}, remaining ${1614 - consumedToday} (${await balanceLabel()})`);
-  check((await page2.getByText('Activité non disponible ici').count()) === 1, 'web: no health provider, said in words (no fake steps)');
+  const eatenText = (n) => (n > 0 ? `${n} kcal mangées` : 'aucun repas enregistré');
+  check((await balanceLabel()) === `Objectif 1614 kcal, ${eatenText(consumedToday)}, ${1614 - consumedToday} kcal restantes` && (await methodText()).includes('Estimation selon votre profil'),
+    `no activity data: target = TDEE 1 614, eaten ${consumedToday}, remaining ${1614 - consumedToday} (${await balanceLabel()})`);
+  check((await page2.getByText('Cet appareil ne compte pas les pas. Enregistrez vos marches avec une séance.').count()) === 1
+    && (await page2.getByLabel(/^Pas : —/).count()) === 1, 'web: no step sensor, said in words; steps shown as "—" (no fake steps)');
   await shot(page2, '13-tracking-tdee');
 
   // A day synced from the phone (the web build cannot read HealthKit): steps and active energy.
@@ -390,8 +399,8 @@ let sink = null; // SMTP sink process, always stopped on exit
   await page2.reload();
   await page2.getByText(/6\s230/).first().waitFor({ timeout: 20000 });
   const withActivity = await balanceLabel();
-  check(withActivity.includes(`Budget ${bmr + 310} kilocalories`) && withActivity.includes(`${bmr + 310 - consumedToday} restantes`) && withActivity.includes('Métabolisme de base + activité mesurée'),
-    `with measured activity: budget = BMR ${bmr} + active 310, no TDEE added (${withActivity})`);
+  check(withActivity.startsWith(`Objectif ${bmr + 310} kcal`) && withActivity.includes(`${bmr + 310 - consumedToday} kcal restantes`) && (await methodText()).includes('Repos + activité mesurée'),
+    `with measured activity: target = BMR ${bmr} + active 310, no TDEE added (${withActivity})`);
   await shot(page2, '14-tracking-activity');
 
   // A gym session recorded in the app (timer; >= 1 minute): server MET estimate, budget unchanged.
@@ -410,10 +419,10 @@ let sink = null; // SMTP sink process, always stopped on exit
   const ws = sql(`select concat_ws(':', kind, energy_source, energy_kcal, weight_kg, active_seconds) from public.workout_sessions where user_id = '${userId}'`);
   check(/^gym:met_estimate:\d+:60(\.0)?:\d+$/.test(ws), `gym session stored with a server MET estimate (${ws || 'no row'})`);
   await page2.goto(WEB + '/tracking');
-  await waitForText(page2, 'Mon bilan', 20000);
+  await waitForText(page2, 'Mes calories du jour', 20000);
   await page2.waitForTimeout(1500);
-  check((await balanceLabel()).includes(`Budget ${bmr + 310} kilocalories`), 'the workout does not change the daily budget (no double counting)');
-  check((await page2.getByText(/^\d+ kcal — estimation \(MET × poids × durée\)$/).count()) >= 1, 'timeline shows the workout energy labelled as an estimate');
+  check((await balanceLabel()).startsWith(`Objectif ${bmr + 310} kcal`), 'the workout does not change a health-platform budget (no double counting)');
+  check((await page2.getByText(/\d+ kcal, estimation selon l’effort, le poids et la durée$/).count()) >= 1, 'the day’s workouts show their energy labelled as an estimate');
 
   // "J’ai mangé ce repas" only for a received order.
   const orderOk = sql(`with o as (insert into public.orders (order_number, total, subtotal, delivery_fee, status, payment_method, user_id) values ('E2E-1', 60, 60, 0, 'served', 'cash', '${userId}') returning id) select id from o`);
@@ -430,12 +439,47 @@ let sink = null; // SMTP sink process, always stopped on exit
   check(sql(`select count(*) || ':' || sum(kcal) from public.nutrition_log_entries e join public.order_items i on i.id = e.order_item_id where i.order_id = '${orderOk}'`) === '1:500',
     'delivered order: "I ate this meal" logged once with the meal record’s 500 kcal');
   await page2.goto(WEB + '/tracking');
-  await waitForText(page2, 'Mon bilan', 20000);
+  await waitForText(page2, 'Mes calories du jour', 20000);
   await page2.waitForTimeout(1500);
-  check((await balanceLabel()).includes(`${consumedToday + 500} consommées, ${bmr + 310 - consumedToday - 500} restantes`),
-    `consumed and remaining follow the logged meal (${await balanceLabel()})`);
+  check((await balanceLabel()).includes(`${consumedToday + 500} kcal mangées, ${bmr + 310 - consumedToday - 500} kcal restantes`),
+    `eaten and remaining follow the logged meal (${await balanceLabel()})`);
   await shot(page2, '15-tracking-after-meal');
-  for (const name of ['17-tracking-workouts-journal', '18-tracking-trends']) {
+
+  // A meal from outside L’OPTION, with the customer's own calories.
+  await page2.goto(WEB + '/log-meal');
+  await waitForText(page2, 'Autre repas', 20000);
+  await page2.getByText('Autre repas', { exact: true }).click();
+  await page2.getByLabel('Nom du repas').fill('Tajine maison');
+  await page2.getByLabel('Calories par portion').fill('420');
+  await page2.getByText('Enregistrer', { exact: true }).click();
+  await page2.waitForTimeout(2000);
+  check(sql(`select count(*) || ':' || sum(kcal) || ':' || min(entry_source) from public.nutrition_log_entries where user_id = '${userId}' and meal_name = 'Tajine maison'`) === '1:420:manual',
+    'manual meal logged once with the entered 420 kcal, labelled manual');
+
+  // Standalone: no health app, the phone counted the steps (iPhone/Android sensor).
+  sql(`delete from public.activity_daily_totals where user_id = '${userId}'`);
+  const phoneDay = await page2.evaluate(async ([u, t, d, from]) => {
+    const r = await fetch(u, { method: 'POST', headers: { Authorization: `Bearer ${t}`, apikey: 'x', 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ local_date: d, source: 'device_motion', time_zone: 'Africa/Casablanca', steps: 6000, distance_m: null, measured_from: from, measured_to: new Date().toISOString() }) });
+    return r.status;
+  }, [`${REST}/activity_daily_totals?on_conflict=user_id,local_date,source`, token2, todayLocal, sql(`select to_char(('${todayLocal}'::date::timestamp at time zone 'Africa/Casablanca') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`)]);
+  const [w, h] = sql(`select weight || ':' || height from public.user_profiles where user_id = '${userId}'`).split(':').map(Number);
+  const stride = Math.round(0.415 * h / 100 * 1000) / 1000;
+  const stepKcal = Math.round(0.5 * w * (6000 * stride) / 1000);
+  const gymKcal = Number(sql(`select coalesce(sum(energy_kcal), 0) from public.workout_sessions where user_id = '${userId}'`));
+  const expected = Math.round(bmr * 1.1) + stepKcal + gymKcal;
+  await page2.goto(WEB + '/tracking');
+  await waitForText(page2, 'Mes calories du jour', 20000);
+  await page2.waitForTimeout(1500);
+  check(phoneDay < 300 && (await balanceLabel()).startsWith(`Objectif ${expected} kcal`) && (await methodText()).includes('Repos + vos pas et séances'),
+    `phone-only day: target = BMR ${bmr} × 1.1 + steps ${stepKcal} + session ${gymKcal} = ${expected} (${await balanceLabel()})`);
+  check((await page2.getByLabel(/^Pas : 6\s000/).count()) === 1 && (await page2.getByLabel(/Estimée d’après vos pas/).count()) === 1,
+    'phone steps shown; distance labelled as estimated from the steps');
+  await shot(page2, '19-tracking-phone-only');
+  await page2.getByText('Mois', { exact: true }).click();
+  await page2.waitForTimeout(1500);
+  await shot(page2, '20-tracking-month');
+  for (const name of ['17-tracking-workouts-journal', '18-tracking-meals', '21-tracking-month-chart']) {
     await page2.mouse.move(195, 420);
     await page2.mouse.wheel(0, 650);
     await page2.waitForTimeout(700);

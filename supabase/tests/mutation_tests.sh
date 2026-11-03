@@ -35,7 +35,7 @@ cleanup() {
 trap cleanup EXIT
 q()  { local u="$1"; shift; psql -h 127.0.0.1 -p "$PORT" -U "$u" -d postgres -X -q -v ON_ERROR_STOP=1 "$@"; }
 qa() { q postgres -At -c "$1"; }
-sed "s/'OWNER-MUST-SUPPLY-INITIAL-ADMIN-UUID',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$A1',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" "$MIG" > "$OUT/mig.sql"
+sed "s/'[^']*',  -- PHASE1C_INITIAL_ADMIN_USER_ID/'$A1',  -- PHASE1C_INITIAL_ADMIN_USER_ID/" "$MIG" > "$OUT/mig.sql"
 [ "$(diff "$MIG" "$OUT/mig.sql" | grep -c '^[<>]')" = "2" ] || { echo "test copy: expected exactly one changed line"; exit 2; }
 
 # fresh database with the migration applied; sets PORT

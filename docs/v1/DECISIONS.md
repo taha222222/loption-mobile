@@ -32,6 +32,10 @@ with date and source. Details live in the linked docs; do not copy them here.
 | Platform total energy is ignored when below BMR; activity data older than 120 min today is shown as stale; sync window 7 days, write window 30 days | same, §4–§5 |
 | App vs imported duplicate rule: same kind, ≥ 50 % overlap; measured provider > provider > app | same, §6 |
 | No step goal (no settings for it exist; actual steps shown without a goal) | same, §1 |
+| Standalone budget (no health app): BMR × 1.1 (rest + digestion) + 0.5 kcal per kg per km walked (steps outside recorded walks/runs) + workout MET estimates; a workout alone keeps the TDEE baseline | `STANDALONE_TRACKING.md` §4 |
+| Gym intensity MET: light 3.5, moderate 5.0, vigorous 6.0 (Compendium 2011 02054 / 02052 / 02050); walking stride 0.415 × height | same |
+| GPS route kept on the device only (distance uploaded); elevation not shown; Android step readings every ~15 min in the background; no hydration tracking | same, §1, §5 |
+| Manual meals: the customer's own calories are accepted for food from outside L'OPTION, labelled "saisi par vous" (1–3 000 kcal per portion) | same, §6 |
 | Custom notification sound: the unused, missing `notification.wav` reference was removed so native builds work; a licensed sound can be added later | `app.json`, 2026-10-30 |
 
 ## Security constraints (always apply)
@@ -59,7 +63,8 @@ with date and source. Details live in the linked docs; do not copy them here.
 | 12 | Optional: a licensed custom notification sound (the missing reference was removed) | E |
 | 13 | Activity notifications (daily movement update, workout completed, weekly summary): each adds notifications, not implemented | L |
 | 14 | Retention period for health and activity data (no automatic purge yet) | M |
-| 15 | Background GPS during a workout (needs "Always"/foreground-service declarations in both stores); today GPS is foreground-only | M |
+| 15 | Background GPS during a workout is implemented with "while in use" permission only (iOS location background mode, Android location foreground service): needs the Play foreground-service declaration (demo video) and the App Store justification | M17 |
 | 16 | MET tiers and the received-order statuses above | M, H10 |
 | 17 | Enable leaked-password protection in Supabase Auth (hosted advisor, 2026-11-02) | C |
 | 18 | Legacy functions `calculate_collaborator_revenue_split`, `update_collaborator_analytics`, `calculate_driver_weekly_earnings`: fix their `search_path` or drop them (not client-executable since Phase 1C) | J |
+| 19 | Approve the standalone budget constants and gym MET values above, and authorize applying `20261103120000_v1_standalone_tracking.sql` to `loption-mobile` | M19 |

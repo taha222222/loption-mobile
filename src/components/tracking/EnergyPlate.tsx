@@ -73,7 +73,7 @@ export function EnergyPlate({ day, title, loading, onCompleteProfile }: Props) {
             ) : (
               <>
                 <Text style={[styles.big, over && styles.bigOver]}>{formatNumber(Math.abs(remaining ?? budget))}</Text>
-                <Text style={styles.centerHint}>{over ? 'kcal au-delà' : 'kcal restantes'}</Text>
+                <Text style={[styles.centerHint, over && styles.centerHintOver]}>{over ? 'kcal au-delà' : 'kcal restantes'}</Text>
               </>
             )}
           </View>
@@ -153,6 +153,7 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
   },
   bigOver: { color: theme.colors.textWhite },
+  centerHintOver: { color: theme.colors.textWhite },
   centerHint: {
     fontSize: theme.typography.sizes.md,
     color: theme.colors.inkMuted,

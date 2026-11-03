@@ -154,6 +154,7 @@ export default function TrackingScreen() {
               day={day}
               state={state}
               isToday={selected === today}
+              connected={!!activity.source}
               lastSuccessAt={activity.lastSuccessAt}
               syncing={activity.syncing}
               onConnect={() => router.push('/(app)/activity-connect')}
