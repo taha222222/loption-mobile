@@ -12,6 +12,7 @@ import { SyncOutcome, syncActivity } from '../activity/sync';
 import { WORKOUT_SOURCE_FOR, type ActivitySource, type ProviderAvailability, type ProviderPermission } from '../activity/types';
 import { deviceTimeZone, localDate } from '../nutrition/dates';
 import { deleteActivitySource, upsertActivityDays } from '../services/activityApi';
+import { motion } from '../activity/motionNative';
 import { deleteImportedWorkouts, importProviderWorkouts } from '../services/workoutApi';
 
 export interface ProviderState {
@@ -24,6 +25,7 @@ interface ActivityState {
   source: ActivitySource | null;
   connectedAt: string | null;
   lastSync: SyncOutcome | null;
+  lastSuccessAt: string | null; // last sync the server accepted (shown to the customer)
   permission: ProviderPermission | null;
   providers: ProviderState[];
   syncing: boolean;
@@ -31,7 +33,9 @@ interface ActivityState {
   inspect: () => Promise<void>;
   connect: (id: ActivitySource) => Promise<ProviderPermission>;
   disconnect: (options: { deleteImported: boolean }) => Promise<{ ok: boolean }>;
-  sync: () => Promise<SyncOutcome | null>;
+  // Reads the phone/platform and uploads. Throttled (MIN_SYNC_MS) unless
+  // forced: the sensor batches on its own, so frequent uploads add nothing.
+  sync: (options?: { force?: boolean }) => Promise<SyncOutcome | null>;
   reset: () => void;
 }
 
@@ -40,12 +44,14 @@ const initial = {
   source: null as ActivitySource | null,
   connectedAt: null as string | null,
   lastSync: null as SyncOutcome | null,
+  lastSuccessAt: null as string | null,
   permission: null as ProviderPermission | null,
   providers: [] as ProviderState[],
   syncing: false,
 };
 
 let inFlight: Promise<SyncOutcome | null> | null = null;
+export const MIN_SYNC_MS = 2 * 60_000;
 
 export const useActivityStore = create<ActivityState>()(
   persist(
@@ -89,14 +95,17 @@ export const useActivityStore = create<ActivityState>()(
           const workoutSource = WORKOUT_SOURCE_FOR[source];
           if (workoutSource && (await deleteImportedWorkouts(workoutSource)).error) return { ok: false };
         }
-        set({ source: null, connectedAt: null, lastSync: null, permission: null });
+        if (source === 'device_motion') await motion()?.setBackgroundEnabledAsync?.(false).catch(() => undefined);
+        set({ source: null, connectedAt: null, lastSync: null, lastSuccessAt: null, permission: null });
         return { ok: true };
       },
 
-      sync: async () => {
+      sync: async ({ force = false } = {}) => {
         if (inFlight) return inFlight;
         const provider = providerById(get().source);
         if (!provider) return null;
+        const last = get().lastSync;
+        if (!force && last?.status === 'ok' && Date.now() - new Date(last.at).getTime() < MIN_SYNC_MS) return last;
         inFlight = (async () => {
           set({ syncing: true });
           try {
@@ -110,7 +119,7 @@ export const useActivityStore = create<ActivityState>()(
               upsertDays: upsertActivityDays,
               upsertWorkouts: workoutSource ? (w) => importProviderWorkouts(w, workoutSource, timeZone) : undefined,
             });
-            set({ lastSync: outcome });
+            set({ lastSync: outcome, ...(outcome.status === 'ok' ? { lastSuccessAt: outcome.at } : {}) });
             return outcome;
           } finally {
             set({ syncing: false });
@@ -125,7 +134,13 @@ export const useActivityStore = create<ActivityState>()(
     {
       name: 'loption-activity',
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: (s) => ({ ownerId: s.ownerId, source: s.source, connectedAt: s.connectedAt, lastSync: s.lastSync }),
+      partialize: (s) => ({
+        ownerId: s.ownerId,
+        source: s.source,
+        connectedAt: s.connectedAt,
+        lastSync: s.lastSync,
+        lastSuccessAt: s.lastSuccessAt,
+      }),
     }
   )
 );

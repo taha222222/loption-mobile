@@ -1,0 +1,9 @@
+{
+  "name": "loption-motion",
+  "version": "1.0.0",
+  "private": true,
+  "description": "L'OPTION phone motion sensors: Core Motion pedometer (iOS) and the hardware step counter with background snapshots (Android).",
+  "license": "UNLICENSED",
+  "author": "L'OPTION",
+  "homepage": "https://github.com/taha222222/loption-mobile"
+}

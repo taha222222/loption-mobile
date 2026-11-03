@@ -22,6 +22,7 @@ export interface DayWindow {
   date: string; // local calendar date, YYYY-MM-DD
   start: Date;
   end: Date; // exclusive
+  timeZone?: string;
 }
 
 export interface DailyReading {
@@ -30,6 +31,9 @@ export interface DailyReading {
   distanceM: number | null;
   activeKcal: number | null;
   totalKcal: number | null; // only for a finished day; the server drops it otherwise
+  // Phone sensor only: the part of the day the measurement covers (ISO).
+  measuredFrom?: string | null;
+  measuredTo?: string | null;
 }
 
 export interface ImportedWorkout {

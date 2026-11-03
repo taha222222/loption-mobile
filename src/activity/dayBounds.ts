@@ -33,7 +33,7 @@ export function startOfLocalDay(date: string, timeZone: string): Date {
 }
 
 export function dayWindow(date: string, timeZone: string) {
-  return { date, start: startOfLocalDay(date, timeZone), end: startOfLocalDay(addDays(date, 1), timeZone) };
+  return { date, start: startOfLocalDay(date, timeZone), end: startOfLocalDay(addDays(date, 1), timeZone), timeZone };
 }
 
 // The `count` local days ending with `today`, oldest first.

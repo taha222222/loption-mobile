@@ -9,7 +9,7 @@ import { healthConnectProvider, __resetHealthConnectModule } from '../src/activi
 import { deviceMotionProvider, __resetPedometerModule } from '../src/activity/providers/deviceMotion';
 import { providersForPlatform } from '../src/activity/providers';
 import { isTransient, syncActivity, withRetry } from '../src/activity/sync';
-import { toDayRows } from '../src/services/activityApi';
+import { legacyPhoneRows, toDayRows } from '../src/services/activityApi';
 import type { ActivityProvider } from '../src/activity/types';
 
 const mockHk = {
@@ -37,6 +37,8 @@ const mockPedometer = {
 jest.mock('@kingstinct/react-native-healthkit', () => mockHk);
 jest.mock('react-native-health-connect', () => mockHc);
 jest.mock('expo-sensors', () => ({ Pedometer: mockPedometer }));
+const mockMotion: { module: any } = { module: null };
+jest.mock('../src/activity/motionNative', () => ({ motion: () => mockMotion.module }));
 const mockNative = { present: true };
 jest.mock('../src/activity/providers/nativeModules', () => ({
   ...jest.requireActual('../src/activity/providers/nativeModules'),
@@ -48,6 +50,7 @@ const setOS = (os: string) => Object.defineProperty(Platform, 'OS', { get: () =>
 beforeEach(() => {
   jest.clearAllMocks();
   mockNative.present = true;
+  mockMotion.module = null;
   __resetHealthKitModule();
   __resetHealthConnectModule();
   __resetPedometerModule();
@@ -76,9 +79,9 @@ describe('local day bounds', () => {
 });
 
 describe('platform providers', () => {
-  it('offers Apple Health then the motion sensor on iOS, Health Connect on Android, nothing on web', () => {
-    expect(providersForPlatform('ios').map((p) => p.id)).toEqual(['apple_health', 'device_motion']);
-    expect(providersForPlatform('android').map((p) => p.id)).toEqual(['health_connect']);
+  it('offers the phone sensor first (no health app needed), then the optional health platform', () => {
+    expect(providersForPlatform('ios').map((p) => p.id)).toEqual(['device_motion', 'apple_health']);
+    expect(providersForPlatform('android').map((p) => p.id)).toEqual(['device_motion', 'health_connect']);
     expect(providersForPlatform('web')).toEqual([]);
   });
 });
@@ -246,20 +249,92 @@ describe('Health Connect', () => {
   });
 });
 
-describe('iPhone motion sensor', () => {
-  it('reports steps only', async () => {
+describe('phone motion sensor', () => {
+  const w = dayWindow('2026-10-28', 'Africa/Casablanca');
+  it('without the L\u2019OPTION module (older iPhone build) reports steps only through expo-sensors', async () => {
     mockPedometer.getStepCountAsync.mockResolvedValue({ steps: 4321 });
-    const [day] = await deviceMotionProvider.readDays([dayWindow('2026-10-28', 'Africa/Casablanca')]);
-    expect(day).toEqual({ date: '2026-10-28', steps: 4321, distanceM: null, activeKcal: null, totalKcal: null });
-    expect(toDayRows([{ ...day, distanceM: 10, activeKcal: 5, totalKcal: 9 }], 'device_motion', 'Africa/Casablanca')[0]).toMatchObject({
-      distance_m: null,
+    const [day] = await deviceMotionProvider.readDays([w]);
+    expect(day).toEqual({
+      date: '2026-10-28', steps: 4321, distanceM: null, activeKcal: null, totalKcal: null,
+      measuredFrom: w.start.toISOString(), measuredTo: w.end.toISOString(),
+    });
+    expect(toDayRows([{ ...day, activeKcal: 5, totalKcal: 9 }], 'device_motion', 'Africa/Casablanca')[0]).toMatchObject({
       active_energy_kcal: null,
       total_energy_kcal: null,
+      measured_from: w.start.toISOString(),
     });
+  });
+  it('on iPhone with the module reads steps and measured distance from Core Motion', async () => {
+    mockMotion.module = {
+      capabilities: () => ({ platform: 'ios', stepCounting: true, distance: true }),
+      authorizationStatus: () => 'authorized',
+      queryAsync: jest.fn().mockResolvedValue({ steps: 8000, distanceM: 6012.4, from: 0, to: 0 }),
+    };
+    await expect(deviceMotionProvider.availability()).resolves.toBe('available');
+    await expect(deviceMotionProvider.permission()).resolves.toBe('granted');
+    const [day] = await deviceMotionProvider.readDays([w]);
+    expect(day).toMatchObject({ steps: 8000, distanceM: 6012 });
+    expect(mockMotion.module.queryAsync).toHaveBeenCalledWith(w.start.getTime(), w.end.getTime());
+    expect(mockPedometer.getStepCountAsync).not.toHaveBeenCalled();
+  });
+  it('a phone without a step counter is unsupported, not estimated', async () => {
+    setOS('android');
+    mockMotion.module = { capabilities: () => ({ platform: 'android', stepCounting: false }) };
+    await expect(deviceMotionProvider.availability()).resolves.toBe('unsupported');
+    mockMotion.module = null;
+    await expect(deviceMotionProvider.availability()).resolves.toBe('needs_native_build');
+  });
+  it('on Android derives days from stored counter readings; a day without readings is not sent', async () => {
+    setOS('android');
+    const boot = { bootCount: 4, elapsedMs: 0 };
+    const t = (iso: string) => new Date(iso).getTime();
+    mockMotion.module = {
+      capabilities: () => ({ platform: 'android', stepCounting: true }),
+      getPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
+      recordSnapshotAsync: jest.fn().mockResolvedValue(null),
+      getSnapshotsAsync: jest.fn().mockResolvedValue([
+        { value: 100, wallTimeMs: t('2026-10-28T08:00:00Z'), ...boot, elapsedMs: t('2026-10-28T08:00:00Z') - t('2026-10-20T00:00:00Z') },
+        { value: 2600, wallTimeMs: t('2026-10-28T12:00:00Z'), ...boot, elapsedMs: t('2026-10-28T12:00:00Z') - t('2026-10-20T00:00:00Z') },
+      ]),
+    };
+    const days = await deviceMotionProvider.readDays([dayWindow('2026-10-27', 'Africa/Casablanca'), w]);
+    expect(mockMotion.module.recordSnapshotAsync).toHaveBeenCalled();
+    expect(days.map((d) => d.steps)).toEqual([null, 2500]);
+    expect(days[1]).toMatchObject({ measuredFrom: '2026-10-28T08:00:00.000Z', measuredTo: '2026-10-28T12:00:00.000Z', distanceM: null });
+    const rows = toDayRows(days, 'device_motion', 'Africa/Casablanca');
+    expect(rows.map((r) => r.local_date)).toEqual(['2026-10-28']);
+  });
+  it('on Android a granted permission enables background readings', async () => {
+    setOS('android');
+    mockMotion.module = {
+      capabilities: () => ({ platform: 'android', stepCounting: true }),
+      requestPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
+      setBackgroundEnabledAsync: jest.fn().mockResolvedValue(true),
+      recordSnapshotAsync: jest.fn().mockResolvedValue(null),
+    };
+    await expect(deviceMotionProvider.requestPermission()).resolves.toBe('granted');
+    expect(mockMotion.module.setBackgroundEnabledAsync).toHaveBeenCalledWith(true);
+    mockMotion.module.requestPermissionsAsync.mockResolvedValue({ granted: false, canAskAgain: false });
+    mockMotion.module.setBackgroundEnabledAsync.mockClear();
+    await expect(deviceMotionProvider.requestPermission()).resolves.toBe('denied');
+    expect(mockMotion.module.setBackgroundEnabledAsync).not.toHaveBeenCalled();
   });
   it('treats a refused motion permission as denied', async () => {
     mockPedometer.requestPermissionsAsync.mockResolvedValue({ granted: false, canAskAgain: false, status: 'denied' });
     await expect(deviceMotionProvider.requestPermission()).resolves.toBe('denied');
+  });
+});
+
+describe('older server compatibility', () => {
+  it('a server without the standalone migration gets phone days as steps only', () => {
+    const rows = toDayRows(
+      [{ date: '2026-10-28', steps: 10, distanceM: 8, activeKcal: null, totalKcal: null, measuredFrom: 'a', measuredTo: 'b' }],
+      'device_motion',
+      'Africa/Casablanca'
+    );
+    expect(legacyPhoneRows(rows)).toEqual([
+      { local_date: '2026-10-28', source: 'device_motion', time_zone: 'Africa/Casablanca', steps: 10, distance_m: null, active_energy_kcal: null, total_energy_kcal: null },
+    ]);
   });
 });
 
