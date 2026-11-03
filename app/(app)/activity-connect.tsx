@@ -22,7 +22,7 @@ const at = (iso: string) => new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short
 // minimum data, the app stays usable without any of them, and disconnecting
 // can delete everything that was imported.
 export default function ActivityConnectScreen() {
-  const { source, providers, permission, lastSync, syncing, inspect, connect, disconnect, sync } = useActivityStore();
+  const { source, providers, permission, lastSync, syncing, inspect, connect, disconnect, sync, diagnostics } = useActivityStore();
   const [busy, setBusy] = useState<ActivitySource | 'disconnect' | null>(null);
   const [message, setMessage] = useState<{ title: string; text: string; tone: 'error' | 'info' } | null>(null);
 
@@ -115,6 +115,15 @@ export default function ActivityConnectScreen() {
                     }`
                 : 'Pas encore synchronisé.'}
             </Text>
+            {diagnostics ? (
+              <Text style={styles.meta} testID="reading-stats">
+                {diagnostics.readings24h === 0
+                  ? 'Aucune lecture du capteur ces dernières 24 h.'
+                  : `Lectures du capteur sur 24 h : ${diagnostics.readings24h} (dont ${diagnostics.background24h} en arrière-plan)` +
+                    (diagnostics.medianGapMin !== null ? ` · écart habituel ${diagnostics.medianGapMin} min, le plus long ${diagnostics.maxGapMin} min` : '') +
+                    '.'}
+              </Text>
+            ) : null}
             {permission === 'denied' || permission === 'partial' || (lastSync?.status === 'ok' && lastSync.withData === 0) ? (
               <BrandButton title="Ouvrir les réglages d’accès" variant="soft" onPress={openSettings} />
             ) : null}

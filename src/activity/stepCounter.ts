@@ -140,3 +140,29 @@ export function segmentSteps(start: CounterSnapshot | null, end: CounterSnapshot
   if (!sameBoot(start, end) || end.value < start.value) return null;
   return Math.round(end.value - start.value);
 }
+
+// What the device actually did over the last 24 hours (not what was
+// scheduled): Android runs the background job "about every 15 minutes" but
+// Doze, battery saver and app standby can delay it for hours.
+export interface ReadingStats {
+  lastAt: number | null; // ms of the latest reading
+  readings24h: number;
+  background24h: number;
+  medianGapMin: number | null; // between consecutive readings in the last 24 h
+  maxGapMin: number | null;
+}
+
+export function readingStats(snapshots: CounterSnapshot[], nowMs: number): ReadingStats {
+  const sorted = [...snapshots].sort((a, b) => a.wallTimeMs - b.wallTimeMs);
+  const recent = sorted.filter((s) => s.wallTimeMs >= nowMs - 24 * 3600 * 1000 && s.wallTimeMs <= nowMs + 60_000);
+  const gaps: number[] = [];
+  for (let i = 1; i < recent.length; i++) gaps.push((recent[i].wallTimeMs - recent[i - 1].wallTimeMs) / 60000);
+  gaps.sort((a, b) => a - b);
+  return {
+    lastAt: sorted.length ? sorted[sorted.length - 1].wallTimeMs : null,
+    readings24h: recent.length,
+    background24h: recent.filter((s) => s.origin === 'background').length,
+    medianGapMin: gaps.length ? Math.round(gaps[Math.floor((gaps.length - 1) / 2)]) : null,
+    maxGapMin: gaps.length ? Math.round(gaps[gaps.length - 1]) : null,
+  };
+}

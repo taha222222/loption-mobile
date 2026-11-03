@@ -54,6 +54,18 @@ export interface ActivityProvider {
   readDays(days: DayWindow[]): Promise<DailyReading[]>;
   readWorkouts?(start: Date, end: Date): Promise<ImportedWorkout[]>;
   openSettings?(): void;
+  // Phone sensor on Android: what the background readings really did.
+  diagnostics?(): Promise<import('./stepCounter').ReadingStats | null>;
+}
+
+// Thrown by readDays when the OS refused access (e.g. Motion & Fitness
+// turned off after it was granted): shown as "permission denied", not as
+// a generic read error.
+export class PermissionRevokedError extends Error {
+  constructor() {
+    super('permission_denied');
+    this.name = 'PermissionRevokedError';
+  }
 }
 
 export const WORKOUT_SOURCE_FOR: Record<ActivitySource, WorkoutSource | null> = {

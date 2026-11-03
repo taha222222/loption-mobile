@@ -104,12 +104,22 @@ export default function TrackingScreen() {
 
       {status === 'error' ? (
         <View style={styles.section}>
-          <FormMessage
-            title="Bilan indisponible"
-            message="Impossible de charger votre suivi. Vérifiez votre connexion et réessayez."
-            actionLabel="Réessayer"
-            onAction={() => refresh()}
-          />
+          {days.length > 0 ? (
+            <FormMessage
+              title="Hors connexion"
+              message="Les dernières données reçues sont affichées. Vos séances et repas sont gardés sur le téléphone et envoyés au retour de la connexion."
+              tone="info"
+              actionLabel="Réessayer"
+              onAction={() => refresh()}
+            />
+          ) : (
+            <FormMessage
+              title="Bilan indisponible"
+              message="Impossible de charger votre suivi. Vérifiez votre connexion et réessayez."
+              actionLabel="Réessayer"
+              onAction={() => refresh()}
+            />
+          )}
         </View>
       ) : null}
 
@@ -140,7 +150,9 @@ export default function TrackingScreen() {
                   <ActivityIcon name={KIND_GLYPH[activeWorkout.kind]} size={56} />
                   <View style={styles.activeText}>
                     <Text style={styles.activeTitle}>{`${KIND_LABEL[activeWorkout.kind]} ${activeWorkout.status === 'running' ? 'en cours' : 'en pause'}`}</Text>
-                    <Text style={styles.hint}>Touchez pour voir le minuteur</Text>
+                    <Text style={styles.hint}>
+                      {activeWorkout.interrupted ? 'Séance interrompue : reprenez-la ou terminez-la' : 'Touchez pour voir le minuteur'}
+                    </Text>
                   </View>
                 </SurfaceCard>
               </TouchableOpacity>
@@ -155,6 +167,8 @@ export default function TrackingScreen() {
               state={state}
               isToday={selected === today}
               connected={!!activity.source}
+              permissionDenied={activity.permission === 'denied'}
+              diagnostics={activity.diagnostics}
               lastSuccessAt={activity.lastSuccessAt}
               syncing={activity.syncing}
               onConnect={() => router.push('/(app)/activity-connect')}

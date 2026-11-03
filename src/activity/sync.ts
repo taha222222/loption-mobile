@@ -24,6 +24,8 @@ export interface SyncDeps {
   sleep?: (ms: number) => Promise<void>;
   maxAttempts?: number;
   days?: number;
+  // Steps before this instant are not read (another account's history).
+  notBefore?: string | null;
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -57,7 +59,11 @@ export async function withRetry<T>(
 export async function syncActivity(deps: SyncDeps): Promise<SyncOutcome> {
   const now = deps.now ?? (() => new Date());
   const retry = { maxAttempts: deps.maxAttempts, sleep: deps.sleep };
-  const windows = recentDayWindows(deps.today, deps.timeZone, deps.days ?? SYNC_DAYS);
+  const notBefore = deps.notBefore ? new Date(deps.notBefore).getTime() : null;
+  const windows = recentDayWindows(deps.today, deps.timeZone, deps.days ?? SYNC_DAYS)
+    .filter((w) => notBefore === null || w.end.getTime() > notBefore)
+    .map((w) => (notBefore !== null && w.start.getTime() < notBefore ? { ...w, start: new Date(notBefore) } : w));
+  if (windows.length === 0) return { status: 'ok', at: now().toISOString(), days: 0, workouts: 0, withData: 0 };
   const at = () => now().toISOString();
 
   let readings;

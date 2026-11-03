@@ -14,8 +14,8 @@
 // The value 'device_motion' is the stored source of both platforms.
 import { Platform } from 'react-native';
 import { motion } from '../motionNative';
-import { dailySteps } from '../stepCounter';
-import type { ActivityProvider, DailyReading, ProviderPermission } from '../types';
+import { dailySteps, readingStats } from '../stepCounter';
+import { PermissionRevokedError, type ActivityProvider, type DailyReading, type ProviderPermission } from '../types';
 
 type PedometerModule = any;
 let cachedPedometer: PedometerModule | null | undefined;
@@ -142,7 +142,14 @@ export const deviceMotionProvider: ActivityProvider = {
       const end = w.end.getTime() > now ? new Date(now) : w.end;
       if (end.getTime() <= w.start.getTime()) continue;
       if (m?.queryAsync) {
-        const r = await m.queryAsync(w.start.getTime(), end.getTime());
+        let r;
+        try {
+          r = await m.queryAsync(w.start.getTime(), end.getTime());
+        } catch (e: any) {
+          // Motion & Fitness turned off after it was granted.
+          if (e?.code === 'E_MOTION_DENIED' || m.authorizationStatus?.() === 'denied') throw new PermissionRevokedError();
+          throw e;
+        }
         out.push({
           date: w.date,
           steps: Number.isFinite(r?.steps) ? Math.round(r.steps) : null,
@@ -169,5 +176,12 @@ export const deviceMotionProvider: ActivityProvider = {
       });
     }
     return out;
+  },
+
+  async diagnostics() {
+    const m = motion();
+    if (Platform.OS !== 'android' || !m?.getSnapshotsAsync) return null;
+    const now = Date.now();
+    return readingStats(await m.getSnapshotsAsync(now - 24 * 3600 * 1000 - 60_000), now);
   },
 };

@@ -12,6 +12,28 @@ public final class LoptionMotionModule: Module {
   private lazy var pedometer = CMPedometer()
   private var liveFrom: Date?
 
+  // Optional values are sent as NSNull (JavaScript null), never as a
+  // Swift Optional boxed in Any.
+  private func payload(_ data: CMPedometerData, fromMs: Double) -> [String: Any] {
+    let distance: Any = data.distance.map { $0.doubleValue } ?? NSNull()
+    return [
+      "steps": data.numberOfSteps.intValue,
+      "distanceM": distance,
+      "from": fromMs,
+      "to": data.endDate.timeIntervalSince1970 * 1000.0
+    ]
+  }
+
+  private func startLive(fromMs: Double) {
+    guard CMPedometer.isStepCountingAvailable() else { return }
+    let from = Date(timeIntervalSince1970: fromMs / 1000.0)
+    liveFrom = from
+    pedometer.startUpdates(from: from) { [weak self] data, error in
+      guard let self, let data, error == nil else { return }
+      self.sendEvent(EVENT_UPDATE, self.payload(data, fromMs: fromMs))
+    }
+  }
+
   public func definition() -> ModuleDefinition {
     Name("LoptionMotion")
     Events(EVENT_UPDATE)
@@ -42,6 +64,10 @@ public final class LoptionMotionModule: Module {
     AsyncFunction("queryAsync") { (startMs: Double, endMs: Double, promise: Promise) in
       let start = Date(timeIntervalSince1970: startMs / 1000.0)
       let end = Date(timeIntervalSince1970: endMs / 1000.0)
+      guard CMPedometer.isStepCountingAvailable() else {
+        promise.reject("E_MOTION_UNAVAILABLE", "Step counting is not available on this device")
+        return
+      }
       guard end > start else {
         promise.resolve(["steps": 0, "distanceM": NSNull(), "from": startMs, "to": endMs])
         return
@@ -64,17 +90,7 @@ public final class LoptionMotionModule: Module {
 
     // Live steps since `fromMs` (start of the day or of a workout segment).
     Function("startLiveUpdates") { (fromMs: Double) in
-      let from = Date(timeIntervalSince1970: fromMs / 1000.0)
-      self.liveFrom = from
-      self.pedometer.startUpdates(from: from) { [weak self] data, _ in
-        guard let data else { return }
-        self?.sendEvent(EVENT_UPDATE, [
-          "steps": data.numberOfSteps.intValue,
-          "distanceM": data.distance.map { $0.doubleValue } as Any,
-          "from": fromMs,
-          "to": data.endDate.timeIntervalSince1970 * 1000.0
-        ])
-      }
+      self.startLive(fromMs: fromMs)
     }
 
     Function("stopLiveUpdates") {
@@ -88,16 +104,7 @@ public final class LoptionMotionModule: Module {
 
     OnAppEntersForeground {
       if let from = self.liveFrom {
-        let fromMs = from.timeIntervalSince1970 * 1000.0
-        self.pedometer.startUpdates(from: from) { [weak self] data, _ in
-          guard let data else { return }
-          self?.sendEvent(EVENT_UPDATE, [
-            "steps": data.numberOfSteps.intValue,
-            "distanceM": data.distance.map { $0.doubleValue } as Any,
-            "from": fromMs,
-            "to": data.endDate.timeIntervalSince1970 * 1000.0
-          ])
-        }
+        self.startLive(fromMs: from.timeIntervalSince1970 * 1000.0)
       }
     }
 

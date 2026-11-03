@@ -7,6 +7,7 @@ import { theme } from '../../theme';
 import { ActivityIcon, BrandButton, SurfaceCard, formatNumber, type ActivityIconName } from '../v2';
 import { formatDistance } from '../../activity/gps';
 import type { DailyBalance, MovementState } from '../../activity/dailyBalance';
+import type { ReadingStats } from '../../activity/stepCounter';
 
 const timeOf = (iso: string) => new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 
@@ -25,6 +26,9 @@ interface Props {
   state: MovementState;
   isToday: boolean;
   connected: boolean; // a source is connected on this device
+  permissionDenied?: boolean; // access withdrawn after it was granted
+  diagnostics?: ReadingStats | null; // Android phone sensor: real reading times
+  now?: Date;
   lastSuccessAt: string | null;
   syncing: boolean;
   onConnect: () => void;
@@ -32,7 +36,7 @@ interface Props {
   onStartWalk: () => void;
 }
 
-export function ActivityOverview({ day, state, isToday, connected, lastSuccessAt, syncing, onConnect, onSync, onStartWalk }: Props) {
+export function ActivityOverview({ day, state, isToday, connected, permissionDenied, diagnostics, now = new Date(), lastSuccessAt, syncing, onConnect, onSync, onStartWalk }: Props) {
   const hasData = state === 'partial' || state === 'complete' || state === 'stale';
   const steps = hasData ? (day?.steps ?? null) : null;
   const distance = hasData ? (day?.walkDistanceM ?? null) : null;
@@ -59,6 +63,14 @@ export function ActivityOverview({ day, state, isToday, connected, lastSuccessAt
       </View>
 
       {STATE_TEXT[state] ? <Text style={styles.state}>{STATE_TEXT[state]}</Text> : null}
+      {connected && permissionDenied && hasData ? (
+        <Text style={styles.warn}>Accès au mouvement retiré : les pas ne sont plus mis à jour. Réactivez-le dans les réglages du téléphone.</Text>
+      ) : null}
+      {isToday && connected && diagnostics?.lastAt && now.getTime() - diagnostics.lastAt > 60 * 60_000 ? (
+        <Text style={styles.warn}>
+          {`Dernière lecture du capteur à ${timeOf(new Date(diagnostics.lastAt).toISOString())}. En économie d’énergie, Android peut retarder les lectures : les pas faits depuis s’afficheront à la prochaine lecture.`}
+        </Text>
+      ) : null}
       {state === 'not_connected' || state === 'needs_install' ? <BrandButton title="Activer le compteur de pas" onPress={onConnect} /> : null}
       {state === 'unsupported' || state === 'denied' ? <BrandButton title="Démarrer une marche" variant="soft" onPress={onStartWalk} /> : null}
       {isToday && connected && (hasData || state === 'not_synced') ? (
@@ -101,6 +113,7 @@ const styles = StyleSheet.create({
   label: { fontSize: theme.typography.sizes.md, fontWeight: theme.typography.weights.semibold, color: theme.colors.ink },
   hint: { fontSize: theme.typography.sizes.xs, color: theme.colors.inkMuted },
   state: { fontSize: theme.typography.sizes.sm, lineHeight: theme.typography.lineHeights.sm, color: theme.colors.ink },
+  warn: { fontSize: theme.typography.sizes.sm, lineHeight: theme.typography.lineHeights.sm, color: theme.colors.energy },
   syncRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },
   sync: { flex: 1, fontSize: theme.typography.sizes.xs, color: theme.colors.inkMuted },
   syncButton: { paddingHorizontal: theme.spacing.lg },

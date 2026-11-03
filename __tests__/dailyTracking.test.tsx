@@ -312,6 +312,25 @@ describe('tracking screen', () => {
     await waitFor(() => expect(mockApi.fetchDailyBalance).toHaveBeenLastCalledWith('2026-09-30', '2026-10-29', '2026-10-29'));
   });
 
+  it('offline after data was loaded: keeps the last data and says so', async () => {
+    await render(<TrackingScreen />);
+    await waitFor(() => expect(screen.getByTestId('daily-balance-card')).toBeTruthy());
+    mockApi.fetchDailyBalance.mockResolvedValue({ data: null, error: { message: 'Network request failed' } });
+    await useTrackingStore.getState().refresh({ sync: false });
+    await waitFor(() => expect(screen.getByText('Hors connexion')).toBeTruthy());
+    expect(screen.getByTestId('daily-balance-card')).toBeTruthy();
+    expect(screen.queryByText('Bilan indisponible')).toBeNull();
+  });
+
+  it('shows an interrupted workout prominently', async () => {
+    useWorkoutStore.setState({
+      active: { id: 'x', kind: 'run', timeZone: 'UTC', startedAt: '2026-10-29T07:00:00Z', status: 'paused', segments: [{ start: '2026-10-29T07:00:00Z', end: '2026-10-29T07:20:00Z' }],
+        lastSeenAt: '2026-10-29T07:20:00Z', gps: { enabled: false, distanceM: 0, points: 0, gaps: 0 }, interrupted: true } as any,
+    });
+    await render(<TrackingScreen />);
+    await waitFor(() => expect(screen.getByText('Séance interrompue : reprenez-la ou terminez-la')).toBeTruthy());
+  });
+
   it('shows an error state with retry', async () => {
     mockApi.fetchDailyBalance.mockResolvedValue({ data: null, error: { message: 'offline' } });
     await render(<TrackingScreen />);
