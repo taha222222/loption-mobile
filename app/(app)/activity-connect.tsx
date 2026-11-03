@@ -10,16 +10,17 @@ import { useActivityStore } from '../../src/stores/activityStore';
 const AVAILABILITY_TEXT: Record<ProviderAvailability, string | null> = {
   available: null,
   unsupported: 'Non disponible sur cet appareil.',
-  needs_native_build: 'Nécessite la version L’OPTION de l’App Store ou de Google Play (pas Expo Go).',
+  needs_native_build: 'Nécessite l’application L’OPTION installée (pas Expo Go).',
   needs_install: 'Health Connect n’est pas installé.',
   needs_update: 'Health Connect doit être mis à jour.',
 };
 
 const at = (iso: string) => new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso));
 
-// Optional connection to the phone's health platform. Read-only, minimum
-// data, the app stays fully usable without it, and disconnecting can delete
-// everything that was imported.
+// Where steps come from. The phone's own step sensor is the default (no
+// health app needed); Apple Health / Health Connect are optional. Read-only,
+// minimum data, the app stays usable without any of them, and disconnecting
+// can delete everything that was imported.
 export default function ActivityConnectScreen() {
   const { source, providers, permission, lastSync, syncing, inspect, connect, disconnect, sync } = useActivityStore();
   const [busy, setBusy] = useState<ActivitySource | 'disconnect' | null>(null);
@@ -80,24 +81,22 @@ export default function ActivityConnectScreen() {
 
   return (
     <Screen scroll>
-      <ScreenHeader title="Données d’activité" subtitle="Connexion santé" right={<IconButton icon="close" label="Fermer" onPress={() => router.back()} />} />
+      <ScreenHeader title="Compter mes pas" subtitle="Sources d’activité" right={<IconButton icon="close" label="Fermer" onPress={() => router.back()} />} />
 
       <View style={styles.section}>
         <SurfaceCard style={styles.card}>
           <Text style={styles.lead}>Pourquoi ?</Text>
           <Text style={styles.text}>
-            Pour afficher vos pas, votre distance et l’énergie dépensée en bougeant, et ajuster votre budget du jour sur votre activité réelle.
-            L’accès est en lecture seule et facultatif.
+            Pour voir vos pas et votre distance, et adapter votre objectif du jour à ce que vous bougez vraiment. Facultatif : sans accès, vous
+            pouvez toujours enregistrer vos marches et séances à la main.
           </Text>
-          <Text style={styles.lead}>Mesuré ou estimé ?</Text>
+          <Text style={styles.lead}>Application fermée ?</Text>
+          <Text style={styles.text}>iPhone : le téléphone compte vos pas en permanence ; L’OPTION lit les 7 derniers jours quand vous l’ouvrez.</Text>
           <Text style={styles.text}>
-            Mesuré : ce que votre téléphone ou votre montre a enregistré. Estimé : ce que L’OPTION calcule (métabolisme, séances sans mesure
-            d’énergie). Chaque valeur indique sa source.
+            Android : le capteur compte vos pas en permanence ; L’OPTION note le compteur environ toutes les 15 minutes (Android peut retarder
+            cette lecture en économie d’énergie). Après un redémarrage, les pas faits depuis la dernière lecture ne sont pas connus.
           </Text>
-          <Text style={styles.text}>
-            Les données sont lues quand vous ouvrez L’OPTION : il n’y a pas de suivi en continu en arrière-plan. Elles ne sont ni partagées ni
-            publiées.
-          </Text>
+          <Text style={styles.text}>Vos données restent privées : elles ne sont ni partagées ni publiées.</Text>
         </SurfaceCard>
       </View>
 
@@ -130,7 +129,7 @@ export default function ActivityConnectScreen() {
           {providers.length === 0 ? (
             <FormMessage
               title="Aucune source sur cet appareil"
-              message="La lecture des données d’activité est disponible dans l’application mobile (iPhone : Apple Santé ; Android : Health Connect)."
+              message="Le compteur de pas fonctionne dans l’application mobile L’OPTION (iPhone et Android). Vous pouvez enregistrer vos séances à la main."
               tone="info"
             />
           ) : (
@@ -140,7 +139,12 @@ export default function ActivityConnectScreen() {
                 <Text style={styles.text}>{PROVIDER_SCOPE[p.id]}</Text>
                 {AVAILABILITY_TEXT[p.availability] ? <Text style={styles.meta}>{AVAILABILITY_TEXT[p.availability]}</Text> : null}
                 {p.availability === 'available' ? (
-                  <BrandButton title={`Connecter ${PROVIDER_LABEL[p.id]}`} onPress={() => onConnect(p.id)} loading={busy === p.id} />
+                  <BrandButton
+                    title={p.id === 'device_motion' ? 'Activer le compteur de pas' : `Connecter ${PROVIDER_LABEL[p.id]}`}
+                    variant={p.id === 'device_motion' ? 'solid' : 'soft'}
+                    onPress={() => onConnect(p.id)}
+                    loading={busy === p.id}
+                  />
                 ) : p.availability === 'needs_install' || p.availability === 'needs_update' ? (
                   <BrandButton
                     title="Ouvrir Google Play"

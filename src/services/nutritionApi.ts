@@ -1,7 +1,9 @@
 // src/services/nutritionApi.ts
 // Supabase calls for tracking and reminders. Every call runs as the signed-in
 // customer: RLS and the database triggers decide what is allowed and compute
-// calories, targets and streaks. Nothing here can submit a calorie value.
+// calories, targets and streaks. The only calorie value a client sends is
+// the one the customer types for a manual meal (food from outside
+// L'OPTION), labelled as such; menu meals always take the server's value.
 import { supabase } from '../lib/supabase';
 import { toDaySummaries, toStreak, DaySummary, StreakInfo } from '../nutrition/tracking';
 
@@ -13,6 +15,8 @@ export interface LogEntry {
   kcalPerServing: number;
   orderItemId: string | null;
   loggedAt: string;
+  mealId: string | null;
+  source: 'menu' | 'order' | 'manual';
 }
 
 export interface LoggableMeal {
@@ -80,7 +84,7 @@ export async function fetchStreak(today: string): Promise<Result<StreakInfo>> {
 export async function fetchEntries(date: string): Promise<Result<LogEntry[]>> {
   const { data, error } = await supabase
     .from('nutrition_log_entries')
-    .select('id, meal_name, servings, kcal, kcal_per_serving, order_item_id, logged_at')
+    .select('id, meal_id, meal_name, servings, kcal, kcal_per_serving, order_item_id, logged_at')
     .eq('local_date', date)
     .is('deleted_at', null)
     .order('logged_at', { ascending: true });
@@ -94,6 +98,10 @@ export async function fetchEntries(date: string): Promise<Result<LogEntry[]>> {
       kcalPerServing: Number(r.kcal_per_serving),
       orderItemId: r.order_item_id ?? null,
       loggedAt: r.logged_at,
+      mealId: r.meal_id ?? null,
+      // meal_id NULL without an order item = a manual meal (meal_id is also
+      // NULL if a menu meal was later deleted: shown as manual, rare).
+      source: r.order_item_id ? 'order' : r.meal_id ? 'menu' : 'manual',
     })),
     error: null,
   };
@@ -119,6 +127,39 @@ export async function logMeal(input: LogMealInput): Promise<Result<true>> {
       local_date: input.localDate,
       time_zone: input.timeZone,
       order_item_id: input.orderItemId ?? null,
+    },
+    { onConflict: 'user_id,client_request_id', ignoreDuplicates: true }
+  );
+  if (error) return { data: null, error };
+  return { data: true, error: null };
+}
+
+export interface ManualMealInput {
+  requestId: string;
+  name: string;
+  kcalPerServing: number;
+  servings: number;
+  localDate: string;
+  timeZone: string;
+  proteinG?: number | null;
+  carbsG?: number | null;
+  fatG?: number | null;
+}
+
+// A meal from outside L'OPTION: the customer's own name and calories per
+// portion (validated by the server, labelled 'manual'). Idempotent like logMeal.
+export async function logManualMeal(input: ManualMealInput): Promise<Result<true>> {
+  const { error } = await supabase.from('nutrition_log_entries').upsert(
+    {
+      client_request_id: input.requestId,
+      meal_name: input.name,
+      kcal_per_serving: input.kcalPerServing,
+      servings: input.servings,
+      local_date: input.localDate,
+      time_zone: input.timeZone,
+      protein_g: input.proteinG ?? null,
+      carbs_g: input.carbsG ?? null,
+      fat_g: input.fatG ?? null,
     },
     { onConflict: 'user_id,client_request_id', ignoreDuplicates: true }
   );

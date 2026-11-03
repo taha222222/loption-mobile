@@ -6,7 +6,8 @@
 import { dateRange } from '../nutrition/dates';
 import type { ActivitySource, ProviderAvailability, ProviderPermission } from './types';
 
-export type EnergyMethod = 'platform_total' | 'bmr_plus_active' | 'tdee_baseline';
+export type EnergyMethod = 'platform_total' | 'bmr_plus_active' | 'bmr_plus_movement' | 'tdee_baseline';
+export type EnergyConfidence = 'measured' | 'estimated' | 'baseline';
 
 export interface DailyBalance {
   date: string;
@@ -28,6 +29,17 @@ export interface DailyBalance {
   workoutSeconds: number;
   workoutKcal: number | null;
   workoutKcalEstimated: boolean;
+  // Standalone-tracking fields (null on a server without that migration).
+  baseKcal: number | null; // rest + digestion part of the budget
+  stepKcal: number | null; // walking outside recorded walks/runs
+  countedWorkoutKcal: number; // workout energy inside the budget
+  activityKcal: number | null; // movement energy shown as "calories actives"
+  activeMinutes: number; // recorded workout minutes
+  walkDistanceM: number | null;
+  walkDistanceEstimated: boolean;
+  measuredFrom: string | null;
+  measuredTo: string | null;
+  confidence: EnergyConfidence | null;
 }
 
 const int = (v: unknown): number | null => {
@@ -35,7 +47,7 @@ const int = (v: unknown): number | null => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.round(n) : null;
 };
-const METHODS: EnergyMethod[] = ['platform_total', 'bmr_plus_active', 'tdee_baseline'];
+const METHODS: EnergyMethod[] = ['platform_total', 'bmr_plus_active', 'bmr_plus_movement', 'tdee_baseline'];
 const SOURCES: ActivitySource[] = ['apple_health', 'health_connect', 'device_motion'];
 
 // One entry per date in [from, to]; a date the server did not return has no data.
@@ -66,30 +78,63 @@ export function toDailyBalances(rows: any[], from: string, to: string): DailyBal
       workoutSeconds: int(r.workout_seconds) ?? 0,
       workoutKcal: int(r.workout_kcal),
       workoutKcalEstimated: !!r.workout_kcal_estimated,
+      baseKcal: int(r.base_kcal),
+      stepKcal: int(r.step_kcal),
+      countedWorkoutKcal: int(r.counted_workout_kcal) ?? 0,
+      activityKcal: r.activity_kcal === undefined ? (source && source !== 'device_motion' ? int(r.active_energy_kcal) : null) : int(r.activity_kcal),
+      activeMinutes: int(r.active_minutes) ?? Math.floor((int(r.workout_seconds) ?? 0) / 60),
+      walkDistanceM: r.walk_distance_m === undefined ? (source ? int(r.distance_m) : null) : int(r.walk_distance_m),
+      walkDistanceEstimated: !!r.walk_distance_estimated,
+      measuredFrom: r.measured_from ?? null,
+      measuredTo: r.measured_to ?? null,
+      confidence: r.confidence === 'measured' || r.confidence === 'estimated' || r.confidence === 'baseline' ? r.confidence : null,
     };
   });
 }
 
+// Plain language first; the technical terms stay in the optional details.
 export const METHOD_LABEL: Record<EnergyMethod, string> = {
-  platform_total: 'Dépense totale mesurée',
-  bmr_plus_active: 'Métabolisme de base + activité mesurée',
-  tdee_baseline: 'Estimation habituelle (TDEE)',
+  platform_total: 'Mesuré par votre application santé',
+  bmr_plus_active: 'Repos + activité mesurée',
+  bmr_plus_movement: 'Repos + vos pas et séances',
+  tdee_baseline: 'Estimation selon votre profil',
 };
 
 // Short form for the card's chip (the full label is shown under the card).
 export const METHOD_SHORT: Record<EnergyMethod, string> = {
   platform_total: 'Mesuré',
-  bmr_plus_active: 'BMR + activité',
-  tdee_baseline: 'Estimation TDEE',
+  bmr_plus_active: 'Repos + activité',
+  bmr_plus_movement: 'Repos + mouvement',
+  tdee_baseline: 'Profil',
 };
 
 export const METHOD_EXPLAINED: Record<EnergyMethod, string> = {
   platform_total: 'Votre plateforme santé a mesuré votre dépense totale de la journée.',
   bmr_plus_active:
     'Votre métabolisme de base (estimé) plus l’énergie active mesurée par votre plateforme santé. Aujourd’hui, il augmente au fil de vos mouvements.',
+  bmr_plus_movement:
+    'L’énergie que votre corps utilise au repos et pour digérer (métabolisme de base × 1,1), plus l’énergie de vos pas mesurés par le téléphone et de vos séances. Les pas d’une marche ou d’une course enregistrée ne sont comptés qu’une fois. Aujourd’hui, il augmente au fil de vos mouvements.',
   tdee_baseline:
     'Sans données d’activité fiables, votre budget est votre dépense habituelle estimée (métabolisme × niveau d’activité déclaré).',
 };
+
+// Optional technical details (behind the info button), one line each.
+export function budgetDetails(d: DailyBalance): string[] {
+  const out: string[] = [];
+  if (d.method === 'bmr_plus_movement') {
+    if (d.baseKcal !== null) out.push(`Repos et digestion : ${d.baseKcal} kcal (métabolisme de base ${d.bmrKcal ?? '—'} kcal × 1,1)`);
+    if (d.stepKcal !== null) out.push(`Pas : ${d.stepKcal} kcal (0,5 kcal par kg et par km de marche)`);
+    if (d.countedWorkoutKcal > 0) out.push(`Séances : ${d.countedWorkoutKcal} kcal (estimation selon l’effort, le poids et la durée)`);
+    if (d.walkDistanceEstimated) out.push('Distance estimée à partir de vos pas et de votre taille.');
+  } else if (d.method === 'bmr_plus_active') {
+    if (d.bmrKcal !== null) out.push(`Métabolisme de base : ${d.bmrKcal} kcal`);
+    if (d.activeKcal !== null) out.push(`Énergie active mesurée : ${d.activeKcal} kcal (vos séances en font déjà partie)`);
+  } else if (d.method === 'tdee_baseline' && d.tdeeKcal !== null) {
+    out.push(`Dépense habituelle estimée (TDEE) : ${d.tdeeKcal} kcal`);
+  }
+  out.push('Ce sont des estimations, pas un avis médical.');
+  return out;
+}
 
 // What to say about a day's movement data, from the most to the least specific.
 export type MovementState =
@@ -144,8 +189,16 @@ export function intakeShare(d: DailyBalance): number {
 
 // Part of the budget that comes from measured activity (BMR + active only).
 export function activityShareOfBudget(d: DailyBalance): number {
-  if (d.method !== 'bmr_plus_active' || !d.budgetKcal || !d.activeKcal) return 0;
-  return Math.max(0, Math.min(1, d.activeKcal / d.budgetKcal));
+  if (!d.budgetKcal) return 0;
+  const active = d.method === 'bmr_plus_active' ? d.activeKcal : d.method === 'bmr_plus_movement' ? d.activityKcal : null;
+  if (!active) return 0;
+  return Math.max(0, Math.min(1, active / d.budgetKcal));
+}
+
+export function minutesChartMax(days: DailyBalance[]): number {
+  let max = 0;
+  for (const d of days) max = Math.max(max, d.activeMinutes);
+  return Math.max(30, Math.ceil(max / 30) * 30);
 }
 
 export function balanceChartMax(days: DailyBalance[]): number {

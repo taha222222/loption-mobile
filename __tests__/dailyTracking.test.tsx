@@ -213,40 +213,103 @@ describe('daily balance card', () => {
 });
 
 describe('tracking screen', () => {
-  it('shows today’s balance, method, timeline (duplicate not counted) and the week', async () => {
+  it('shows today’s plate, movement tiles, meals, workouts (duplicate not counted) and the week', async () => {
     await render(<TrackingScreen />);
     await waitFor(() => expect(screen.getByTestId('daily-balance-card')).toBeTruthy());
-    expect(screen.getByText('Restantes')).toBeTruthy();
-    expect(screen.getByText('1 499')).toBeTruthy();
-    expect(screen.getAllByText('Métabolisme de base + activité mesurée').length).toBeGreaterThan(0);
+    expect(screen.getByText('Mes calories du jour')).toBeTruthy();
+    expect(screen.getByText('1 499')).toBeTruthy(); // remaining, large in the plate
+    expect(screen.getByText('kcal restantes')).toBeTruthy();
+    expect(screen.getByText('1 999 kcal')).toBeTruthy(); // target
+    expect(screen.getByLabelText(/Pas : 7 000/)).toBeTruthy();
+    expect(screen.getByLabelText(/Calories actives : 350 kcal/)).toBeTruthy();
     await waitFor(() => expect(screen.getByText('Bowl poulet')).toBeTruthy());
-    expect(screen.getByText('Doublon d’une autre source : non compté')).toBeTruthy();
-    expect(screen.getByText(/330 kcal — mesurée par Apple Santé/)).toBeTruthy();
-    expect(screen.getByTestId('week-summary')).toHaveTextContent(/2 jours avec repas, 2 avec activité, 7 000 pas, 2 séances/);
-    expect(screen.getByTestId('balance-nolog-2026-10-25')).toBeTruthy(); // no meal ≠ 0 kcal
-    expect(screen.getByTestId('balance-nosteps-2026-10-24')).toBeTruthy(); // no data ≠ 0 steps
+    expect(screen.getByText('Même séance qu’une autre source : comptée une fois')).toBeTruthy();
+    expect(screen.getByText(/330 kcal, mesurée par Apple Santé/)).toBeTruthy();
+    // Trends: missing days are drawn as missing, not 0.
+    expect(screen.getByLabelText(/^2026-10-24 : aucun repas enregistré$/)).toBeTruthy();
+    await fireEvent.press(screen.getAllByText('Pas').at(-1)!); // the chart's metric chip
+    expect(screen.getByLabelText(/^2026-10-24 : pas non mesurés$/)).toBeTruthy();
+    expect(screen.getByText(/7 000 pas · moyenne 3 500 par jour mesuré/)).toBeTruthy();
     expect(mockApi.fetchDailyBalance).toHaveBeenCalledWith('2026-10-23', '2026-10-29', '2026-10-29');
   });
 
-  it('works without any health connection (unsupported here) and offers workouts', async () => {
+  it('technical terms stay behind the info button', async () => {
+    await render(<TrackingScreen />);
+    await waitFor(() => expect(screen.getByTestId('daily-balance-card')).toBeTruthy());
+    expect(screen.queryByText(/Métabolisme de base/)).toBeNull();
+    await fireEvent.press(screen.getByLabelText('Comment est calculé mon objectif ?'));
+    expect(screen.getByText('Repos + activité mesurée')).toBeTruthy();
+    expect(screen.getByText(/Métabolisme de base : 1649 kcal/)).toBeTruthy();
+    expect(screen.getByText(/pas un avis médical/)).toBeTruthy();
+  });
+
+  it('phone-only day: budget from rest + steps + sessions, estimated distance labelled', async () => {
+    mockApi.fetchDailyBalance.mockResolvedValue({
+      data: toDailyBalances(
+        [
+          row('2026-10-29', {
+            activity_source: 'device_motion', steps: 6000, distance_m: null, active_energy_kcal: null,
+            energy_method: 'bmr_plus_movement', energy_estimate_kcal: 2047, remaining_kcal: 1547, base_kcal: 1814,
+            step_kcal: 145, counted_workout_kcal: 88, activity_kcal: 233, active_minutes: 30, walk_distance_m: 4356,
+            walk_distance_estimated: true, confidence: 'estimated',
+          }),
+        ],
+        '2026-10-23',
+        '2026-10-29'
+      ),
+      error: null,
+    });
+    await render(<TrackingScreen />);
+    await waitFor(() => expect(screen.getByLabelText(/Pas : 6 000/)).toBeTruthy());
+    expect(screen.getByLabelText(/Distance : 4,36 km. Estimée d’après vos pas/)).toBeTruthy();
+    expect(screen.getByLabelText(/Minutes actives : 30 min/)).toBeTruthy();
+    expect(screen.getByLabelText(/Calories actives : 233 kcal/)).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('Comment est calculé mon objectif ?'));
+    expect(screen.getByText('Repos + vos pas et séances')).toBeTruthy();
+    expect(screen.getByText(/Pas : 145 kcal/)).toBeTruthy();
+    expect(screen.getByText(/Séances : 88 kcal/)).toBeTruthy();
+  });
+
+  it('works without any activity source and offers workouts', async () => {
     mockApi.fetchDailyBalance.mockResolvedValue({
       data: toDailyBalances([row('2026-10-29', { activity_source: null, steps: null, distance_m: null, active_energy_kcal: null })], '2026-10-23', '2026-10-29'),
       error: null,
     });
     await render(<TrackingScreen />);
-    await waitFor(() => expect(screen.getByText('Activité non disponible ici')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Ce téléphone ne compte pas les pas. Enregistrez vos marches avec une séance.')).toBeTruthy());
+    expect(screen.getByLabelText(/Pas : —/)).toBeTruthy();
     await fireEvent.press(screen.getByLabelText('Démarrer : Vélo'));
     expect(mockRouter.push).toHaveBeenCalledWith({ pathname: '/(app)/workout', params: { kind: 'cycle' } });
   });
 
-  it('inspects a previous day', async () => {
+  it('offers the phone step counter when it is available and not yet enabled', async () => {
+    useActivityStore.setState({ providers: [{ id: 'device_motion', availability: 'available' }] });
+    jest.spyOn(useActivityStore.getState(), 'inspect').mockResolvedValue(undefined as any);
+    mockApi.fetchDailyBalance.mockResolvedValue({
+      data: toDailyBalances([row('2026-10-29', { activity_source: null, steps: null, distance_m: null, active_energy_kcal: null })], '2026-10-23', '2026-10-29'),
+      error: null,
+    });
     await render(<TrackingScreen />);
-    await waitFor(() => expect(screen.getByTestId('balance-day-2026-10-25')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('balance-day-2026-10-25'));
+    await waitFor(() => expect(screen.getByText('Activer le compteur de pas')).toBeTruthy());
+    await fireEvent.press(screen.getByText('Activer le compteur de pas'));
+    expect(mockRouter.push).toHaveBeenCalledWith('/(app)/activity-connect');
+  });
+
+  it('inspects a previous day from the chart', async () => {
+    await render(<TrackingScreen />);
+    await waitFor(() => expect(screen.getByLabelText(/^2026-10-25 :/)).toBeTruthy());
+    await fireEvent.press(screen.getByLabelText(/^2026-10-25 :/));
     await waitFor(() => expect(mockApi.fetchEntries).toHaveBeenLastCalledWith('2026-10-25'));
     expect(mockApi.fetchWorkouts).toHaveBeenLastCalledWith('2026-10-25', '2026-10-25');
-    expect(screen.getByText('Revenir à aujourd’hui')).toBeTruthy();
-    expect(screen.getAllByText('Dépense totale mesurée').length).toBeGreaterThan(0);
+    expect(screen.getByText('Aujourd’hui')).toBeTruthy();
+    expect(screen.getByText(/25\/10\/2026 : aucun repas enregistré · objectif 2 290 kcal/)).toBeTruthy();
+  });
+
+  it('switches to the month view', async () => {
+    await render(<TrackingScreen />);
+    await waitFor(() => expect(screen.getByText('Mois')).toBeTruthy());
+    await fireEvent.press(screen.getByText('Mois'));
+    await waitFor(() => expect(mockApi.fetchDailyBalance).toHaveBeenLastCalledWith('2026-09-30', '2026-10-29', '2026-10-29'));
   });
 
   it('shows an error state with retry', async () => {
@@ -255,11 +318,13 @@ describe('tracking screen', () => {
     await waitFor(() => expect(screen.getByText('Bilan indisponible')).toBeTruthy());
   });
 
-  it('shows the empty timeline state', async () => {
+  it('shows the empty meal state with the add action', async () => {
     mockApi.fetchEntries.mockResolvedValue({ data: [], error: null });
     mockApi.fetchWorkouts.mockResolvedValue({ data: [], error: null });
     await render(<TrackingScreen />);
-    await waitFor(() => expect(screen.getByText('Aucun repas ni séance enregistré ce jour-là.')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Aucun repas enregistré')).toBeTruthy());
+    await fireEvent.press(screen.getByText('Ajouter un repas'));
+    expect(mockRouter.push).toHaveBeenCalledWith('/(app)/log-meal');
   });
 });
 

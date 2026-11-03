@@ -100,8 +100,28 @@ export function trackingErrorMessage(error: { code?: string; message?: string } 
   if (/not been delivered/i.test(msg)) return 'Cette commande n’a pas encore été livrée.';
   if (/unknown time zone/i.test(msg)) return 'Le fuseau horaire de l’appareil n’est pas reconnu.';
   if (/already removed/i.test(msg)) return 'Ce repas a déjà été retiré.';
+  if (/manual meal needs a name/i.test(msg)) return 'Donnez un nom au repas (2 à 80 caractères).';
+  if (/calories per portion/i.test(msg)) return 'Indiquez entre 1 et 3000 kcal par portion.';
+  if (/macronutrients/i.test(msg)) return 'Les macronutriments doivent être entre 0 et 300 g par portion.';
+  if (/a meal is required/i.test(msg) || /permission denied.*nutrition_log_entries/i.test(msg))
+    return 'Le serveur n’accepte pas encore les repas hors L’OPTION (mise à jour en attente).';
   if (error?.code === '23514') return 'Quantité non valide (par quarts de portion, jusqu’à 10).';
   return 'Enregistrement impossible. Vérifiez votre connexion et réessayez.';
+}
+
+// Validates the manual meal form; returns an error message or null.
+export function manualMealProblem(name: string, kcal: number | null): string | null {
+  if (name.trim().length < 2) return 'Donnez un nom au repas.';
+  if (kcal === null || !Number.isFinite(kcal) || kcal < 1 || kcal > 3000) return 'Indiquez entre 1 et 3000 kcal par portion.';
+  return null;
+}
+
+// Parses a number typed with a comma or a dot; null when empty or invalid.
+export function parseAmount(text: string): number | null {
+  const t = text.replace(',', '.').trim();
+  if (t === '') return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
 }
 
 // "1 portion", "1,5 portions", "0,25 portion".

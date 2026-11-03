@@ -1,54 +1,68 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../src/theme';
 import {
-  BrandButton,
+  ActivityIcon,
   Chip,
-  DailyBalanceCard,
   FormMessage,
   IconButton,
-  MovementCard,
   Screen,
   ScreenHeader,
   SectionHeader,
   SurfaceCard,
-  WeeklyBalanceChart,
   formatNumber,
 } from '../../src/components/v2';
-import { METHOD_EXPLAINED, METHOD_LABEL, movementState, weekTotals } from '../../src/activity/dailyBalance';
-import { formatDuration } from '../../src/activity/gps';
-import { energyLabel, KIND_ICON, KIND_LABEL, KIND_SHORT, WORKOUT_SOURCE_LABEL } from '../../src/activity/labels';
+import { ActivityOverview } from '../../src/components/tracking/ActivityOverview';
+import { EnergyPlate } from '../../src/components/tracking/EnergyPlate';
+import { NutritionOverview } from '../../src/components/tracking/NutritionOverview';
+import { TrendChart, type TrendMetric } from '../../src/components/tracking/TrendChart';
+import { movementState } from '../../src/activity/dailyBalance';
+import { formatDistance, formatDuration } from '../../src/activity/gps';
+import { energyLabel, KIND_GLYPH, KIND_LABEL, KIND_SHORT, WORKOUT_SOURCE_LABEL } from '../../src/activity/labels';
 import type { WorkoutKind } from '../../src/activity/types';
 import { dayLabel } from '../../src/nutrition/dates';
-import { formatServings } from '../../src/nutrition/tracking';
 import { useActivityStore } from '../../src/stores/activityStore';
 import { useTrackingStore } from '../../src/stores/trackingStore';
 import { useWorkoutStore } from '../../src/stores/workoutStore';
 import { SERVER_UPDATE_PENDING } from '../../src/lib/serverFeatures';
 
 const KINDS: WorkoutKind[] = ['walk', 'run', 'cycle', 'gym'];
+type Period = 'day' | 'week' | 'month';
+const REFRESH_MS = 60_000;
 const timeOf = (iso: string) => new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 
-// Daily Tracking tab ("L’OPTION Daily Balance"): today's (or a chosen
-// day's) energy budget, meals eaten, movement and workouts, and the trend
-// over 7 or 30 days. All values come from the server; nothing is invented.
+// Daily Tracking ("Mon suivi"): the day's calorie balance, movement,
+// workouts and meals, then trends by week or month. All values come from
+// the server or the phone's sensors; nothing is invented, and estimates
+// are labelled. Technical terms live behind the info buttons.
 export default function TrackingScreen() {
   const { today, range, selected, days, meals, workouts, status, dayStatus, refresh, setRange, select } = useTrackingStore();
   const activity = useActivityStore();
   const activeWorkout = useWorkoutStore((s) => s.active);
+  const [period, setPeriod] = useState<Period>(range === 30 ? 'month' : 'week');
+  const [metric, setMetric] = useState<TrendMetric>('calories');
 
   useEffect(() => {
     activity.inspect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activity.source]);
 
+  // On focus, and every minute while visible (the upload itself is
+  // throttled by the activity store; the sensor batches on its own).
   useFocusEffect(
     useCallback(() => {
       refresh();
+      const t = setInterval(() => refresh(), REFRESH_MS);
+      return () => clearInterval(t);
     }, [refresh])
   );
+
+  const choosePeriod = (p: Period) => {
+    setPeriod(p);
+    if (p === 'week' && range !== 7) setRange(7);
+    if (p === 'month' && range !== 30) setRange(30);
+  };
 
   const day = days.find((d) => d.date === selected) ?? null;
   const preferred = activity.providers.find((p) => p.availability === 'available') ?? activity.providers[0] ?? null;
@@ -59,12 +73,7 @@ export default function TrackingScreen() {
     availability: activity.source ? 'available' : (preferred?.availability ?? null),
     permission: activity.permission,
   });
-  const totals = weekTotals(days.slice(-7));
-
-  const timeline = [
-    ...meals.map((m) => ({ key: `m-${m.id}`, at: m.loggedAt, kind: 'meal' as const, meal: m })),
-    ...workouts.map((w) => ({ key: `w-${w.id}`, at: w.startedAt, kind: 'workout' as const, workout: w })),
-  ].sort((a, b) => (a.at < b.at ? -1 : 1));
+  const chartDays = period === 'month' ? days.slice(-30) : days.slice(-7);
 
   if (status === 'idle' || (status === 'loading' && days.length === 0)) {
     return (
@@ -77,11 +86,11 @@ export default function TrackingScreen() {
   return (
     <Screen scroll>
       <ScreenHeader
-        title="Mon bilan"
-        subtitle="Suivi quotidien"
+        title="Mon suivi"
+        subtitle={dayLabel(selected, today)}
         right={
           <View style={styles.headerButtons}>
-            <IconButton icon="heart-outline" label="Connexion santé" onPress={() => router.push('/(app)/activity-connect')} />
+            <IconButton icon="pulse-outline" label="Sources d’activité" onPress={() => router.push('/(app)/activity-connect')} />
             <IconButton icon="notifications-outline" label="Rappels" onPress={() => router.push('/(app)/nutrition-reminders')} />
           </View>
         }
@@ -104,60 +113,61 @@ export default function TrackingScreen() {
         </View>
       ) : null}
 
-      {/* Nothing below is shown without data: no placeholder budget, no
-          "complete your profile" for a profile we could not even load. */}
       {days.length > 0 ? (
         <>
-          {selected !== today ? (
-            <View style={styles.backToday}>
-              <Chip label="Revenir à aujourd’hui" active={false} onPress={() => select(today)} />
-            </View>
-          ) : null}
-
-          {/* 1-3. Daily balance: budget, consumed, remaining, activity energy */}
-          <DailyBalanceCard
-            day={day}
-            title={dayLabel(selected, today)}
-            loading={status === 'loading'}
-            onCompleteProfile={() => router.push('/(app)/nutrition-profile')}
-          />
-          {day?.method ? (
-            <View style={styles.section}>
-              <Text style={styles.explain}>
-                <Text style={styles.explainLead}>{METHOD_LABEL[day.method]}</Text>
-                {` — ${METHOD_EXPLAINED[day.method]}`}
-              </Text>
-            </View>
-          ) : null}
-
-          <View style={styles.section}>
-            <BrandButton title="Ajouter un repas mangé" onPress={() => router.push('/(app)/log-meal')} />
-            <BrandButton title="Détails nutrition" variant="soft" onPress={() => router.push('/(app)/nutrition')} />
+          <View style={styles.periods}>
+            <Chip label="Jour" active={period === 'day'} onPress={() => choosePeriod('day')} />
+            <Chip label="Semaine" active={period === 'week'} onPress={() => choosePeriod('week')} />
+            <Chip label="Mois" active={period === 'month'} onPress={() => choosePeriod('month')} />
+            {selected !== today ? <Chip label="Aujourd’hui" active={false} onPress={() => select(today)} /> : null}
           </View>
 
-          {/* 4. Steps and distance */}
+          {/* 1. Daily calorie balance */}
           <View style={styles.section}>
-            <MovementCard
+            <EnergyPlate
               day={day}
-              state={state}
-              syncing={activity.syncing}
-              onConnect={() => router.push('/(app)/activity-connect')}
-              onSync={() => refresh()}
+              title={selected === today ? 'Mes calories du jour' : `Calories · ${dayLabel(selected, today)}`}
+              loading={status === 'loading'}
+              onCompleteProfile={() => router.push('/(app)/nutrition-profile')}
             />
           </View>
 
-          {/* 5. Workout start actions */}
+          {/* 2. Active workout, prominent */}
+          {activeWorkout ? (
+            <View style={styles.section}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Reprendre la séance en cours" onPress={() => router.push('/(app)/workout')}>
+                <SurfaceCard style={styles.activeWorkout}>
+                  <ActivityIcon name={KIND_GLYPH[activeWorkout.kind]} size={56} />
+                  <View style={styles.activeText}>
+                    <Text style={styles.activeTitle}>{`${KIND_LABEL[activeWorkout.kind]} ${activeWorkout.status === 'running' ? 'en cours' : 'en pause'}`}</Text>
+                    <Text style={styles.hint}>Touchez pour voir le minuteur</Text>
+                  </View>
+                </SurfaceCard>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {/* 3. Activity overview */}
           <View style={styles.section}>
-            <SectionHeader inset={false} title="Bouger" actionLabel="Historique" onAction={() => router.push('/(app)/workout-history')} />
-            {activeWorkout ? (
-              <SurfaceCard onPress={() => router.push('/(app)/workout')} style={styles.activeWorkout}>
-                <Ionicons name={KIND_ICON[activeWorkout.kind] as any} size={22} color={theme.colors.brand} />
-                <Text style={styles.activeText}>
-                  {`${KIND_LABEL[activeWorkout.kind]} ${activeWorkout.status === 'running' ? 'en cours' : 'en pause'} — reprendre`}
-                </Text>
-                <Ionicons name="chevron-forward" size={18} color={theme.colors.inkMuted} />
-              </SurfaceCard>
-            ) : (
+            <SectionHeader inset={false} title="Mouvement" />
+            <ActivityOverview
+              day={day}
+              state={state}
+              isToday={selected === today}
+              lastSuccessAt={activity.lastSuccessAt}
+              syncing={activity.syncing}
+              onConnect={() => router.push('/(app)/activity-connect')}
+              onSync={() => {
+                void activity.sync({ force: true }).then(() => refresh({ sync: false }));
+              }}
+              onStartWalk={() => router.push({ pathname: '/(app)/workout', params: { kind: 'walk' } })}
+            />
+          </View>
+
+          {/* 4. Workout shortcuts */}
+          {!activeWorkout ? (
+            <View style={styles.section}>
+              <SectionHeader inset={false} title="Démarrer une séance" actionLabel="Historique" onAction={() => router.push('/(app)/workout-history')} />
               <View style={styles.kinds}>
                 {KINDS.map((k) => (
                   <TouchableOpacity
@@ -167,83 +177,62 @@ export default function TrackingScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={`Démarrer : ${KIND_LABEL[k]}`}
                   >
-                    <View style={styles.kindIcon}>
-                      <Ionicons name={KIND_ICON[k] as any} size={22} color={theme.colors.brand} />
-                    </View>
+                    <ActivityIcon name={KIND_GLYPH[k]} size={60} />
                     <Text style={styles.kindLabel} numberOfLines={1}>
                       {KIND_SHORT[k]}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
-            )}
+            </View>
+          ) : null}
+
+          {/* 5. Nutrition overview */}
+          <View style={styles.section}>
+            <SectionHeader inset={false} title="Repas" actionLabel="Détails" onAction={() => router.push('/(app)/nutrition')} />
+            <NutritionOverview meals={meals} status={dayStatus} isToday={selected === today} onAddMeal={() => router.push('/(app)/log-meal')} />
           </View>
 
-          {/* 6. Timeline: meals and workouts of the selected day */}
-          <View style={styles.section}>
-            <SectionHeader inset={false} title={`Journal · ${dayLabel(selected, today)}`} />
-            <SurfaceCard style={styles.timeline}>
-              {dayStatus === 'loading' && timeline.length === 0 ? (
-                <ActivityIndicator color={theme.colors.brand} />
-              ) : dayStatus === 'error' ? (
-                <Text style={styles.empty}>Journal indisponible pour le moment.</Text>
-              ) : timeline.length === 0 ? (
-                <Text style={styles.empty}>Aucun repas ni séance enregistré ce jour-là.</Text>
-              ) : (
-                timeline.map((item, i) => (
-                  <View key={item.key} style={[styles.event, i > 0 && styles.eventBorder]}>
-                    <Text style={styles.eventTime}>{timeOf(item.at)}</Text>
-                    <View style={[styles.eventIcon, item.kind === 'meal' ? styles.mealIcon : styles.workoutIcon]}>
-                      <Ionicons
-                        name={(item.kind === 'meal' ? 'restaurant-outline' : KIND_ICON[item.workout.kind]) as any}
-                        size={16}
-                        color={item.kind === 'meal' ? theme.colors.ink : theme.colors.brand}
-                      />
+          {/* 6. The day's workouts */}
+          {workouts.length > 0 ? (
+            <View style={styles.section}>
+              <SectionHeader inset={false} title="Séances du jour" />
+              <SurfaceCard style={styles.list}>
+                {workouts.map((w, i) => (
+                  <View key={w.id} style={[styles.workout, i > 0 && styles.border]}>
+                    <ActivityIcon name={KIND_GLYPH[w.kind]} size={44} />
+                    <View style={styles.activeText}>
+                      <Text style={styles.workoutTitle}>
+                        {`${KIND_LABEL[w.kind]} · ${formatDuration(w.activeSeconds)}${w.distanceM !== null ? ` · ${formatDistance(w.distanceM)}` : ''}`}
+                      </Text>
+                      <Text style={styles.hint}>
+                        {w.duplicateOf
+                          ? 'Même séance qu’une autre source : comptée une fois'
+                          : w.energyKcal !== null
+                            ? `${timeOf(w.startedAt)} · ${formatNumber(w.energyKcal)} kcal, ${energyLabel(w.energySource, w.source)}`
+                            : `${timeOf(w.startedAt)} · ${WORKOUT_SOURCE_LABEL[w.source]}`}
+                      </Text>
                     </View>
-                    {item.kind === 'meal' ? (
-                      <View style={styles.eventText}>
-                        <Text style={styles.eventTitle} numberOfLines={1}>
-                          {item.meal.mealName}
-                        </Text>
-                        <Text style={styles.eventMeta}>{`${formatServings(item.meal.servings)} · ${formatNumber(item.meal.kcal)} kcal`}</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.eventText}>
-                        <Text style={styles.eventTitle}>{`${KIND_LABEL[item.workout.kind]} · ${formatDuration(item.workout.activeSeconds)}`}</Text>
-                        <Text style={styles.eventMeta}>
-                          {item.workout.duplicateOf
-                            ? 'Doublon d’une autre source : non compté'
-                            : item.workout.energyKcal !== null
-                              ? `${formatNumber(item.workout.energyKcal)} kcal — ${energyLabel(item.workout.energySource, item.workout.source)}`
-                              : `Calories indisponibles · ${WORKOUT_SOURCE_LABEL[item.workout.source]}`}
-                        </Text>
-                      </View>
-                    )}
                   </View>
-                ))
-              )}
-            </SurfaceCard>
-            <Text style={styles.explain}>
-              Les calories des séances sont affichées pour information : elles ne s’ajoutent pas à votre budget, qui contient déjà votre activité.
-            </Text>
-          </View>
+                ))}
+              </SurfaceCard>
+            </View>
+          ) : null}
 
-          {/* 7. Weekly trends */}
-          <View style={styles.section}>
-            <SectionHeader inset={false} title="Tendances" />
-            <SurfaceCard>
-              <View style={styles.rangeRow}>
-                <Chip label="7 jours" active={range === 7} onPress={() => setRange(7)} />
-                <Chip label="30 jours" active={range === 30} onPress={() => setRange(30)} />
-              </View>
-              <WeeklyBalanceChart days={days} today={today} selected={selected} onSelect={select} />
-              <Text style={styles.weekSummary} testID="week-summary">
-                {`7 derniers jours : ${totals.daysWithMeals} jour${totals.daysWithMeals > 1 ? 's' : ''} avec repas, ${totals.daysWithActivity} avec activité`}
-                {totals.steps !== null ? `, ${formatNumber(totals.steps)} pas` : ''}
-                {totals.workoutCount > 0 ? `, ${totals.workoutCount} séance${totals.workoutCount > 1 ? 's' : ''} (${formatDuration(totals.workoutSeconds)})` : ''}.
-              </Text>
-            </SurfaceCard>
-          </View>
+          {/* 7. Trends */}
+          {period !== 'day' ? (
+            <View style={styles.section}>
+              <SectionHeader inset={false} title={period === 'month' ? '30 derniers jours' : '7 derniers jours'} />
+              <SurfaceCard style={styles.trends}>
+                <View style={styles.metrics}>
+                  <Chip label="Calories" active={metric === 'calories'} onPress={() => setMetric('calories')} />
+                  <Chip label="Pas" active={metric === 'steps'} onPress={() => setMetric('steps')} />
+                  <Chip label="Séances" active={metric === 'minutes'} onPress={() => setMetric('minutes')} />
+                </View>
+                <TrendChart days={chartDays} metric={metric} today={today} onSelect={select} />
+              </SurfaceCard>
+            </View>
+          ) : null}
         </>
       ) : null}
     </Screen>
@@ -251,133 +240,30 @@ export default function TrackingScreen() {
 }
 
 const styles = StyleSheet.create({
-  center: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    gap: theme.spacing.sm,
-  },
-  section: {
-    paddingHorizontal: theme.spacing.xl,
-    marginBottom: theme.spacing.xl,
-    gap: theme.spacing.md,
-  },
-  backToday: {
-    paddingHorizontal: theme.spacing.xl,
-    marginBottom: theme.spacing.md,
-    flexDirection: 'row',
-  },
-  explain: {
-    marginTop: -theme.spacing.sm,
-    fontSize: theme.typography.sizes.xs,
-    lineHeight: theme.typography.lineHeights.xs,
-    color: theme.colors.inkMuted,
-  },
-  explainLead: {
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.ink,
-  },
-  activeWorkout: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.md,
-  },
-  activeText: {
-    flex: 1,
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.ink,
-  },
-  kinds: {
-    flexDirection: 'row',
-    gap: theme.spacing.sm,
-  },
+  center: { justifyContent: 'center', alignItems: 'center' },
+  headerButtons: { flexDirection: 'row', gap: theme.spacing.sm },
+  section: { paddingHorizontal: theme.spacing.xl, marginBottom: theme.spacing.xl, gap: theme.spacing.md },
+  periods: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.xl, marginBottom: theme.spacing.lg },
+  activeWorkout: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, borderWidth: 2, borderColor: theme.colors.workout },
+  activeText: { flex: 1, minWidth: 0, gap: 2 },
+  activeTitle: { fontSize: theme.typography.sizes.lg, fontWeight: theme.typography.weights.bold, color: theme.colors.ink },
+  hint: { fontSize: theme.typography.sizes.sm, color: theme.colors.inkMuted },
+  kinds: { flexDirection: 'row', gap: theme.spacing.sm },
   kind: {
     flex: 1,
     alignItems: 'center',
     gap: theme.spacing.sm,
-    paddingVertical: theme.spacing.md,
+    paddingVertical: theme.spacing.lg,
     borderRadius: theme.radii.lg,
+    backgroundColor: theme.colors.surface,
     borderWidth: 1,
     borderColor: theme.colors.hairline,
-    backgroundColor: theme.colors.surface,
   },
-  kindIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.brandSoft,
-  },
-  kindLabel: {
-    fontSize: 12,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.ink,
-  },
-  timeline: {
-    paddingVertical: theme.spacing.sm,
-  },
-  event: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.md,
-    paddingVertical: theme.spacing.md,
-  },
-  eventBorder: {
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.hairline,
-  },
-  eventTime: {
-    width: 44,
-    fontSize: theme.typography.sizes.xs,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.inkMuted,
-    fontVariant: ['tabular-nums'],
-  },
-  eventIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mealIcon: {
-    backgroundColor: theme.colors.highlight,
-  },
-  workoutIcon: {
-    backgroundColor: theme.colors.brandSoft,
-  },
-  eventText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  eventTitle: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.ink,
-  },
-  eventMeta: {
-    fontSize: theme.typography.sizes.sm,
-    color: theme.colors.inkMuted,
-  },
-  empty: {
-    fontSize: theme.typography.sizes.sm,
-    lineHeight: theme.typography.lineHeights.sm,
-    color: theme.colors.inkMuted,
-    paddingVertical: theme.spacing.md,
-  },
-  rangeRow: {
-    flexDirection: 'row',
-    gap: theme.spacing.sm,
-    marginBottom: theme.spacing.md,
-  },
-  weekSummary: {
-    marginTop: theme.spacing.md,
-    fontSize: theme.typography.sizes.sm,
-    lineHeight: theme.typography.lineHeights.sm,
-    color: theme.colors.ink,
-  },
+  kindLabel: { fontSize: theme.typography.sizes.sm, fontWeight: theme.typography.weights.bold, color: theme.colors.ink },
+  list: { paddingVertical: theme.spacing.sm },
+  workout: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, paddingVertical: theme.spacing.md },
+  border: { borderTopWidth: 1, borderTopColor: theme.colors.hairline },
+  workoutTitle: { fontSize: theme.typography.sizes.md, fontWeight: theme.typography.weights.semibold, color: theme.colors.ink },
+  trends: { gap: theme.spacing.md },
+  metrics: { flexDirection: 'row', gap: theme.spacing.sm },
 });

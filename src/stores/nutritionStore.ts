@@ -33,6 +33,15 @@ interface NutritionState {
     orderItemId?: string | null;
     localDate?: string;
   }) => Promise<{ ok: true } | { ok: false; message: string }>;
+  logManual: (input: {
+    name: string;
+    kcalPerServing: number;
+    servings: number;
+    localDate?: string;
+    proteinG?: number | null;
+    carbsG?: number | null;
+    fatG?: number | null;
+  }) => Promise<{ ok: true } | { ok: false; message: string }>;
   removeEntry: (id: string) => Promise<{ ok: true } | { ok: false; message: string }>;
   reset: () => void;
 }
@@ -97,6 +106,31 @@ export const useNutritionStore = create<NutritionState>((set, get) => ({
       // Keep the key: retrying the same request must not duplicate it.
       return { ok: false, message: trackingErrorMessage(result.error) };
     }
+    const { [signature]: _done, ...rest } = get().pending;
+    set({ pending: rest });
+    await get().refresh();
+    return { ok: true };
+  },
+
+  logManual: async ({ name, kcalPerServing, servings, localDate: date, proteinG, carbsG, fatG }) => {
+    const { timeZone, today } = get();
+    const day = date ?? today;
+    const clean = name.trim();
+    const signature = `manual|${clean}|${kcalPerServing}|${servings}|${day}|${proteinG ?? ''}|${carbsG ?? ''}|${fatG ?? ''}`;
+    const requestId = get().pending[signature] ?? randomUUID();
+    set({ pending: { ...get().pending, [signature]: requestId } });
+    const result = await api.logManualMeal({
+      requestId,
+      name: clean,
+      kcalPerServing: Math.round(kcalPerServing),
+      servings,
+      localDate: day,
+      timeZone,
+      proteinG,
+      carbsG,
+      fatG,
+    });
+    if (result.error) return { ok: false, message: trackingErrorMessage(result.error) };
     const { [signature]: _done, ...rest } = get().pending;
     set({ pending: rest });
     await get().refresh();

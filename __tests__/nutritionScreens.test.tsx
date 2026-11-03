@@ -14,6 +14,7 @@ const mockApi = {
   fetchEntries: jest.fn(),
   fetchStreak: jest.fn(),
   logMeal: jest.fn(),
+  logManualMeal: jest.fn(),
   removeEntry: jest.fn(),
   fetchLoggableMeals: jest.fn(),
   fetchOrderedMeals: jest.fn(),
@@ -23,6 +24,7 @@ jest.mock('../src/services/nutritionApi', () => ({
   fetchEntries: (...a: any[]) => mockApi.fetchEntries(...a),
   fetchStreak: (...a: any[]) => mockApi.fetchStreak(...a),
   logMeal: (...a: any[]) => mockApi.logMeal(...a),
+  logManualMeal: (...a: any[]) => mockApi.logManualMeal(...a),
   removeEntry: (...a: any[]) => mockApi.removeEntry(...a),
   fetchLoggableMeals: (...a: any[]) => mockApi.fetchLoggableMeals(...a),
   fetchOrderedMeals: (...a: any[]) => mockApi.fetchOrderedMeals(...a),
@@ -177,6 +179,46 @@ describe('log meal screen', () => {
     await fireEvent.press(screen.getByText('Réessayer'));
     await waitFor(() => expect(mockApi.logMeal).toHaveBeenCalledTimes(2));
     expect(mockApi.logMeal.mock.calls[0][0].requestId).toBe(mockApi.logMeal.mock.calls[1][0].requestId);
+  });
+});
+
+describe('manual meals and duplicates', () => {
+  beforeEach(() => {
+    mockApi.fetchLoggableMeals.mockResolvedValue({
+      data: [{ id: 'm1', name: 'Bowl poulet', calories: 600, protein: 40, carbs: 50, fat: 20 }],
+      error: null,
+    });
+    mockApi.fetchOrderedMeals.mockResolvedValue({ data: [], error: null });
+    mockApi.logManualMeal.mockResolvedValue({ data: true, error: null });
+    mockApi.logMeal.mockResolvedValue({ data: true, error: null });
+  });
+
+  it('logs a meal from outside L’OPTION with the calories the customer enters', async () => {
+    await render(<LogMealScreen />);
+    await waitFor(() => expect(screen.getByText('Autre repas')).toBeTruthy());
+    await fireEvent.press(screen.getByText('Autre repas'));
+    await fireEvent.press(screen.getByText('Enregistrer'));
+    expect(screen.getByText('Donnez un nom au repas.')).toBeTruthy(); // validated before sending
+    expect(mockApi.logManualMeal).not.toHaveBeenCalled();
+    await fireEvent.changeText(screen.getByLabelText('Nom du repas'), 'Tajine maison');
+    await fireEvent.changeText(screen.getByLabelText('Calories par portion'), '450');
+    await fireEvent.press(screen.getByLabelText('Augmenter Quantité'));
+    expect(screen.getByText('≈ 563 kcal')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Enregistrer'));
+    await waitFor(() => expect(mockApi.logManualMeal).toHaveBeenCalled());
+    expect(mockApi.logManualMeal.mock.calls[0][0]).toMatchObject({ name: 'Tajine maison', kcalPerServing: 450, servings: 1.25, proteinG: null });
+    await waitFor(() => expect(mockRouter.back).toHaveBeenCalled());
+  });
+
+  it('warns before logging the same meal twice in a day', async () => {
+    useNutritionStore.setState({
+      entries: [{ id: 'e1', mealName: 'Bowl poulet', servings: 1, kcal: 600, kcalPerServing: 600, orderItemId: null, loggedAt: '2026-10-29T12:00:00Z', mealId: 'm1', source: 'menu' }],
+    });
+    await render(<LogMealScreen />);
+    await waitFor(() => expect(screen.getByText('Menu L’OPTION')).toBeTruthy());
+    await fireEvent.press(screen.getByLabelText(/^Bowl poulet\. 600 kcal \/ portion$/));
+    expect(screen.getByText('Déjà enregistré aujourd’hui (×1).')).toBeTruthy();
+    expect(screen.getByText('Enregistrer encore')).toBeTruthy();
   });
 });
 

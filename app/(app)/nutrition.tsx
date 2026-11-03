@@ -155,7 +155,7 @@ export default function NutritionScreen() {
                   </Text>
                   <Text style={styles.entryMeta}>
                     {`${formatServings(e.servings)} · ${formatNumber(e.kcal)} kcal`}
-                    {e.orderItemId ? ' · commande' : ''}
+                    {e.orderItemId ? ' · commande' : e.source === 'manual' ? ' · saisi par vous' : ''}
                   </Text>
                 </View>
                 {removing === e.id ? (
