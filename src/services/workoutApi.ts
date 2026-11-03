@@ -3,7 +3,7 @@
 // workout (MET x weight x time) and refuses overlaps and implausible
 // distances; uploads are idempotent (client_session_id / provider id).
 import { supabase } from '../lib/supabase';
-import type { FinishedSession } from '../activity/workoutSession';
+import type { FinishedSession, GymCategory, GymExercise, GymIntensity } from '../activity/workoutSession';
 import type { ImportedWorkout, WorkoutKind, WorkoutSource } from '../activity/types';
 import type { Result } from './activityApi';
 import { isTransient } from '../activity/sync';
@@ -24,25 +24,70 @@ export interface WorkoutRecord {
   energySource: EnergySource;
   met: number | null;
   duplicateOf: string | null;
+  steps: number | null;
+  intensity: GymIntensity | null;
+}
+
+export interface GymLogExercise {
+  name: string;
+  category: GymCategory;
+  sets: { reps: number; weightKg: number | null; restSeconds: number | null }[];
 }
 
 export async function uploadAppWorkout(s: FinishedSession): Promise<Result<true>> {
-  const { error } = await supabase.from('workout_sessions').upsert(
-    {
-      source: 'app',
-      client_session_id: s.clientSessionId,
-      kind: s.kind,
-      started_at: s.startedAt,
-      ended_at: s.endedAt,
-      active_seconds: s.activeSeconds,
-      time_zone: s.timeZone,
-      distance_m: s.distanceM,
-      distance_source: s.distanceM === null ? null : 'gps',
-    },
-    { onConflict: 'user_id,client_session_id', ignoreDuplicates: true }
-  );
+  const row: Record<string, unknown> = {
+    source: 'app',
+    client_session_id: s.clientSessionId,
+    kind: s.kind,
+    started_at: s.startedAt,
+    ended_at: s.endedAt,
+    active_seconds: s.activeSeconds,
+    time_zone: s.timeZone,
+    distance_m: s.distanceM,
+    distance_source: s.distanceM === null ? null : 'gps',
+  };
+  if (s.steps != null) row.steps = s.steps;
+  if (s.intensity) row.intensity = s.intensity;
+  const options = { onConflict: 'user_id,client_session_id', ignoreDuplicates: true };
+  let { error } = await supabase.from('workout_sessions').upsert(row, options);
+  if (error && error.code === 'PGRST204' && ('steps' in row || 'intensity' in row)) {
+    // A server without the standalone migration: steps and intensity unknown there.
+    const { steps: _s, intensity: _i, ...legacy } = row;
+    ({ error } = await supabase.from('workout_sessions').upsert(legacy, options));
+  }
   if (error) return { data: null, error };
   return { data: true, error: null };
+}
+
+// Replaces the exercise list of an uploaded gym session (idempotent).
+export async function saveGymLog(clientSessionId: string, exercises: GymExercise[]): Promise<Result<true>> {
+  const payload = exercises.map((e) => ({
+    name: e.name,
+    category: e.category,
+    sets: e.sets.map((s) => ({ reps: s.reps, weight_kg: s.weightKg, rest_seconds: s.restSeconds })),
+  }));
+  const { error } = await supabase.rpc('save_gym_log', { p_client_session_id: clientSessionId, p_exercises: payload });
+  if (error) return { data: null, error };
+  return { data: true, error: null };
+}
+
+export async function fetchGymLog(sessionId: string): Promise<Result<GymLogExercise[]>> {
+  const { data, error } = await supabase
+    .from('workout_exercises')
+    .select('name, category, position, workout_sets(reps, weight_kg, rest_seconds, position)')
+    .eq('session_id', sessionId)
+    .order('position');
+  if (error) return { data: null, error };
+  return {
+    data: ((data as any[]) ?? []).map((e) => ({
+      name: e.name,
+      category: e.category,
+      sets: ((e.workout_sets as any[]) ?? [])
+        .sort((a, b) => a.position - b.position)
+        .map((s) => ({ reps: Number(s.reps), weightKg: s.weight_kg === null ? null : Number(s.weight_kg), restSeconds: s.rest_seconds ?? null })),
+    })),
+    error: null,
+  };
 }
 
 export async function importProviderWorkouts(
@@ -104,6 +149,8 @@ export function toWorkoutRecord(r: any): WorkoutRecord {
     energySource: r.energy_source ?? 'none',
     met: num(r.met),
     duplicateOf: r.duplicate_of ?? null,
+    steps: num(r.steps),
+    intensity: r.intensity ?? null,
   };
 }
 
@@ -116,6 +163,8 @@ export async function fetchWorkouts(from: string, to: string): Promise<Result<Wo
 export function workoutErrorMessage(error: { code?: string; message?: string } | null | undefined): string {
   const msg = String(error?.message ?? '');
   if (/overlaps another session/i.test(msg)) return 'Une autre séance enregistrée couvre déjà ce moment.';
+  if (/implausible step count/i.test(msg)) return 'Le nombre de pas mesuré n’est pas plausible : il n’a pas été enregistré.';
+  if (/gym session not found/i.test(msg)) return 'Séance de musculation introuvable : le détail des exercices n’a pas été enregistré.';
   if (/implausible distance/i.test(msg)) return 'La distance mesurée n’est pas plausible pour cette activité : elle n’a pas été enregistrée.';
   if (/last 30 days/i.test(msg)) return 'Cette séance est trop ancienne pour être enregistrée.';
   if (/unknown time zone/i.test(msg)) return 'Le fuseau horaire de l’appareil n’est pas reconnu.';

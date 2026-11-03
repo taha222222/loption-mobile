@@ -1,13 +1,14 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../src/theme';
-import { confirmAction, EmptyState, FormMessage, IconButton, Screen, ScreenHeader, SurfaceCard, formatNumber } from '../../src/components/v2';
+import { ActivityIcon, confirmAction, EmptyState, FormMessage, IconButton, Screen, ScreenHeader, SurfaceCard, formatNumber } from '../../src/components/v2';
+import { CATEGORY_LABEL, INTENSITY_LABEL } from '../../src/components/workout/GymLogger';
 import { formatDistance, formatDuration, formatPace, paceSecondsPerKm, speedKmh } from '../../src/activity/gps';
-import { energyLabel, KIND_ICON, KIND_LABEL, WORKOUT_SOURCE_LABEL } from '../../src/activity/labels';
+import { energyLabel, KIND_GLYPH, KIND_LABEL, WORKOUT_SOURCE_LABEL } from '../../src/activity/labels';
 import { dayLabel, deviceTimeZone, localDate } from '../../src/nutrition/dates';
-import type { WorkoutRecord } from '../../src/services/workoutApi';
+import { fetchGymLog, type GymLogExercise, type WorkoutRecord } from '../../src/services/workoutApi';
 import { useWorkoutStore } from '../../src/stores/workoutStore';
 
 const timeOf = (iso: string) => new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
@@ -87,12 +88,19 @@ function WorkoutRow({ w, first, onRemove }: { w: WorkoutRecord; first: boolean; 
     formatDistance(w.distanceM),
     pace,
     speed !== null ? `${String(speed).replace('.', ',')} km/h` : null,
+    w.steps !== null ? `${formatNumber(w.steps)} pas` : null,
+    w.intensity ? `intensité ${INTENSITY_LABEL[w.intensity].toLowerCase()}` : null,
   ].filter(Boolean);
+  const [gym, setGym] = useState<GymLogExercise[] | 'loading' | 'error' | null>(null);
+  const toggleGym = async () => {
+    if (gym && gym !== 'error') return setGym(null);
+    setGym('loading');
+    const r = await fetchGymLog(w.id);
+    setGym(r.error ? 'error' : r.data);
+  };
   return (
     <View style={[styles.row, !first && styles.rowBorder, w.duplicateOf && styles.duplicate]}>
-      <View style={styles.icon}>
-        <Ionicons name={KIND_ICON[w.kind] as any} size={20} color={theme.colors.brand} />
-      </View>
+      <ActivityIcon name={KIND_GLYPH[w.kind]} size={44} />
       <View style={styles.rowText}>
         <Text style={styles.rowTitle}>{`${KIND_LABEL[w.kind]} · ${WORKOUT_SOURCE_LABEL[w.source]}`}</Text>
         <Text style={styles.rowMeta}>{parts.join(' · ')}</Text>
@@ -100,6 +108,26 @@ function WorkoutRow({ w, first, onRemove }: { w: WorkoutRecord; first: boolean; 
           {w.energyKcal !== null ? `${formatNumber(w.energyKcal)} kcal — ${energyLabel(w.energySource, w.source)}` : 'Calories indisponibles'}
         </Text>
         {w.duplicateOf ? <Text style={styles.dupNote}>Même séance enregistrée par une autre source : comptée une seule fois.</Text> : null}
+        {w.kind === 'gym' && w.source === 'app' ? (
+          <TouchableOpacity accessibilityRole="button" onPress={toggleGym}>
+            <Text style={styles.link}>{gym && gym !== 'error' ? 'Masquer les exercices' : 'Voir les exercices'}</Text>
+          </TouchableOpacity>
+        ) : null}
+        {gym === 'loading' ? <ActivityIndicator color={theme.colors.brand} /> : null}
+        {gym === 'error' ? <Text style={styles.rowMeta}>Exercices indisponibles pour le moment.</Text> : null}
+        {Array.isArray(gym) ? (
+          gym.length === 0 ? (
+            <Text style={styles.rowMeta}>Aucun exercice enregistré.</Text>
+          ) : (
+            gym.map((e, i) => (
+              <Text key={i} style={styles.rowMeta}>
+                {`${e.name} (${CATEGORY_LABEL[e.category]}) : ${e.sets
+                  .map((s) => `${s.reps}${s.weightKg ? ` × ${String(s.weightKg).replace('.', ',')} kg` : ''}`)
+                  .join(', ')}`}
+              </Text>
+            ))
+          )
+        ) : null}
       </View>
       {onRemove ? (
         <TouchableOpacity onPress={onRemove} accessibilityRole="button" accessibilityLabel={`Supprimer ${KIND_LABEL[w.kind]}`} hitSlop={8}>
@@ -111,6 +139,7 @@ function WorkoutRow({ w, first, onRemove }: { w: WorkoutRecord; first: boolean; 
 }
 
 const styles = StyleSheet.create({
+  link: { fontSize: theme.typography.sizes.sm, fontWeight: theme.typography.weights.semibold, color: theme.colors.brand, marginTop: 4 },
   section: {
     paddingHorizontal: theme.spacing.xl,
     marginBottom: theme.spacing.lg,

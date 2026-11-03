@@ -10,6 +10,7 @@ import { useRouteDecision } from '../src/navigation/useRouteDecision';
 import { isOnboardingComplete } from '../src/navigation/routeDecision';
 import { useSetupStore } from '../src/stores/setupStore';
 import '../src/i18n';
+import '../src/activity/backgroundGpsTask';
 import { notificationService } from '../src/services/notificationService';
 import { notificationTarget } from '../src/navigation/notificationLinks';
 import { deviceTimeZone } from '../src/nutrition/dates';

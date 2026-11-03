@@ -31,3 +31,6 @@ export { BasketButton } from './BasketButton';
 export { DailyBalanceCard } from './DailyBalanceCard';
 export { MovementCard } from './MovementCard';
 export { WeeklyBalanceChart } from './WeeklyBalanceChart';
+export { ActivityIcon, ICON_TONE, TONES } from './ActivityIcon';
+export type { ActivityIconName, ActivityTone } from './ActivityIcon';
+export { RouteSketch } from './RouteSketch';

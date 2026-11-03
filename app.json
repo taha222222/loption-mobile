@@ -14,7 +14,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.loption.app",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "L'OPTION uses your location to suggest your delivery address, to measure the distance of an outdoor workout you start (only while that workout is running), and, for drivers, to track deliveries in progress.",
+        "NSLocationWhenInUseUsageDescription": "L'OPTION utilise votre position pour proposer votre adresse de livraison, mesurer la distance d'une séance que vous démarrez (uniquement pendant cette séance, y compris écran verrouillé) et, pour les livreurs, suivre une livraison en cours.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "usesAppleSignIn": true
@@ -82,6 +82,15 @@
           "android": {
             "minSdkVersion": 26
           }
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "L'OPTION utilise votre position pour proposer votre adresse de livraison, mesurer la distance d'une séance que vous démarrez (uniquement pendant cette séance, y compris écran verrouillé) et, pour les livreurs, suivre une livraison en cours.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": false,
+          "isAndroidForegroundServiceEnabled": true
         }
       ]
     ],

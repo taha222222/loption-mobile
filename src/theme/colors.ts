@@ -56,4 +56,15 @@ export const colors = {
   inkMuted: '#6B6A85',
   inkFaint: '#A3A2B8',
   hairline: '#E9E8F2',
+
+  // Daily Tracking: one colour per meaning, used consistently
+  // (meals/eaten, movement/steps, workouts, energy/budget).
+  nutrition: '#F2614F',
+  nutritionSoft: '#FFECE8',
+  movement: '#0E9F6E',
+  movementSoft: '#E2F6EE',
+  workout: '#4F46E5',
+  workoutSoft: '#EEEDFD',
+  energy: '#E89A0C',
+  energySoft: '#FFF3DC',
 } as const;
