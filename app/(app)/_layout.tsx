@@ -49,6 +49,7 @@ function AppTabs() {
       <Tabs.Screen name="workout" />
       <Tabs.Screen name="workout-history" />
       <Tabs.Screen name="activity-connect" />
+      <Tabs.Screen name="delete-account" />
     </Tabs>
   );
 }

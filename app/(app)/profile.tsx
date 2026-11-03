@@ -249,6 +249,12 @@ export default function ProfileScreen() {
             <Ionicons name="log-out-outline" size={20} color={theme.colors.error} />
             <Text style={[styles.settingsText, styles.signOutText]}>Se déconnecter</Text>
           </TouchableOpacity>
+          <View style={styles.settingsDivider} />
+          <TouchableOpacity style={styles.settingsItem} onPress={() => router.push('/(app)/delete-account')} accessibilityRole="button">
+            <Ionicons name="trash-outline" size={20} color={theme.colors.inkMuted} />
+            <Text style={styles.settingsText}>Supprimer mon compte</Text>
+            <Ionicons name="chevron-forward" size={18} color={theme.colors.inkFaint} />
+          </TouchableOpacity>
         </SurfaceCard>
       </View>
 

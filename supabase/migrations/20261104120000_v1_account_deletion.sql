@@ -1,0 +1,530 @@
+-- =====================================================================
+-- L'OPTION V1 — in-app account deletion (App Store guideline 5.1.1(v),
+-- Google Play account deletion policy).
+--
+-- STATUS: proposal for review. NOT applied to any hosted database.
+-- Depends on 20261103120000_v1_standalone_tracking.sql.
+-- Rollback: supabase/rollback/v1_account_deletion_rollback.sql.
+--
+-- Role postgres only; one transaction with a deferred commit gate.
+-- Refuses unless the Phase 1C monitor is exactly the standalone-migration
+-- monitor and reports zero violations.
+--
+-- public.delete_my_account('SUPPRIMER') deletes the CALLER's account:
+--   * customer accounts only: an account with a staff role, a driver,
+--     partner (collaborator) or admin record is refused and closed by
+--     L'OPTION support (those records carry business obligations);
+--   * personal data is deleted: profile (incl. body measurements and
+--     address), activity days, workouts and gym log, meal log, daily
+--     targets, notification preferences and deliveries, push tokens,
+--     offer redemptions, and the Auth user with its identities and sessions
+--     (existing ON DELETE CASCADE foreign keys);
+--   * orders are KEPT for accounting but detached from the account
+--     (orders.user_id set to NULL). Contact fields stored on order rows
+--     are a retention decision for the owner (DECISIONS.md);
+--   * an audit row records the deletion (account id and counts only).
+-- SECURITY DEFINER (it deletes the Auth user); fixed search_path; only the
+-- caller's own account (no parameter names another user); EXECUTE for
+-- authenticated only. Added to the Phase 1C monitor's reviewed client
+-- definer functions by supabase/tools/generate_nutrition_monitor.py.
+-- =====================================================================
+
+begin;
+
+set local lock_timeout = '10s';
+
+do $role$
+begin
+  if current_user <> 'postgres' then
+    raise exception 'V1 account deletion: must run as role postgres (current_user=%, session_user=%); aborting before any change',
+      current_user, session_user using errcode = '42501';
+  end if;
+end
+$role$;
+
+create temp table v1_account_gate_ok (step text primary key) on commit drop;
+create temp table v1_account_gate (
+  step text constraint v1_account_guard_did_not_pass references v1_account_gate_ok deferrable initially deferred
+) on commit drop;
+insert into v1_account_gate values ('precondition'), ('postcondition');
+
+-- ---------------------------------------------------------------------
+-- 0. Precondition
+-- ---------------------------------------------------------------------
+do $pre$
+declare
+  bad text;
+begin
+  if to_regclass('public.workout_exercises') is null then
+    raise exception 'V1 account deletion: the V1 standalone tracking migration must be applied first; aborting';
+  end if;
+  if (select md5(prosrc) from pg_proc where oid = 'public.containment_violations()'::regprocedure)
+     <> '1b29b6a009a2f466bd0a12b4e460780c' then
+    raise exception 'V1 account deletion: containment_violations() is not the reviewed monitor of the standalone migration; refusing to extend it';
+  end if;
+  select string_agg(v.category || ': ' || v.object || ' - ' || v.problem, ' | ') into bad
+    from public.containment_violations() v where v.category in ('drift', 'containment');
+  if bad is not null then
+    raise exception 'V1 account deletion: Phase 1C containment reports violations; refusing to build on it: %', bad;
+  end if;
+  if to_regprocedure('public.delete_my_account(text)') is not null then
+    raise exception 'V1 account deletion: public.delete_my_account already exists (re-run or unknown object), refusing';
+  end if;
+  if not has_table_privilege('postgres', 'auth.users', 'DELETE') then
+    raise exception 'V1 account deletion: role postgres cannot delete from auth.users on this project; refusing';
+  end if;
+  if current_user <> 'postgres' then
+    raise exception 'V1 account deletion: precondition must run as role postgres' using errcode = '42501';
+  end if;
+  insert into pg_temp.v1_account_gate_ok values ('precondition');
+end
+$pre$;
+
+-- ---------------------------------------------------------------------
+-- 1. delete_my_account
+-- ---------------------------------------------------------------------
+create function public.delete_my_account(p_confirmation text)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  uid uuid := auth.uid();
+  orders_detached integer;
+begin
+  if uid is null then
+    raise exception 'not signed in' using errcode = '42501';
+  end if;
+  if p_confirmation is distinct from 'SUPPRIMER' then
+    raise exception 'confirmation required' using errcode = '22023';
+  end if;
+  perform 1 from auth.users u where u.id = uid for update;
+  if not found then
+    raise exception 'account not found' using errcode = '22023';
+  end if;
+  if exists (select 1 from public.staff_roles s where s.user_id = uid)
+     or exists (select 1 from public.drivers d where d.id = uid)
+     or exists (select 1 from public.collaborators c where c.user_id = uid)
+     or exists (select 1 from public.admins a where a.id = uid) then
+    raise exception 'staff, driver and partner accounts are closed by L''OPTION support' using errcode = '42501';
+  end if;
+
+  update public.orders set user_id = null where user_id = uid;
+  get diagnostics orders_detached = row_count;
+  delete from public.driver_push_tokens where user_id = uid;
+  delete from public.user_profiles where user_id = uid;
+
+  insert into public.security_audit_log (actor_id, action, target_user_id, details)
+  values (uid, 'account.deleted', uid, jsonb_build_object('orders_detached', orders_detached, 'migration', '20261104120000'));
+
+  -- Cascades: activity, workouts and gym log, meals, targets,
+  -- notifications, push tokens, redemptions; Auth identities and sessions.
+  delete from auth.users where id = uid;
+end;
+$$;
+revoke all on function public.delete_my_account(text) from public, anon, service_role;
+grant execute on function public.delete_my_account(text) to authenticated;
+
+-- ---------------------------------------------------------------------
+-- 9. Phase 1C monitor: reviewed client definer functions extended with
+--    delete_my_account. GENERATED by supabase/tools/generate_nutrition_monitor.py
+--    from the Phase 1C migration; do not edit by hand.
+-- ---------------------------------------------------------------------
+-- BEGIN GENERATED MONITOR
+create or replace function public.containment_violations()
+returns table (category text, object text, problem text)
+language plpgsql stable set search_path = ''
+as $cv$
+declare
+  -- Supabase platform roles (image) + documented hosted-only roles.
+  -- cli_login_postgres is created by the Supabase CLI itself (link/db push).
+  allowed_roles text[] := array[
+    'anon','authenticated','authenticator','dashboard_user','pgbouncer','postgres',
+    'service_role','supabase_admin','supabase_auth_admin','supabase_etl_admin',
+    'supabase_privileged_role','supabase_read_only_user','supabase_replication_admin',
+    'supabase_storage_admin','supabase_functions_admin','supabase_realtime_admin',
+    'cli_login_postgres','pgsodium_keyholder','pgsodium_keyiduser','pgsodium_keymaker'];
+  allowed_superusers text[] := array['supabase_admin'];
+  allowed_bypassrls  text[] := array['postgres','service_role','supabase_admin',
+    'supabase_etl_admin','supabase_read_only_user'];
+  -- (group, member) pairs observed in the image, plus the CLI login role.
+  allowed_members text[] := array[
+    'anon<-authenticator','anon<-postgres','authenticated<-authenticator',
+    'authenticated<-postgres','authenticator<-postgres','authenticator<-supabase_storage_admin',
+    'service_role<-authenticator','service_role<-postgres',
+    'supabase_privileged_role<-postgres','supabase_privileged_role<-supabase_etl_admin',
+    'postgres<-cli_login_postgres'];
+  privileged_groups text[] := array['anon','authenticated','service_role','authenticator',
+    'postgres','supabase_admin','supabase_auth_admin','supabase_storage_admin',
+    'supabase_privileged_role','supabase_functions_admin','supabase_realtime_admin'];
+  -- Event-trigger functions shipped by Supabase, plus the staging RLS
+  -- auto-enable helper (it only runs ALTER TABLE ... ENABLE ROW LEVEL SECURITY).
+  allowed_evt_functions text[] := array[
+    'extensions.grant_pg_cron_access()','extensions.grant_pg_graphql_access()',
+    'extensions.grant_pg_net_access()','extensions.set_graphql_placeholder()',
+    'extensions.pgrst_ddl_watch()','extensions.pgrst_drop_watch()','public.rls_auto_enable()'];
+  -- Schemas that hold Supabase platform objects (their grants are the
+  -- platform's). Any OTHER schema a client role can use, and every view,
+  -- materialized view or foreign table in the API schemas, is reported.
+  platform_schemas text[] := array['auth','storage','extensions','graphql','realtime','vault',
+    'pgsodium','pgsodium_masks','net','cron','supabase_functions','supabase_migrations',
+    'pgbouncer','information_schema'];
+  api_schemas text[] := array['public','graphql_public'];
+  -- REVIEWED POLICY DEFINITIONS. Every policy in schema public (and, for
+  -- the storage category, in schema storage) must match one entry exactly:
+  --   table|name|PERMISSIVE or RESTRICTIVE|roles|command|USING|WITH CHECK
+  -- (expressions as PostgreSQL 17 prints them in pg_policies, whitespace
+  -- collapsed; '-' = none). A changed expression, command, role list or
+  -- mode is reported even when the policy name is unchanged. Extend only
+  -- through a reviewed commit.
+  reviewed_public_policies text[] := array[
+    'collaborator_analytics|staff_admin_all_collaborator_analytics|PERMISSIVE|{authenticated}|ALL|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)',
+    'collaborator_orders|collaborators_view_own_orders|PERMISSIVE|{public}|SELECT|(collaborator_id IN ( SELECT collaborators.id FROM public.collaborators WHERE (collaborators.user_id = auth.uid())))|-',
+    'collaborator_orders|staff_admin_all_collaborator_orders|PERMISSIVE|{authenticated}|ALL|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)',
+    'collaborator_payouts|staff_admin_all_collaborator_payouts|PERMISSIVE|{authenticated}|ALL|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)',
+    'collaborators|collaborators_view_own|PERMISSIVE|{public}|SELECT|(auth.uid() = user_id)|-',
+    'collaborators|staff_admin_all_collaborators|PERMISSIVE|{authenticated}|ALL|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)',
+    'driver_push_tokens|Drivers can insert own push tokens|PERMISSIVE|{public}|INSERT|-|(auth.uid() = user_id)',
+    'driver_push_tokens|Drivers can view own push tokens|PERMISSIVE|{public}|SELECT|(auth.uid() = user_id)|-',
+    'drivers|Users can view own driver record|PERMISSIVE|{public}|SELECT|(auth.uid() = id)|-',
+    'drivers|drivers_self_update_profile_location|PERMISSIVE|{authenticated}|UPDATE|(id = ( SELECT auth.uid() AS uid))|(id = ( SELECT auth.uid() AS uid))',
+    'drivers|staff_admin_all_drivers|PERMISSIVE|{authenticated}|ALL|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)',
+    'kitchens|kitchens_read_authenticated|PERMISSIVE|{authenticated}|SELECT|true|-',
+    'meals|Anyone can view meals|PERMISSIVE|{public}|SELECT|true|-',
+    'meals|Enable read access for all users|PERMISSIVE|{public}|SELECT|true|-',
+    'meals|staff_admin_write_meals|PERMISSIVE|{authenticated}|ALL|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)',
+    'order_items|Service role full access order_items|PERMISSIVE|{public}|ALL|(auth.role() = ''service_role''::text)|-',
+    'order_items|Users can view their own order items|PERMISSIVE|{public}|SELECT|(EXISTS ( SELECT 1 FROM public.orders WHERE ((orders.id = order_items.order_id) AND (orders.user_id = auth.uid()))))|-',
+    'order_items|staff_admin_all_order_items|PERMISSIVE|{authenticated}|ALL|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)',
+    'order_status_updates|order_owner_read_status|PERMISSIVE|{authenticated}|SELECT|(EXISTS ( SELECT 1 FROM public.orders o WHERE ((o.id = order_status_updates.order_id) AND (o.user_id = ( SELECT auth.uid() AS uid)))))|-',
+    'order_status_updates|staff_admin_read_status|PERMISSIVE|{authenticated}|SELECT|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|-',
+    'orders|drivers_read_assigned_orders|PERMISSIVE|{authenticated}|SELECT|((driver_id = ( SELECT auth.uid() AS uid)) AND ( SELECT public.has_staff_role(''driver''::text) AS has_staff_role))|-',
+    'orders|Service role full access|PERMISSIVE|{public}|ALL|(auth.role() = ''service_role''::text)|-',
+    'orders|Users can view their own orders|PERMISSIVE|{public}|SELECT|(auth.uid() = user_id)|-',
+    'orders|staff_admin_all_orders|PERMISSIVE|{authenticated}|ALL|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)',
+    'security_audit_log|security_audit_log_admin_read|PERMISSIVE|{authenticated}|SELECT|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|-',
+    'staff_roles|staff_roles_admin_read|PERMISSIVE|{authenticated}|SELECT|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|-',
+    'staff_roles|staff_roles_self_read|PERMISSIVE|{authenticated}|SELECT|(user_id = ( SELECT auth.uid() AS uid))|-',
+    'user_profiles|Service role has full access|PERMISSIVE|{public}|ALL|(auth.role() = ''service_role''::text)|-',
+    'user_profiles|Users can insert their own profile|PERMISSIVE|{public}|INSERT|-|(auth.uid() = user_id)',
+    'user_profiles|Users can update their own profile|PERMISSIVE|{public}|UPDATE|(auth.uid() = user_id)|-',
+    'user_profiles|Users can view their own profile|PERMISSIVE|{public}|SELECT|(auth.uid() = user_id)|-',
+    'user_push_tokens|Users can insert own push tokens|PERMISSIVE|{public}|INSERT|-|(auth.uid() = user_id)',
+    'user_push_tokens|Users can view own push tokens|PERMISSIVE|{public}|SELECT|(auth.uid() = user_id)|-',
+    'notification_preferences|notification_prefs_owner_insert|PERMISSIVE|{authenticated}|INSERT|-|(user_id = ( SELECT auth.uid() AS uid))',
+    'notification_preferences|notification_prefs_owner_read|PERMISSIVE|{authenticated}|SELECT|(user_id = ( SELECT auth.uid() AS uid))|-',
+    'notification_preferences|notification_prefs_owner_update|PERMISSIVE|{authenticated}|UPDATE|(user_id = ( SELECT auth.uid() AS uid))|(user_id = ( SELECT auth.uid() AS uid))',
+    'nutrition_daily_targets|nutrition_targets_owner_read|PERMISSIVE|{authenticated}|SELECT|(user_id = ( SELECT auth.uid() AS uid))|-',
+    'nutrition_log_entries|nutrition_entries_owner_delete_mark|PERMISSIVE|{authenticated}|UPDATE|(user_id = ( SELECT auth.uid() AS uid))|(user_id = ( SELECT auth.uid() AS uid))',
+    'nutrition_log_entries|nutrition_entries_owner_insert|PERMISSIVE|{authenticated}|INSERT|-|(user_id = ( SELECT auth.uid() AS uid))',
+    'nutrition_log_entries|nutrition_entries_owner_read|PERMISSIVE|{authenticated}|SELECT|(user_id = ( SELECT auth.uid() AS uid))|-',
+    'activity_daily_totals|activity_days_owner_delete|PERMISSIVE|{authenticated}|DELETE|(user_id = ( SELECT auth.uid() AS uid))|-',
+    'activity_daily_totals|activity_days_owner_insert|PERMISSIVE|{authenticated}|INSERT|-|(user_id = ( SELECT auth.uid() AS uid))',
+    'activity_daily_totals|activity_days_owner_read|PERMISSIVE|{authenticated}|SELECT|(user_id = ( SELECT auth.uid() AS uid))|-',
+    'activity_daily_totals|activity_days_owner_update|PERMISSIVE|{authenticated}|UPDATE|(user_id = ( SELECT auth.uid() AS uid))|(user_id = ( SELECT auth.uid() AS uid))',
+    'workout_sessions|workouts_owner_delete|PERMISSIVE|{authenticated}|DELETE|(user_id = ( SELECT auth.uid() AS uid))|-',
+    'workout_sessions|workouts_owner_insert|PERMISSIVE|{authenticated}|INSERT|-|(user_id = ( SELECT auth.uid() AS uid))',
+    'workout_sessions|workouts_owner_read|PERMISSIVE|{authenticated}|SELECT|(user_id = ( SELECT auth.uid() AS uid))|-',
+    'workout_exercises|gym_exercises_owner_delete|PERMISSIVE|{authenticated}|DELETE|(user_id = ( SELECT auth.uid() AS uid))|-',
+    'workout_exercises|gym_exercises_owner_insert|PERMISSIVE|{authenticated}|INSERT|-|(user_id = ( SELECT auth.uid() AS uid))',
+    'workout_exercises|gym_exercises_owner_read|PERMISSIVE|{authenticated}|SELECT|(user_id = ( SELECT auth.uid() AS uid))|-',
+    'workout_sets|gym_sets_owner_delete|PERMISSIVE|{authenticated}|DELETE|(user_id = ( SELECT auth.uid() AS uid))|-',
+    'workout_sets|gym_sets_owner_insert|PERMISSIVE|{authenticated}|INSERT|-|(user_id = ( SELECT auth.uid() AS uid))',
+    'workout_sets|gym_sets_owner_read|PERMISSIVE|{authenticated}|SELECT|(user_id = ( SELECT auth.uid() AS uid))|-'];
+  reviewed_storage_policies text[] := array[
+    'objects|staff_admin_delete_meal_images|PERMISSIVE|{authenticated}|DELETE|((bucket_id = ''meal-images''::text) AND ( SELECT public.has_staff_role(''admin''::text) AS has_staff_role))|-',
+    'objects|staff_admin_insert_meal_images|PERMISSIVE|{authenticated}|INSERT|-|((bucket_id = ''meal-images''::text) AND ( SELECT public.has_staff_role(''admin''::text) AS has_staff_role))',
+    'objects|staff_admin_select_meal_images|PERMISSIVE|{authenticated}|SELECT|((bucket_id = ''meal-images''::text) AND ( SELECT public.has_staff_role(''admin''::text) AS has_staff_role))|-',
+    'objects|staff_admin_update_meal_images|PERMISSIVE|{authenticated}|UPDATE|((bucket_id = ''meal-images''::text) AND ( SELECT public.has_staff_role(''admin''::text) AS has_staff_role))|((bucket_id = ''meal-images''::text) AND ( SELECT public.has_staff_role(''admin''::text) AS has_staff_role))'];
+  -- SECURITY DEFINER functions a client role may execute (authenticated only).
+  client_definer_functions text[] := array[
+    'public.has_staff_role(text)','public.assign_staff_role(uuid,text,uuid)',
+    'public.revoke_staff_role(uuid,text,uuid)','public.set_driver_availability(boolean)',
+    'public.register_push_token(text,text)','public.deactivate_push_token(text)','public.delete_my_account(text)'];
+  -- Functions created by the Phase 1C migrations, fingerprinted as
+  --   signature|security definer|configuration|md5(body)
+  -- so a CREATE OR REPLACE that weakens one is reported.
+  reviewed_functions text[] := array[
+    'public.assign_staff_role(uuid,text,uuid)|true|search_path=""|554f8a3f6bba9e6a3bc9c4ced7938cca',
+    'public.enforce_driver_availability()|true|search_path=""|da0e53b932e051e9a371cb9fb2e64ce0',
+    'public.enforce_profile_privilege_guard()|false|search_path=""|777cbb1b279b251dbb5380675638c1eb',
+    'public.has_staff_role(text)|true|search_path=""|f44b74472038a40e54a5875a1ad1a835',
+    'public.revoke_staff_role(uuid,text,uuid)|true|search_path=""|33bdc8cefd5a08a7c32c5ad9a2883b7f',
+    'public.security_audit_log_append_only()|false|search_path=""|9283a0cd3cd689131cb43161db1f0c1e',
+    'public.set_driver_availability(boolean)|true|search_path=""|387497cf2e12e33c2a3e528dfec585b7',
+    'public.staff_roles_driver_offline()|true|search_path=""|6c92d893f56587ae443a911badcfd922',
+    'public.staff_roles_no_truncate()|false|search_path=""|5b001f4e82a1558a7fb36fb7f42d64e5',
+    'public.staff_roles_require_admin()|true|search_path=""|44a2aecd08c07582112b0e65beb07aa5',
+    'public.staff_roles_serialize()|false|search_path=""|cf5ff3a87980a74d971b17c7fa89a16a'];
+begin
+  -- ============================ drift (U3) ============================
+  return query select 'drift'::text, r.rolname::text, 'unexpected database role'::text
+    from pg_roles r where r.rolname !~ '^pg_' and r.rolname <> all (allowed_roles);
+  return query select 'drift', r.rolname::text, 'unexpected SUPERUSER role'
+    from pg_roles r where r.rolsuper and r.rolname <> all (allowed_superusers);
+  return query select 'drift', r.rolname::text, 'unexpected BYPASSRLS role'
+    from pg_roles r where r.rolbypassrls and r.rolname <> all (allowed_bypassrls);
+  return query select 'drift', r.rolname::text, 'client role has elevated attributes (superuser/bypassrls/createrole/createdb/login)'
+    from pg_roles r where r.rolname in ('anon','authenticated')
+     and (r.rolsuper or r.rolbypassrls or r.rolcreaterole or r.rolcreatedb or r.rolcanlogin);
+  return query select 'drift', g.rolname || '<-' || m.rolname, 'unexpected membership in a privileged or client role'
+    from pg_auth_members a join pg_roles g on g.oid = a.roleid join pg_roles m on m.oid = a.member
+   where (g.rolname = any (privileged_groups) or m.rolname in ('anon','authenticated','service_role'))
+     and (g.rolname || '<-' || m.rolname) <> all (allowed_members);
+  -- ============================ drift (U4) ============================
+  -- schema-qualified name built explicitly (independent of search_path)
+  return query select 'drift', e.evtname::text, 'unexpected event trigger function ' || f.fn
+    from pg_event_trigger e
+    cross join lateral (select n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' from pg_proc p join pg_namespace n on n.oid = p.pronamespace where p.oid = e.evtfoid) as f(fn)
+   where f.fn <> all (allowed_evt_functions);
+  -- ============================ drift (U5) ============================
+  return query select 'drift', 'authenticator', 'authenticator must be NOSUPERUSER, NOBYPASSRLS, NOINHERIT'
+    from pg_roles r where r.rolname = 'authenticator' and (r.rolsuper or r.rolbypassrls or r.rolinherit);
+  return query select 'drift', 'authenticator', 'authenticator role missing'
+   where not exists (select 1 from pg_roles where rolname = 'authenticator');
+  -- ============================ drift (U6) ============================
+  return query select 'drift', 'schema ' || n.nspname || ' / ' || x.grantee, 'client or PUBLIC can CREATE in schema'
+    from pg_namespace n
+    cross join lateral (select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end as grantee
+                          from aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
+                         where a.privilege_type = 'CREATE') x
+   where n.nspname in ('public','extensions','graphql_public','auth','storage','realtime','vault')
+     and x.grantee in ('PUBLIC','anon','authenticated','authenticator');
+  -- Auth hooks: a custom access-token hook could rewrite the JWT role
+  -- claim (e.g. to service_role). Hooks are functions the Auth service
+  -- (supabase_auth_admin) executes. Reported: (1) any non-auth function
+  -- explicitly granted to supabase_auth_admin; (2) any non-auth function
+  -- with the hook signature (one jsonb argument, returns jsonb) that
+  -- supabase_auth_admin can EFFECTIVELY execute (incl. through PUBLIC).
+  -- The hosted Auth hook configuration itself is not visible in SQL.
+  if to_regrole('supabase_auth_admin') is not null then
+    return query select 'drift', p.oid::regprocedure::text, 'function explicitly executable by supabase_auth_admin (possible Auth hook)'
+      from pg_proc p cross join lateral aclexplode(p.proacl) a
+     where p.proacl is not null and a.privilege_type = 'EXECUTE'
+       and a.grantee = 'supabase_auth_admin'::regrole
+       and p.pronamespace::regnamespace::text not in ('auth','pg_catalog','information_schema');
+    return query select 'drift', p.oid::regprocedure::text, 'hook-shaped function (jsonb -> jsonb) effectively executable by supabase_auth_admin (possible Auth hook)'
+      from pg_proc p
+     where p.pronamespace::regnamespace::text not in ('auth','pg_catalog','information_schema')
+       and p.pronargs = 1 and p.proargtypes[0] = 'jsonb'::regtype and p.prorettype = 'jsonb'::regtype
+       and has_function_privilege('supabase_auth_admin', p.oid, 'EXECUTE')
+       and not exists (select 1 from aclexplode(coalesce(p.proacl, '{}')) a
+                        where a.privilege_type = 'EXECUTE' and a.grantee = 'supabase_auth_admin'::regrole);
+  end if;
+  -- API-schema relations: owner, RLS, unexpected grantees
+  return query select 'drift', n.nspname || '.' || c.relname, 'relation not owned by postgres (owner ' || c.relowner::regrole::text || ')'
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relkind in ('r','p','v','m','f')
+     and c.relowner <> 'postgres'::regrole;
+  return query select 'drift', 'public.' || c.relname, 'row level security disabled'
+    from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p')
+     and not c.relrowsecurity;
+  return query select distinct 'drift', 'public.' || c.relname || ' / ' || a.grantee::regrole::text, 'unexpected table grantee'
+    from pg_class c cross join lateral aclexplode(c.relacl) a
+   where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p','v','m','f') and c.relacl is not null
+     and a.grantee <> 0
+     and a.grantee::regrole::text not in ('postgres','anon','authenticated','service_role');
+  return query select distinct 'drift', 'public.' || c.relname || ' / PUBLIC', 'table privilege granted to PUBLIC'
+    from pg_class c cross join lateral aclexplode(c.relacl) a
+   where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p','v','m','f') and c.relacl is not null
+     and a.grantee = 0;
+
+  -- ========================= containment =========================
+  -- Policies: exact reviewed definitions (command, roles, mode, USING,
+  -- WITH CHECK), not names.
+  return query select 'containment', 'public.' || p.tablename || '.' || p.policyname,
+                      'policy not reviewed, or its command/roles/mode/USING/WITH CHECK differ from the reviewed definition'
+    from pg_policies p
+   where p.schemaname = 'public'
+     and (p.tablename || '|' || p.policyname || '|' || p.permissive || '|' || p.roles::text || '|' || p.cmd || '|'
+          || coalesce(regexp_replace(p.qual, '\s+', ' ', 'g'), '-') || '|'
+          || coalesce(regexp_replace(p.with_check, '\s+', ' ', 'g'), '-')) <> all (reviewed_public_policies);
+  return query select 'containment', 'public.' || split_part(r, '|', 1) || '.' || split_part(r, '|', 2), 'reviewed policy missing'
+    from unnest(reviewed_public_policies) r
+   where not exists (select 1 from pg_policies p where p.schemaname = 'public'
+                        and p.tablename = split_part(r, '|', 1) and p.policyname = split_part(r, '|', 2));
+  return query select 'containment', 'public.' || c.relname || ' / anon ' || v.p, 'anon privilege other than SELECT on meals'
+    from pg_class c cross join (values ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),('REFERENCES'),('TRIGGER'),('MAINTAIN')) v(p)
+   where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p','v','m','f')
+     and has_table_privilege('anon', c.oid, v.p)
+     and not (c.relname = 'meals' and v.p = 'SELECT');
+  return query select 'containment', 'public.' || c.relname || ' / authenticated ' || v.p, 'authenticated holds a privilege that RLS does not govern'
+    from pg_class c cross join (values ('TRUNCATE'),('REFERENCES'),('TRIGGER'),('MAINTAIN')) v(p)
+   where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p','v','m','f')
+     and has_table_privilege('authenticated', c.oid, v.p);
+  return query select 'containment', 'public.' || t || ' / ' || r || ' TRUNCATE', 'TRUNCATE on an authority or append-only table'
+    from unnest(array['staff_roles','security_audit_log','kitchens']) t cross join unnest(array['service_role','anon','authenticated']) r
+   where to_regclass('public.' || t) is not null and has_table_privilege(r, ('public.' || t)::regclass, 'TRUNCATE');
+  -- Views run with their owner's rights (postgres bypasses RLS) unless
+  -- security_invoker is set; none is reviewed for client access.
+  return query select 'containment', n.nspname || '.' || c.relname,
+                      'view / materialized view / foreign table accessible to a client role (not reviewed; may bypass RLS of its base tables)'
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = any (api_schemas) and c.relkind in ('v','m','f')
+     and (has_table_privilege('anon', c.oid, 'SELECT') or has_table_privilege('authenticated', c.oid, 'SELECT')
+       or has_table_privilege('anon', c.oid, 'INSERT') or has_table_privilege('authenticated', c.oid, 'INSERT')
+       or has_table_privilege('anon', c.oid, 'UPDATE') or has_table_privilege('authenticated', c.oid, 'UPDATE')
+       or has_table_privilege('anon', c.oid, 'DELETE') or has_table_privilege('authenticated', c.oid, 'DELETE'));
+  return query select 'containment', n.nspname || '.' || c.relname, 'client-accessible relation in a schema that is not reviewed'
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where c.relkind in ('r','p','v','m','f')
+     and n.nspname <> all (api_schemas) and n.nspname <> all (platform_schemas) and n.nspname !~ '^pg_'
+     and (has_schema_privilege('anon', n.oid, 'USAGE') or has_schema_privilege('authenticated', n.oid, 'USAGE'))
+     and (has_table_privilege('anon', c.oid, 'SELECT') or has_table_privilege('authenticated', c.oid, 'SELECT')
+       or has_table_privilege('anon', c.oid, 'INSERT') or has_table_privilege('authenticated', c.oid, 'INSERT')
+       or has_table_privilege('anon', c.oid, 'UPDATE') or has_table_privilege('authenticated', c.oid, 'UPDATE')
+       or has_table_privilege('anon', c.oid, 'DELETE') or has_table_privilege('authenticated', c.oid, 'DELETE'));
+  return query select 'containment', x.col, 'authenticated may UPDATE a privileged column'
+    from (values ('user_profiles','role'),('user_profiles','is_admin'),('user_profiles','user_id'),
+                 ('drivers','status'),('drivers','commission_rate'),('drivers','total_earned'),
+                 ('drivers','weekly_earnings'),('drivers','email'),('drivers','national_id'),('drivers','id')) v(t, c)
+    cross join lateral (select v.t || '.' || v.c as col) x
+   where to_regclass('public.' || v.t) is not null
+     and has_column_privilege('authenticated', ('public.' || v.t)::regclass, v.c, 'UPDATE');
+  return query select 'containment', 'public.' || t, 'authenticated has access to a retired or service-only table'
+    from unnest(array['daily_closings','kiosks','products','stock_movements','admins','bank_accounts',
+                      'admin_logs','financial_transactions','platform_settings']) t
+   where to_regclass('public.' || t) is not null
+     and (has_table_privilege('authenticated', ('public.' || t)::regclass, 'SELECT')
+       or has_table_privilege('authenticated', ('public.' || t)::regclass, 'INSERT')
+       or has_table_privilege('authenticated', ('public.' || t)::regclass, 'UPDATE')
+       or has_table_privilege('authenticated', ('public.' || t)::regclass, 'DELETE'));
+  return query select 'containment', 'public.' || t, 'authenticated can write a server-managed table'
+    from unnest(array['staff_roles','security_audit_log','kitchens','order_status_updates']) t
+   where to_regclass('public.' || t) is not null
+     and (has_table_privilege('authenticated', ('public.' || t)::regclass, 'INSERT')
+       or has_table_privilege('authenticated', ('public.' || t)::regclass, 'UPDATE')
+       or has_table_privilege('authenticated', ('public.' || t)::regclass, 'DELETE'));
+  -- Functions
+  return query select 'containment', p.oid::regprocedure::text, 'unsafe function executable by a client role'
+    from pg_proc p
+   where p.pronamespace = 'public'::regnamespace
+     and p.proname in ('create_order_transaction','calculate_driver_weekly_earnings','containment_violations')
+     and (has_function_privilege('anon', p.oid, 'EXECUTE') or has_function_privilege('authenticated', p.oid, 'EXECUTE'));
+  return query select 'containment', p.oid::regprocedure::text, 'public function executable by anon'
+    from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and has_function_privilege('anon', p.oid, 'EXECUTE')
+     and p.prorettype not in ('trigger'::regtype, 'event_trigger'::regtype);
+  return query select 'containment', p.oid::regprocedure::text, 'SECURITY DEFINER function executable by a client role is not reviewed'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where p.prosecdef and n.nspname not in ('pg_catalog','information_schema')
+     and (has_function_privilege('anon', p.oid, 'EXECUTE') or has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+     and (has_function_privilege('anon', p.oid, 'EXECUTE')
+          or replace(p.oid::regprocedure::text, ' ', '') <> all (client_definer_functions));
+  return query select 'containment', p.oid::regprocedure::text, 'SECURITY DEFINER function without a fixed search_path'
+    from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.prosecdef
+     and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) s where s like 'search_path=%');
+  return query select 'containment', split_part(r, '|', 1), 'reviewed function changed (body, SECURITY DEFINER or configuration differ)'
+    from unnest(reviewed_functions) r
+    join pg_proc p on replace(p.oid::regprocedure::text, ' ', '') = split_part(r, '|', 1)
+   where (replace(p.oid::regprocedure::text, ' ', '') || '|' || p.prosecdef::text || '|'
+          || coalesce(array_to_string(p.proconfig, ','), '-') || '|' || md5(p.prosrc)) <> r;
+  -- Rewrite rules (review 2026-10-26 L3): no table in public has a reviewed
+  -- rule. A rule can silently discard or redirect writes (for example
+  -- DO INSTEAD NOTHING on security_audit_log), which no policy, grant or
+  -- trigger check would show. A view's own _RETURN rule is not a rule here.
+  return query select 'containment', 'rule ' || c.relname || '.' || w.rulename, 'unexpected rewrite rule'
+    from pg_rewrite w join pg_class c on c.oid = w.ev_class
+   where c.relnamespace = 'public'::regnamespace and w.rulename <> '_RETURN';
+  -- Guard triggers and constraints
+  return query select 'containment', 'trigger ' || x.t || '.' || x.g, 'required guard trigger missing or disabled'
+    from (values ('user_profiles','trg_enforce_profile_privilege_guard'),
+                 ('drivers','trg_enforce_driver_availability'),
+                 ('security_audit_log','security_audit_log_append_only'),
+                 ('security_audit_log','security_audit_log_no_truncate'),
+                 ('staff_roles','trg_staff_roles_serialize'),
+                 ('staff_roles','trg_staff_roles_require_admin'),
+                 ('staff_roles','trg_staff_roles_driver_offline'),
+                 ('staff_roles','trg_staff_roles_no_truncate')) x(t, g)
+   where not exists (select 1 from pg_trigger tg
+                      where tg.tgrelid = to_regclass('public.' || x.t) and tg.tgname = x.g and tg.tgenabled <> 'D');
+  return query select 'containment', 'public.drivers', 'availability check constraint missing or not the reviewed definition'
+   where not exists (select 1 from pg_constraint
+                      where conrelid = to_regclass('public.drivers') and conname = 'drivers_status_availability_check'
+                        and pg_get_constraintdef(oid) = 'CHECK ((status = ANY (ARRAY[''online''::text, ''offline''::text])))');
+  return query select 'containment', 'public.drivers.status', 'drivers.status allows NULL'
+    from pg_attribute a
+   where a.attrelid = to_regclass('public.drivers') and a.attname = 'status' and not a.attnotnull;
+  -- State invariants (dynamic SQL: the tables exist only after the migration)
+  if to_regclass('public.staff_roles') is not null then
+    return query execute
+      $q$select 'containment'::text, 'public.staff_roles'::text, 'no active admin staff role'::text
+          where not exists (select 1 from public.staff_roles where role = 'admin' and is_active)$q$;
+    return query execute
+      $q$select 'containment'::text, 'public.drivers ' || d.id::text, 'driver online without an active driver approval'::text
+           from public.drivers d
+          where d.status = 'online'
+            and not exists (select 1 from public.staff_roles s
+                             where s.user_id = d.id and s.role = 'driver' and s.is_active)$q$;
+  end if;
+  return query select 'containment', 'default privileges ' || coalesce(d.defaclnamespace::regnamespace::text, '(global)')
+                    || ' ' || d.defaclobjtype::text, 'migration role default privileges grant client access'
+    from pg_default_acl d cross join lateral aclexplode(d.defaclacl) a
+   where d.defaclrole = 'postgres'::regrole
+     and (d.defaclnamespace = 'public'::regnamespace or d.defaclnamespace = 0)
+     and (a.grantee = 0 or a.grantee::regrole::text in ('anon','authenticated'));
+  return query select 'containment', 'default privileges (global) f', 'built-in default lets PUBLIC execute new functions'
+   where not exists (select 1 from pg_default_acl d
+                      where d.defaclrole = 'postgres'::regrole and d.defaclnamespace = 0 and d.defaclobjtype = 'f');
+
+  -- ============================ storage ============================
+  if to_regclass('storage.objects') is null then
+    return query select 'storage', 'storage.objects', 'storage schema absent: storage containment not verifiable here';
+  else
+    -- every policy on every storage table (all commands, incl. SELECT /
+    -- listing) must match a reviewed definition exactly
+    return query select 'storage', 'storage.' || p.tablename || '.' || p.policyname,
+                        'storage policy not reviewed, or its command/roles/mode/USING/WITH CHECK differ from the reviewed definition'
+      from pg_policies p
+     where p.schemaname = 'storage'
+       and (p.tablename || '|' || p.policyname || '|' || p.permissive || '|' || p.roles::text || '|' || p.cmd || '|'
+            || coalesce(regexp_replace(p.qual, '\s+', ' ', 'g'), '-') || '|'
+            || coalesce(regexp_replace(p.with_check, '\s+', ' ', 'g'), '-')) <> all (reviewed_storage_policies);
+    return query select 'storage', 'storage.' || split_part(r, '|', 1) || '.' || split_part(r, '|', 2), 'reviewed storage policy missing'
+      from unnest(reviewed_storage_policies) r
+     where not exists (select 1 from pg_policies p where p.schemaname = 'storage'
+                          and p.tablename = split_part(r, '|', 1) and p.policyname = split_part(r, '|', 2));
+    return query execute
+      $q$select 'storage'::text, 'bucket ' || b.id, 'public bucket other than meal-images'::text
+           from storage.buckets b where b.public and b.id <> 'meal-images'$q$;
+    -- CTO-approved meal-images limits (5 MiB; jpeg/png/webp only)
+    return query execute
+      $q$select 'storage'::text, 'bucket meal-images',
+                ('size/MIME limits not as approved (file_size_limit=' || coalesce(b.file_size_limit::text, 'NULL')
+                 || ', allowed_mime_types=' || coalesce(b.allowed_mime_types::text, 'NULL') || ')')::text
+           from storage.buckets b
+          where b.id = 'meal-images'
+            and (b.file_size_limit is distinct from 5242880
+                 or b.allowed_mime_types is distinct from array['image/jpeg','image/png','image/webp']::text[])$q$;
+    return query execute
+      $q$select 'storage'::text, 'bucket meal-images', 'bucket missing'::text
+          where not exists (select 1 from storage.buckets where id = 'meal-images')$q$;
+  end if;
+end
+$cv$;
+-- END GENERATED MONITOR
+
+-- ---------------------------------------------------------------------
+-- 10. Postcondition
+-- ---------------------------------------------------------------------
+do $post$
+declare
+  bad text;
+begin
+  select string_agg(v.category || ': ' || v.object || ' - ' || v.problem, ' | ') into bad
+    from public.containment_violations() v where v.category in ('drift', 'containment');
+  if bad is not null then
+    raise exception 'V1 account deletion postcondition failed; aborting the migration transaction (its COMMIT cannot succeed): %', bad;
+  end if;
+  if has_function_privilege('anon', 'public.delete_my_account(text)', 'EXECUTE')
+     or not has_function_privilege('authenticated', 'public.delete_my_account(text)', 'EXECUTE') then
+    raise exception 'V1 account deletion postcondition failed: wrong EXECUTE privileges on delete_my_account';
+  end if;
+  if current_user <> 'postgres' then
+    raise exception 'V1 account deletion: postcondition must run as role postgres' using errcode = '42501';
+  end if;
+  insert into pg_temp.v1_account_gate_ok values ('postcondition');
+end
+$post$;
+
+commit;

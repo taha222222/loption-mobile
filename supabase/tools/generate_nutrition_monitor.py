@@ -13,6 +13,8 @@ nothing else changed; its rollback re-creates the previous monitor.
   * standalone tracking (20261103120000): owner-only policies on the gym
     log tables. Rollback: the activity monitor and the activity-migration
     versions of the functions it replaced.
+  * account deletion (20261104120000): one client-callable definer function,
+    public.delete_my_account(text). Rollback: the standalone monitor.
 
 Both blocks are copied mechanically from the committed Phase 1C migration so
 that a reviewer only has to read the appended entries below.
@@ -32,6 +34,8 @@ ACTIVITY_MIGRATION = ROOT / "supabase/migrations/20261030120000_v1_activity_trac
 ACTIVITY_ROLLBACK = ROOT / "supabase/rollback/v1_activity_tracking_rollback.sql"
 STANDALONE_MIGRATION = ROOT / "supabase/migrations/20261103120000_v1_standalone_tracking.sql"
 STANDALONE_ROLLBACK = ROOT / "supabase/rollback/v1_standalone_tracking_rollback.sql"
+ACCOUNT_MIGRATION = ROOT / "supabase/migrations/20261104120000_v1_account_deletion.sql"
+ACCOUNT_ROLLBACK = ROOT / "supabase/rollback/v1_account_deletion_rollback.sql"
 BEGIN, END = "-- BEGIN GENERATED MONITOR\n", "-- END GENERATED MONITOR\n"
 
 # Reviewed definitions added by the nutrition migration, as PostgreSQL 17
@@ -110,6 +114,15 @@ def standalone_monitor() -> str:
                             NEW_DEFINER_FUNCTIONS + ACTIVITY_DEFINER_FUNCTIONS)
 
 
+# The account-deletion migration adds one client-callable definer function.
+ACCOUNT_DEFINER_FUNCTIONS = ["public.delete_my_account(text)"]
+
+
+def account_monitor() -> str:
+    return extended_monitor(NEW_POLICIES + ACTIVITY_POLICIES + STANDALONE_POLICIES,
+                            NEW_DEFINER_FUNCTIONS + ACTIVITY_DEFINER_FUNCTIONS + ACCOUNT_DEFINER_FUNCTIONS)
+
+
 def function_from(path: pathlib.Path, name: str) -> str:
     """One function definition of a migration, as CREATE OR REPLACE."""
     text = path.read_text()
@@ -167,6 +180,8 @@ def main() -> int:
     rendered[STANDALONE_MIGRATION] = render(STANDALONE_MIGRATION, standalone_monitor())
     standalone_rb = render(STANDALONE_ROLLBACK, activity_monitor())
     rendered[STANDALONE_ROLLBACK] = render_string(standalone_rb, activity_functions(), FN_BEGIN, FN_END)
+    rendered[ACCOUNT_MIGRATION] = render(ACCOUNT_MIGRATION, account_monitor())
+    rendered[ACCOUNT_ROLLBACK] = render(ACCOUNT_ROLLBACK, standalone_monitor())
     check = "--check" in sys.argv
     stale = []
     for path, new in rendered.items():
