@@ -13,7 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { randomUUID } from 'expo-crypto';
 import { evaluatePoint, GeoPoint } from '../activity/gps';
-import { drainFixes, gpsPermissionStillGranted, startBackgroundGps, stopBackgroundGps } from '../activity/backgroundGps';
+import { BufferedFix, drainFixes, gpsPermissionStillGranted, startBackgroundGps, stopBackgroundGps } from '../activity/backgroundGps';
 import { motion } from '../activity/motionNative';
 import { segmentSteps } from '../activity/stepCounter';
 import { isTransient, withRetry } from '../activity/sync';
@@ -74,15 +74,17 @@ interface WorkoutState {
   gpsMode: 'off' | 'background' | 'screen';
   lastSummary: WorkoutSummary | null;
   claimForUser: (userId: string) => Promise<void>;
-  start: (kind: WorkoutKind, options: { gps: boolean }) => Promise<{ ok: true } | { ok: false; reason: 'already_active' }>;
+  start: (kind: WorkoutKind, options: { gps: boolean; label?: 'hike' | null }) => Promise<{ ok: true } | { ok: false; reason: 'already_active' }>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
   beat: () => void;
   addPoint: (p: GeoPoint & { error?: boolean }) => void;
   drainGps: () => Promise<void>;
   checkGpsPermission: () => Promise<void>;
-  finish: () => Promise<{ ok: true; session: FinishedSession; uploaded: boolean } | { ok: false; reason: 'too_short' | 'none' }>;
+  finish: () => Promise<{ ok: true; session: FinishedSession; uploaded: boolean } | { ok: false; reason: 'too_short' | 'none' | 'busy' }>;
+  recover: (original: ActiveSession) => Promise<void>;
   discard: () => Promise<void>;
+  forgetRoute: (clientSessionId: string) => void;
   flush: () => Promise<void>;
   loadHistory: (days?: number) => Promise<void>;
   remove: (id: string) => Promise<boolean>;
@@ -97,6 +99,8 @@ interface WorkoutState {
 // Last accepted GPS fix of the running segment (memory only).
 let anchor: GeoPoint | null = null;
 let flushing: Promise<void> | null = null;
+// A finish in progress: a second tap (or a second caller) does nothing.
+let finishing = false;
 const MAX_ROUTES = 10;
 
 const initial = {
@@ -141,7 +145,7 @@ async function iosSegmentSteps(session: FinishedSession): Promise<number | null>
 
 async function startGpsFor(session: ActiveSession, set: (p: Partial<WorkoutState>) => void) {
   if (!session.gps.enabled) return;
-  const background = await startBackgroundGps(session.id);
+  const background = await startBackgroundGps(session.id, session.kind);
   set({ gpsMode: background ? 'background' : 'screen' });
 }
 
@@ -159,10 +163,11 @@ export const useWorkoutStore = create<WorkoutState>()(
         }
       },
 
-      start: async (kind, { gps }) => {
+      start: async (kind, { gps, label }) => {
         if (get().active) return { ok: false, reason: 'already_active' };
         anchor = null;
         let session = startSession(kind, randomUUID(), deviceTimeZone(), new Date(), gps);
+        if (label === 'hike' && kind === 'walk') session = { ...session, label };
         if (countsSteps(kind)) session = markSegmentStart(session, await counterMark());
         set({ active: session, notice: null, lastSummary: null, gpsMode: 'off' });
         await startGpsFor(session, set);
@@ -233,37 +238,68 @@ export const useWorkoutStore = create<WorkoutState>()(
       finish: async () => {
         const a = get().active;
         if (!a) return { ok: false, reason: 'none' };
-        await stopBackgroundGps();
-        await get().drainGps();
-        let closing = get().active ?? a;
-        if (closing.status === 'running' && countsSteps(closing.kind)) {
-          closing = closeSegmentSteps(closing, segmentSteps(closing.openMark ?? null, await counterMark()));
+        if (finishing) return { ok: false, reason: 'busy' };
+        finishing = true;
+        try {
+          await stopBackgroundGps();
+          await get().drainGps();
+          let closing = get().active ?? a;
+          if (closing.status === 'running' && countsSteps(closing.kind)) {
+            closing = closeSegmentSteps(closing, segmentSteps(closing.openMark ?? null, await counterMark()));
+          }
+          const result = finishSession(closing, new Date());
+          if (!result.ok) {
+            // Too short: GPS stays stopped until the customer resumes.
+            if (closing.status === 'running') set({ active: pauseSession(closing, new Date()), gpsMode: 'off' });
+            return { ok: false, reason: 'too_short' };
+          }
+          let session = result.session;
+          if (countsSteps(session.kind) && session.steps == null) {
+            const ios = await iosSegmentSteps(session);
+            if (ios !== null) session = { ...session, steps: ios };
+          }
+          anchor = null;
+          const route = closing.route ?? [];
+          const routes = { ...get().routes, ...(route.length > 1 ? { [session.clientSessionId]: route } : {}) };
+          const kept = Object.keys(routes).slice(-MAX_ROUTES);
+          set({
+            active: null,
+            gpsMode: 'off',
+            // Never queued twice (same client_session_id).
+            pending: [...get().pending.filter((p) => p.clientSessionId !== session.clientSessionId), session],
+            routes: Object.fromEntries(kept.map((k) => [k, routes[k]])),
+          });
+          await get().flush();
+          const uploaded = !get().pending.some((p) => p.clientSessionId === session.clientSessionId);
+          set({ lastSummary: { session, route, uploaded } });
+          return { ok: true, session, uploaded };
+        } finally {
+          finishing = false;
         }
-        const result = finishSession(closing, new Date());
-        if (!result.ok) {
-          // Too short: GPS stays stopped until the customer resumes.
-          if (closing.status === 'running') set({ active: pauseSession(closing, new Date()), gpsMode: 'off' });
-          return { ok: false, reason: 'too_short' };
+      },
+
+      recover: async (original) => {
+        // The system closed the app while this session was recording. Fixes
+        // the background task buffered after the last heartbeat are real:
+        // they are counted, and the session is paused at the last of them.
+        if (original.status !== 'running') return;
+        let fixes: BufferedFix[] = [];
+        try {
+          fixes = await drainFixes(original.id);
+        } catch {
+          return;
         }
-        let session = result.session;
-        if (countsSteps(session.kind) && session.steps == null) {
-          const ios = await iosSegmentSteps(session);
-          if (ios !== null) session = { ...session, steps: ios };
-        }
+        const now = get().active;
+        if (!now || now.id !== original.id || now.status !== 'paused' || !now.interrupted || now.segments.length !== original.segments.length) return;
+        const real = fixes.filter((f) => !f.error);
+        if (!real.length) return;
+        // Synchronous from here: no timer can interleave with the replay.
         anchor = null;
-        const route = closing.route ?? [];
-        const routes = { ...get().routes, ...(route.length > 1 ? { [session.clientSessionId]: route } : {}) };
-        const kept = Object.keys(routes).slice(-MAX_ROUTES);
-        set({
-          active: null,
-          gpsMode: 'off',
-          pending: [...get().pending, session],
-          routes: Object.fromEntries(kept.map((k) => [k, routes[k]])),
-        });
-        await get().flush();
-        const uploaded = !get().pending.some((p) => p.clientSessionId === session.clientSessionId);
-        set({ lastSummary: { session, route, uploaded } });
-        return { ok: true, session, uploaded };
+        set({ active: original });
+        for (const fix of fixes) get().addPoint(fix);
+        const evidence = Math.max(...real.map((f) => f.timestamp));
+        anchor = null;
+        set({ active: restoreAfterLaunch(get().active ?? original, evidence) });
       },
 
       discard: async () => {
@@ -272,6 +308,16 @@ export const useWorkoutStore = create<WorkoutState>()(
         await stopBackgroundGps();
         if (a) await drainFixes(a.id); // throw the buffered fixes away
         set({ active: null, gpsMode: 'off' });
+      },
+
+      // The customer removes a finished session's route from this phone.
+      forgetRoute: (clientSessionId) => {
+        const { [clientSessionId]: _gone, ...routes } = get().routes;
+        const summary = get().lastSummary;
+        set({
+          routes,
+          lastSummary: summary && summary.session.clientSessionId === clientSessionId ? { ...summary, route: [] } : summary,
+        });
       },
 
       flush: async () => {
@@ -371,8 +417,9 @@ export const useWorkoutStore = create<WorkoutState>()(
       // is stopped (the customer resumes or finishes it explicitly).
       onRehydrateStorage: () => (state) => {
         if (state?.active) {
-          useWorkoutStore.setState({ active: restoreAfterLaunch(state.active), gpsMode: 'off' });
-          void stopBackgroundGps();
+          const original = state.active;
+          useWorkoutStore.setState({ active: restoreAfterLaunch(original), gpsMode: 'off' });
+          void stopBackgroundGps().then(() => useWorkoutStore.getState().recover(original));
         }
       },
     }

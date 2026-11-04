@@ -56,6 +56,8 @@ export interface ActiveSession {
   openMark?: CounterSnapshot | null;
   segmentSteps?: (number | null)[];
   gym?: { intensity: GymIntensity; exercises: GymExercise[] };
+  // Shown to the customer only (this device): a hike is recorded as a walk.
+  label?: 'hike' | null;
 }
 
 export interface FinishedSession {
@@ -71,6 +73,7 @@ export interface FinishedSession {
   gym?: GymExercise[] | null;
   gymSaved?: boolean; // the gym log reached the server
   segments?: Segment[]; // to read the phone's steps per segment (iPhone)
+  label?: 'hike' | null;
 }
 
 export const MIN_ACTIVE_SECONDS = 60;
@@ -124,10 +127,13 @@ export function activeSeconds(s: ActiveSession, now: Date): number {
 }
 
 // Called once when a persisted session is loaded in a new app process: a
-// session that was running is paused at its last heartbeat.
-export function restoreAfterLaunch(s: ActiveSession): ActiveSession {
+// session that was running is paused at its last heartbeat, or at the last
+// GPS fix recorded for it when that is later (proof it was still running).
+export function restoreAfterLaunch(s: ActiveSession, lastEvidenceMs?: number | null, nowMs: number = Date.now()): ActiveSession {
   if (s.status !== 'running') return s;
-  return { ...pauseSession(s, new Date(s.lastSeenAt)), interrupted: true };
+  const seen = new Date(s.lastSeenAt).getTime();
+  const at = lastEvidenceMs && lastEvidenceMs > seen ? Math.min(lastEvidenceMs, nowMs) : seen;
+  return { ...pauseSession(s, new Date(at)), interrupted: true };
 }
 
 export function addDistance(s: ActiveSession, meters: number, point?: RoutePoint): ActiveSession {
@@ -240,6 +246,7 @@ export function finishSession(s: ActiveSession, now: Date): FinishResult {
       gym: s.kind === 'gym' ? (s.gym?.exercises.filter((e) => e.sets.length > 0) ?? []) : null,
       gymSaved: false,
       segments: closed.segments,
+      label: s.label ?? null,
     },
   };
 }

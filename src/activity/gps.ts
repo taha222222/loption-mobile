@@ -16,8 +16,24 @@ export interface GeoPoint {
 export const MAX_ACCURACY_M = 30;
 export const MAX_GAP_MS = 30_000;
 // Fastest plausible instantaneous speed per kind (m/s); the server applies
-// its own limit to the session average.
+// its own limit to the session average. A hike is recorded as a walk.
 const MAX_SPEED: Record<WorkoutKind, number> = { walk: 4, run: 8, cycle: 25, gym: 0 };
+
+// How often the phone is asked for a position during a session, by kind:
+// on foot every 3 s or 5 m with high accuracy (cell + Wi-Fi + GPS), on a bike
+// every 2 s or 10 m with the best accuracy the phone has. Nothing is asked
+// while paused or outside a session. 'best' maps to BestForNavigation,
+// 'high' to High (expo-location accuracy levels).
+export interface Sampling {
+  accuracy: 'best' | 'high';
+  timeIntervalMs: number;
+  distanceIntervalM: number;
+}
+export function samplingFor(kind: WorkoutKind): Sampling {
+  if (kind === 'cycle') return { accuracy: 'best', timeIntervalMs: 2000, distanceIntervalM: 10 };
+  if (kind === 'run') return { accuracy: 'best', timeIntervalMs: 3000, distanceIntervalM: 5 };
+  return { accuracy: 'high', timeIntervalMs: 3000, distanceIntervalM: 5 };
+}
 
 export function haversineM(a: GeoPoint, b: GeoPoint): number {
   const R = 6371008.8;
@@ -45,6 +61,39 @@ export function evaluatePoint(prev: GeoPoint | null, next: GeoPoint, kind: Worko
   if (meters / (dt / 1000) > MAX_SPEED[kind]) return { use: false, anchor: false, gap: false, reason: 'too_fast' };
   return { use: true, meters };
 }
+
+// Current speed (m/s) from the last accepted route points of the running
+// stretch: at least 15 s and 20 m over the last minute, and a fix less than
+// 30 s old. Otherwise null ("—"): a stale or too short window is never shown
+// as a pace. Never crosses a gap or a pause (a point marked `start`).
+export const CURRENT_WINDOW_MS = 60_000;
+export function currentSpeedMps(route: { lat: number; lng: number; t: number; start?: boolean }[], nowMs: number): number | null {
+  if (route.length < 2) return null;
+  const last = route[route.length - 1];
+  if (nowMs - last.t > 30_000) return null;
+  let meters = 0;
+  let first = last;
+  for (let i = route.length - 1; i > 0; i--) {
+    const b = route[i];
+    const a = route[i - 1];
+    if (b.start || last.t - a.t > CURRENT_WINDOW_MS) break;
+    meters += haversineM(
+      { latitude: a.lat, longitude: a.lng, accuracy: 0, timestamp: a.t },
+      { latitude: b.lat, longitude: b.lng, accuracy: 0, timestamp: b.t }
+    );
+    first = a;
+  }
+  const seconds = (last.t - first.t) / 1000;
+  if (seconds < 15 || meters < 20) return null;
+  return meters / seconds;
+}
+
+export function paceFromSpeed(mps: number | null): number | null {
+  if (mps === null || mps < 0.5) return null; // slower than 33 min/km: standing, not a pace
+  return Math.round(1000 / mps);
+}
+
+export const kmh = (mps: number | null): number | null => (mps === null ? null : Math.round(mps * 36) / 10);
 
 // Pace in seconds per km (walk, run), only when the distance is meaningful.
 export function paceSecondsPerKm(distanceM: number | null, seconds: number): number | null {

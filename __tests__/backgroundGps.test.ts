@@ -27,7 +27,7 @@ it('keeps fixes only for the active session, oldest first', async () => {
   await startBackgroundGps('s1');
   expect(mockLoc.start).toHaveBeenCalledWith(
     'loption-workout-gps',
-    expect.objectContaining({ foregroundService: expect.objectContaining({ notificationTitle: 'Séance en cours' }) })
+    expect.objectContaining({ foregroundService: expect.objectContaining({ notificationTitle: 'Votre activité est en cours' }) })
   );
   await handleTaskBatch([loc(2000), loc(1000)], null);
   const fixes = await drainFixes('s1');
