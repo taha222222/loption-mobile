@@ -6,7 +6,7 @@ import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Ellipse, Path, Rect } from 'react-native-svg';
 import { theme } from '../../theme';
 
-export type ActivityIconName = 'steps' | 'walk' | 'run' | 'cycle' | 'gym' | 'calories' | 'meal' | 'distance' | 'time' | 'target';
+export type ActivityIconName = 'steps' | 'walk' | 'run' | 'cycle' | 'hike' | 'gym' | 'calories' | 'meal' | 'distance' | 'time' | 'target';
 export type ActivityTone = 'nutrition' | 'movement' | 'workout' | 'energy' | 'neutral';
 
 export const TONES: Record<ActivityTone, { fg: string; bg: string }> = {
@@ -22,6 +22,7 @@ export const ICON_TONE: Record<ActivityIconName, ActivityTone> = {
   walk: 'workout',
   run: 'workout',
   cycle: 'workout',
+  hike: 'workout',
   gym: 'workout',
   calories: 'energy',
   meal: 'nutrition',
@@ -73,6 +74,15 @@ function Glyph({ name, color }: { name: ActivityIconName; color: string }) {
           <Circle cx={36} cy={32} r={8} {...s} />
           <Path d="M12 32l8-13h12l4 13M20 19l6 13h-14M26 32l6-13" {...s} />
           <Path d="M18 15h5M31 14l2 5" {...s} />
+        </>
+      );
+    case 'hike':
+      return (
+        <>
+          <Path d="M4 40l12-18 7 9 6-8 15 17z" {...s} />
+          <Path d="M13 26.5l3 2.5 3-3" {...s} opacity={0.55} />
+          <Circle cx={36} cy={9} r={4} {...f} />
+          <Path d="M35 15l-3 8M32 23l4 5M34 17l5 3M41 13v19" {...s} />
         </>
       );
     case 'gym':

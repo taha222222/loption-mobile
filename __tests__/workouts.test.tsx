@@ -2,7 +2,7 @@
 // the workout screen, with the API mocked. Server rules (MET estimate,
 // overlap refusal, deduplication) are tested in supabase/tests/run_v1_activity.sh.
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import {
   activeSeconds,
   addDistance,
@@ -13,6 +13,7 @@ import {
   startSession,
 } from '../src/activity/workoutSession';
 import { evaluatePoint, formatDistance, formatDuration, formatPace, haversineM, paceSecondsPerKm, speedKmh } from '../src/activity/gps';
+import { useUserStore } from '../src/stores/userStore';
 import { useWorkoutStore } from '../src/stores/workoutStore';
 import { importProviderWorkouts } from '../src/services/workoutApi';
 import WorkoutScreen from '../app/(app)/workout';
@@ -41,11 +42,30 @@ jest.mock('../src/lib/supabase', () => ({
 }));
 let mockUuid = 0;
 jest.mock('expo-crypto', () => ({ randomUUID: () => `ws-${++mockUuid}` }));
-const mockGps = { request: jest.fn(), watch: jest.fn() };
+const mockGps = { request: jest.fn(), watch: jest.fn(), status: jest.fn(), preview: jest.fn() };
 jest.mock('../src/activity/workoutGps', () => ({
   requestWorkoutGps: () => mockGps.request(),
+  workoutGpsStatus: () => mockGps.status(),
   watchWorkoutLocation: (cb: any) => mockGps.watch(cb),
+  watchPreviewLocation: (cb: any) => mockGps.preview(cb),
 }));
+// The native map as plain views: what is drawn (stretches, markers) and
+// where the camera goes. Real rendering is a device test.
+const mockMap = { animate: jest.fn() };
+jest.mock('react-native-maps', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  const MapView = React.forwardRef(function MockMapView(p: any, ref: any) {
+    React.useImperativeHandle(ref, () => ({ animateToRegion: (...a: any[]) => mockMap.animate(...a) }));
+    return React.createElement(View, { testID: 'map', onPanDrag: p.onPanDrag }, p.children);
+  });
+  return {
+    __esModule: true,
+    default: MapView,
+    Polyline: (p: any) => React.createElement(View, { testID: `polyline-${p.coordinates.length}` }),
+    Marker: (p: any) => React.createElement(View, { testID: `marker-${p.title}` }),
+  };
+});
 jest.mock('../src/activity/sync', () => ({
   ...jest.requireActual('../src/activity/sync'),
   // no real backoff delays in tests
@@ -69,6 +89,8 @@ beforeEach(() => {
   mockUpload.mockResolvedValue({ data: true, error: null });
   mockGps.request.mockResolvedValue('granted');
   mockGps.watch.mockResolvedValue(() => {});
+  mockGps.status.mockResolvedValue('undetermined');
+  mockGps.preview.mockResolvedValue(() => {});
   mockGymLog.mockResolvedValue({ data: true, error: null });
   mockBg.start.mockResolvedValue(true);
   mockBg.stop.mockResolvedValue(undefined);
@@ -276,6 +298,72 @@ describe('GPS lifecycle', () => {
   });
 });
 
+describe('live map hardening', () => {
+  const fix = (s: number, lat: number) => ({ session: 'ws-1', latitude: lat, longitude: -7.6, accuracy: 5, timestamp: at(s).getTime() });
+
+  it('a double tap on Terminer saves the session once', async () => {
+    jest.useFakeTimers({ now: t0 });
+    await useWorkoutStore.getState().start('walk', { gps: false });
+    jest.setSystemTime(at(600));
+    const [a, b] = await Promise.all([useWorkoutStore.getState().finish(), useWorkoutStore.getState().finish()]);
+    jest.useRealTimers();
+    expect([a, b].filter((r) => r.ok)).toHaveLength(1);
+    expect([a, b].some((r) => !r.ok && r.reason === 'busy')).toBe(true);
+    expect(mockUpload).toHaveBeenCalledTimes(1);
+  });
+
+  it('a hike is recorded as a walk and keeps its label on this phone', async () => {
+    jest.useFakeTimers({ now: t0 });
+    await useWorkoutStore.getState().start('walk', { gps: true, label: 'hike' });
+    expect(useWorkoutStore.getState().active?.label).toBe('hike');
+    jest.setSystemTime(at(600));
+    const r = await useWorkoutStore.getState().finish();
+    jest.useRealTimers();
+    expect(r.ok && r.session.kind).toBe('walk');
+    expect(r.ok && r.session.label).toBe('hike');
+    expect(mockUpload.mock.calls[0][0]).toMatchObject({ kind: 'walk' });
+  });
+
+  it('after the system closed the app, fixes recorded after the last heartbeat are counted and the session pauses at the last one', async () => {
+    jest.useFakeTimers({ now: t0 });
+    await useWorkoutStore.getState().start('run', { gps: true });
+    const original = useWorkoutStore.getState().active!; // last heartbeat at t0
+    jest.useRealTimers();
+    // New process: restored paused at the heartbeat, then the buffer is read.
+    useWorkoutStore.setState({ active: restoreAfterLaunch(original) });
+    mockBg.drain.mockResolvedValueOnce([fix(10, 33.5), fix(20, 33.5004), fix(30, 33.5008)]);
+    await useWorkoutStore.getState().recover(original);
+    const a = useWorkoutStore.getState().active!;
+    expect(a.status).toBe('paused');
+    expect(a.interrupted).toBe(true);
+    expect(a.gps.distanceM).toBeGreaterThan(80);
+    expect(activeSeconds(a, at(5000))).toBe(30); // until the last real fix, not the time the app was gone
+  });
+
+  it('recovery changes nothing once the customer has resumed or when no fix was buffered', async () => {
+    await useWorkoutStore.getState().start('run', { gps: true });
+    const original = useWorkoutStore.getState().active!;
+    useWorkoutStore.setState({ active: restoreAfterLaunch(original) });
+    await useWorkoutStore.getState().recover(original); // nothing buffered
+    expect(useWorkoutStore.getState().active?.gps.distanceM).toBe(0);
+    await useWorkoutStore.getState().resume();
+    mockBg.drain.mockResolvedValueOnce([fix(10, 33.5), fix(20, 33.5004)]);
+    await useWorkoutStore.getState().recover(original);
+    expect(useWorkoutStore.getState().active?.segments).toHaveLength(2);
+    expect(useWorkoutStore.getState().active?.gps.distanceM).toBe(0);
+  });
+
+  it('a new account never inherits the previous account’s session or routes', async () => {
+    await useWorkoutStore.getState().claimForUser('user-a');
+    await useWorkoutStore.getState().start('walk', { gps: true });
+    useWorkoutStore.setState({ routes: { old: [{ lat: 1, lng: 1, t: 1 }] } });
+    await useWorkoutStore.getState().claimForUser('user-b');
+    expect(useWorkoutStore.getState().active).toBeNull();
+    expect(useWorkoutStore.getState().routes).toEqual({});
+    expect(mockBg.stop).toHaveBeenCalled();
+  });
+});
+
 describe('phone steps during a workout (Android counter)', () => {
   const reading = (value: number, s: number) => ({ value, wallTimeMs: at(s).getTime(), bootCount: 3, elapsedMs: at(s).getTime() - t0.getTime() + 1e6 });
   const android = () => Object.defineProperty(require('react-native').Platform, 'OS', { get: () => 'android', configurable: true });
@@ -383,27 +471,117 @@ describe('provider workout import', () => {
 });
 
 describe('workout screen', () => {
-  it('shows the four activities as large tiles and explains GPS before asking', async () => {
+  it('shows five activities, and for an outdoor one explains the location before the system prompt', async () => {
     await render(<WorkoutScreen />);
-    for (const label of ['Marche', 'Course', 'Vélo', 'Salle de sport']) expect(screen.getByLabelText(label)).toBeTruthy();
-    await fireEvent.press(screen.getByText('Démarrer · Course'));
-    expect(screen.getByText('Pourquoi la localisation ?')).toBeTruthy();
+    for (const label of ['Marche', 'Course', 'Vélo', 'Randonnée', 'Salle de sport']) expect(screen.getByLabelText(label)).toBeTruthy();
+    await fireEvent.press(screen.getByText('Continuer · Course'));
+    await waitFor(() => expect(screen.getByText('Afficher votre parcours')).toBeTruthy());
     expect(mockGps.request).not.toHaveBeenCalled(); // no system prompt before the explanation
+    mockGps.request.mockResolvedValue('granted');
     await fireEvent.press(screen.getByText('Continuer'));
+    await waitFor(() => expect(screen.getByText('Recherche de votre position…')).toBeTruthy());
+    expect(useWorkoutStore.getState().active).toBeNull(); // nothing recorded before Start
+    // A first, accurate position: ready.
+    const cb = mockGps.preview.mock.calls[0][0];
+    await act(async () => cb({ latitude: 33.5, longitude: -7.6, accuracy: 8, timestamp: Date.now() }));
+    expect(screen.getByText('Prêt à démarrer')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Démarrer'));
     await waitFor(() => expect(screen.getByText('En cours')).toBeTruthy());
     expect(useWorkoutStore.getState().active).toMatchObject({ kind: 'run', gps: { enabled: true } });
     expect(mockBg.start).toHaveBeenCalled();
+    expect(screen.getByText('Recherche de votre position…')).toBeTruthy(); // no accepted fix yet
+    expect(screen.getByText('Allure actuelle')).toBeTruthy();
   });
 
-  it('starts without distance when GPS permission is refused, and says so', async () => {
-    mockGps.request.mockResolvedValue('denied');
+  it('says the signal is weak before the start, and still lets the customer start', async () => {
+    mockGps.status.mockResolvedValue('granted');
     await render(<WorkoutScreen />);
-    await fireEvent.press(screen.getByText('Démarrer · Course'));
-    await fireEvent.press(screen.getByText('Continuer'));
-    await waitFor(() => expect(screen.getByText('Séance sans GPS')).toBeTruthy());
-    expect(useWorkoutStore.getState().active?.gps.enabled).toBe(false);
+    await fireEvent.press(screen.getByLabelText('Vélo'));
+    await fireEvent.press(screen.getByText('Continuer · Vélo'));
+    await waitFor(() => expect(mockGps.preview).toHaveBeenCalled());
+    await act(async () => mockGps.preview.mock.calls[0][0]({ latitude: 33.5, longitude: -7.6, accuracy: 80, timestamp: Date.now() }));
+    expect(screen.getByText('Signal GPS faible')).toBeTruthy();
+    expect(screen.getByText(/la distance commencera dès que le signal sera meilleur/)).toBeTruthy();
+    expect(screen.getByText('Démarrer')).toBeTruthy();
+  });
+
+  it('when location was refused, offers the settings and a start without map, and never asks again by itself', async () => {
+    mockGps.status.mockResolvedValue('denied');
+    await render(<WorkoutScreen />);
+    await fireEvent.press(screen.getByLabelText('Marche'));
+    await fireEvent.press(screen.getByText('Continuer · Marche'));
+    await waitFor(() => expect(screen.getByText('Localisation non autorisée')).toBeTruthy());
+    expect(screen.getByText('Autoriser dans les réglages')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Démarrer sans carte'));
+    await waitFor(() => expect(useWorkoutStore.getState().active?.gps.enabled).toBe(false));
+    expect(mockGps.request).not.toHaveBeenCalled();
     expect(mockBg.start).not.toHaveBeenCalled();
     expect(screen.getByText(/Sans GPS : la durée est enregistrée/)).toBeTruthy();
+  });
+
+  it('a hike starts from its own tile and is labelled Randonnée', async () => {
+    mockGps.status.mockResolvedValue('granted');
+    await render(<WorkoutScreen />);
+    await fireEvent.press(screen.getByLabelText('Randonnée'));
+    expect(screen.getByText('La randonnée est comptée comme une marche dans votre bilan.')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Continuer · Randonnée'));
+    await waitFor(() => expect(screen.getByText('Démarrer')).toBeTruthy());
+    await fireEvent.press(screen.getByText('Démarrer'));
+    await waitFor(() => expect(useWorkoutStore.getState().active).toMatchObject({ kind: 'walk', label: 'hike' }));
+    expect(screen.getAllByText('Randonnée').length).toBeGreaterThan(0);
+  });
+
+  it('a gym session never asks for the location', async () => {
+    await render(<WorkoutScreen />);
+    await fireEvent.press(screen.getByLabelText('Salle de sport'));
+    await fireEvent.press(screen.getByText('Démarrer · Salle de sport'));
+    await waitFor(() => expect(useWorkoutStore.getState().active?.kind).toBe('gym'));
+    expect(useWorkoutStore.getState().active?.gps.enabled).toBe(false);
+    expect(mockGps.request).not.toHaveBeenCalled();
+    expect(mockGps.status).not.toHaveBeenCalled();
+    expect(mockBg.start).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('map')).toBeNull();
+  });
+
+  it('draws the route stretch by stretch (a gap is never joined), follows the position and offers Recentrer', async () => {
+    jest.useFakeTimers({ now: t0 });
+    await useWorkoutStore.getState().start('run', { gps: true });
+    const f = (sec: number, lat: number) => ({ session: 'ws-1', latitude: lat, longitude: -7.6, accuracy: 5, timestamp: at(sec).getTime() });
+    // 3 points, then a 60-second gap, then 2 points.
+    mockBg.drain.mockResolvedValueOnce([f(0, 33.5), f(10, 33.5003), f(20, 33.5006), f(80, 33.501), f(90, 33.5013)]);
+    await useWorkoutStore.getState().drainGps();
+    jest.setSystemTime(at(95));
+    jest.useRealTimers();
+    useWorkoutStore.setState({ active: { ...useWorkoutStore.getState().active!, lastSeenAt: at(95).toISOString() } });
+    await render(<WorkoutScreen />);
+    expect(screen.getByTestId('map')).toBeTruthy();
+    expect(screen.getByTestId('polyline-3')).toBeTruthy();
+    expect(screen.getByTestId('polyline-2')).toBeTruthy();
+    expect(screen.getByTestId('marker-Départ')).toBeTruthy();
+    expect(mockMap.animate).toHaveBeenCalledWith(expect.objectContaining({ latitude: 33.5013 }), 400);
+    expect(screen.queryByText('Recentrer')).toBeNull();
+    await act(async () => screen.getByTestId('map').props.onPanDrag());
+    expect(screen.getByText('Recentrer')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Recentrer'));
+    expect(screen.queryByText('Recentrer')).toBeNull();
+  });
+
+  it('shows the live calorie estimate from the profile weight, or asks for the weight', async () => {
+    jest.useFakeTimers({ now: t0 });
+    await useWorkoutStore.getState().start('walk', { gps: false });
+    jest.setSystemTime(at(1800));
+    await useWorkoutStore.getState().pause(); // exactly 30 minutes of activity
+    jest.useRealTimers();
+    useUserStore.setState({ profile: null });
+    const { unmount } = await render(<WorkoutScreen />);
+    expect(screen.getByText('Ajoutez votre poids dans votre profil pour estimer les calories.')).toBeTruthy();
+    await unmount();
+    useUserStore.setState({ profile: { weight: 70 } as any });
+    await render(<WorkoutScreen />);
+    // 30 min walk without distance: (3.5 - 1) x 70 x 0.5 h, as the server computes it (SQL W01).
+    expect(screen.getByText('88 kcal')).toBeTruthy();
+    expect(screen.getByText('Activité en pause')).toBeTruthy();
+    useUserStore.setState({ profile: null });
   });
 
   it('a gym session shows the logger; pauses and resumes', async () => {
@@ -426,7 +604,27 @@ describe('workout screen', () => {
     await render(<WorkoutScreen />);
     expect(screen.getByText('Bravo !')).toBeTruthy();
     expect(screen.getByText('25:00')).toBeTruthy();
-    expect(screen.getByText('Séance enregistrée')).toBeTruthy();
+    expect(screen.getByText('Activité enregistrée')).toBeTruthy();
+  });
+
+  it('the summary shows the whole route on the map and can remove it from the phone', async () => {
+    jest.useFakeTimers({ now: t0 });
+    await useWorkoutStore.getState().start('run', { gps: true });
+    mockBg.drain.mockResolvedValueOnce([
+      { session: 'ws-1', latitude: 33.5, longitude: -7.6, accuracy: 5, timestamp: at(0).getTime() },
+      { session: 'ws-1', latitude: 33.5003, longitude: -7.6, accuracy: 5, timestamp: at(10).getTime() },
+    ]);
+    await useWorkoutStore.getState().drainGps();
+    jest.setSystemTime(at(600));
+    await useWorkoutStore.getState().finish();
+    jest.useRealTimers();
+    await render(<WorkoutScreen />);
+    expect(screen.getByTestId('marker-Arrivée')).toBeTruthy();
+    expect(screen.getByText('Le tracé reste sur votre téléphone ; seule la distance est enregistrée.')).toBeTruthy();
+    expect(screen.getByText('Supprimer le tracé de ce téléphone')).toBeTruthy();
+    useWorkoutStore.getState().forgetRoute('ws-1');
+    expect(useWorkoutStore.getState().routes['ws-1']).toBeUndefined();
+    expect(useWorkoutStore.getState().lastSummary?.route).toEqual([]);
   });
 
   it('explains an interrupted session', async () => {

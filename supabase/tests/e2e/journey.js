@@ -414,7 +414,7 @@ let sink = null; // SMTP sink process, always stopped on exit
   await page2.getByText('Reprendre', { exact: true }).click();
   await page2.waitForTimeout(62000);
   await page2.getByText('Terminer', { exact: true }).click();
-  await waitForText(page2, 'Séance enregistrée', 20000);
+  await waitForText(page2, 'Activité enregistrée', 20000);
   await page2.waitForTimeout(1000);
   const ws = sql(`select concat_ws(':', kind, energy_source, energy_kcal, weight_kg, active_seconds) from public.workout_sessions where user_id = '${userId}'`);
   check(/^gym:met_estimate:\d+:60(\.0)?:\d+$/.test(ws), `gym session stored with a server MET estimate (${ws || 'no row'})`);
