@@ -73,3 +73,7 @@ with date and source. Details live in the linked docs; do not copy them here.
 | 22 | Account deletion keeps orders for accounting with the account link removed: must the order contact fields (name, phone, address) also be anonymised, and after how long? Offer redemptions are deleted with the account (cascade) | M20 |
 | 23 | Authorize applying `20261104120000_v1_account_deletion.sql` to `loption-mobile` (store requirement; tested locally only) | M20 |
 | 24 | Workout routes stay on the device (only the distance is uploaded). Storing routes on the server needs an explicit decision, a retention period and a privacy update | M17 |
+| 25 | Hiking: today saved as a walk (walking MET by speed) and labelled "Randonnée" on the phone only. A real `hike` kind needs a migration (kind check, max speed) and an approved hiking MET (none is invented) | `STANDALONE_TRACKING.md` §5a |
+| 26 | Android workout notification has no Stop button (expo-location's foreground service supports title and text only; tapping returns to the app). A Stop action would need a separate native location service | §5a |
+| 27 | Google Maps key for the Android live map: create it in Google Cloud, restrict it to `com.loption.app` + the EAS signing SHA-1 and the Maps SDK for Android, store it as EAS environment variable `GOOGLE_MAPS_ANDROID_API_KEY` (never in git). Without it Android shows the route without a map | §5a |
+| 28 | Signing out discards activities not yet uploaded (account isolation); keep, or warn before sign-out when the upload queue is not empty | §5a |

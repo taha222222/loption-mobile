@@ -20,7 +20,7 @@ VERIFIED. Privacy and store material: `PRIVACY_AND_STORE_RELEASE.md`.
 | After a reboot | Unaffected (system history) | Steps between the last reading and the reboot are unknown and **not counted** |
 | No sensor | "Cet appareil ne compte pas les pas" + manual workouts | Same |
 | Live updates | On screen open and every minute while the dashboard is visible | Same (sensor batching, no polling loop) |
-| GPS workouts | Background location for a session started on screen (blue indicator) | Foreground service with a "Séance en cours" notification |
+| GPS workouts | Background location for a session started on screen (blue indicator) | Foreground service with a "Votre activité est en cours" notification |
 
 Native code: `modules/loption-motion` (Swift `LoptionMotionModule`, Kotlin `LoptionMotionModule`,
 `StepSnapshotWorker`, `StepSnapshotStore`, `StepCounterReader`). Expo Go has no native module: the app shows
@@ -105,8 +105,61 @@ budget 1 814 + 131 + 88 = 2 033 kcal.
 - GPS: explained on screen before the system prompt; "while in use" permission only (no background-location
   permission). Inaccurate fixes (> 30 m), jitter and impossible speeds are ignored; gaps are never bridged; a
   revoked permission stops distance and says so; "Signal GPS faible" after 30 s without a fix.
-- The route stays on the device (SVG sketch in the summary); only the distance is uploaded.
+- The route stays on the device; only the distance is uploaded.
 - Elevation is not shown (phone barometer/GPS altitude not validated).
+
+### 5a. Live GPS map (branch `claude/v1-gps-live-map`)
+
+- **Flow:** choose (Marche, Course, Vélo, Randonnée, Salle de sport) → pre-start for outdoor activities (explanation,
+  then the system prompt; the map shows the position, "Recherche de votre position…" → "Prêt à démarrer", or
+  "Signal GPS faible" with Start still allowed; nothing is recorded before Démarrer) → live → summary. Gym never asks
+  for location. A refused permission offers "Autoriser dans les réglages" (only the phone's settings can change it)
+  or "Démarrer sans carte".
+- **Live screen:** map following the position (system location dot; "Recentrer" after the customer pans), route drawn
+  stretch by stretch from accepted points only (a gap or a pause is never joined), duration, distance, current and
+  average pace (on foot) or speed (cycling), calorie estimate, large Pause/Reprendre and Terminer.
+- **Current pace/speed** (`currentSpeedMps`): last minute of the running stretch, needs ≥ 15 s and ≥ 20 m and a fix
+  < 30 s old, else "—".
+- **Calorie preview** (`src/activity/metPreview.ts`): the server's MET tables mirrored and compared with the
+  migrations by a test; the saved value is still computed by `workout_session_prepare`. No weight → "—" and a hint.
+  No new constant (MET values remain pending, DECISIONS #16/#19).
+- **Hiking** is saved as `kind = walk` (walking MET by speed) and labelled "Randonnée" on the phone only; history from
+  the server shows "Marche" (DECISIONS #25).
+- **Maps:** iPhone Apple Maps (no key). Android Google Maps only when the build has `GOOGLE_MAPS_ANDROID_API_KEY`
+  (EAS environment variable read by `app.config.js`; key restricted to `com.loption.app` + signing SHA-1 and the Maps
+  SDK for Android). Without it the route is drawn without map tiles (no crash). Offline: tiles may be missing; the
+  route still draws.
+- **Sampling** (`samplingFor`): walk/hike/run every 3 s or 5 m (High accuracy for walking/hiking, best for running),
+  cycling every 2 s or 10 m with the best accuracy; nothing while paused or outside a session.
+- **Background:** iOS `location` background mode with "while in use" permission, blue indicator,
+  `pausesUpdatesAutomatically: false`, activity type fitness. Android location foreground service with the notification
+  "Votre activité est en cours" (tap returns to the app); no `ACCESS_BACKGROUND_LOCATION`.
+- **Buffer and recovery:** background fixes are stored one batch per key (no lost or doubled batch when the app drains
+  at the same moment). If the system closes the app, the session reopens paused at the later of its last heartbeat and
+  its last buffered real fix, and those fixes are counted. A second Terminer while saving does nothing.
+- **Limits (OS rules, documented, not worked around):**
+  - A force-quit (iOS swipe-away, Android "Force stop" or swipe-away with `killServiceOnDestroy`) stops GPS; the
+    session is restored paused when the app is opened again.
+  - iOS does not relaunch an app for standard location updates after it was terminated.
+  - Android battery saver and some manufacturers' power managers may delay or stop location; the app shows the gaps
+    and never fills them. The app does not ask for a battery-optimization exemption.
+  - Android 13+: if notifications are refused, the service still runs but its notification may be hidden (device test
+    G16).
+  - The notification has no Stop button: expo-location's service supports a title and text only; Pause/Terminer are
+    in the app (DECISIONS #26).
+  - Signing out discards activities not yet uploaded (account isolation; DECISIONS #28).
+
+### 5b. Database and privacy assessment (live map)
+
+No migration is needed. `workout_sessions` already gives one row per session (`client_session_id` idempotency key,
+upsert ignoring duplicates), owner-only RLS, server validation of distance (speed per kind), duration, steps and
+intensity, server-only energy columns, and the one-session-at-a-time rule; the offline queue retries with the same id.
+The route (GPS points) stays on the device: in the running session and up to the last 10 finished sessions, deleted by
+discard, by "Supprimer le tracé de ce téléphone", by sign-out/account change and by account deletion on this phone. No
+coordinates are sent to Supabase and nobody else (drivers, kitchens, staff) can see a customer's position. Map tiles are
+fetched by Apple Maps / Google Maps for the visible area, which tells the map provider the approximate area; this is
+listed in `PRIVACY_AND_STORE_RELEASE.md` for legal review. Storing routes on the server stays a separate decision
+(DECISIONS #24).
 - Gym: intensity, exercises (name, category), sets with repetitions, weight and rest timer. Nothing is detected
   automatically; calories are an estimate.
 

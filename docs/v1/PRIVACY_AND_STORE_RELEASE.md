@@ -20,6 +20,11 @@ Tracking design: `STANDALONE_TRACKING.md`, `ACTIVITY_TRACKING_AND_DAILY_DASHBOAR
 | Push token | Device (drivers / notifications) | Yes | Notifications |
 | Driver position during a delivery | Driver app, foreground only | Delivery tracking | Delivery (drivers only) |
 
+Live workout map (branch `claude/v1-gps-live-map`): the map tiles come from Apple Maps (iPhone) or Google Maps SDK for
+Android, which receive requests for the area on screen. The route itself stays on the phone. **LEGAL REVIEW:** mention
+the map providers in the privacy policy, and check Google Play's Data safety guidance for the Maps SDK (SDK data
+collection must be declared by the app).
+
 Not collected: contacts, photos (except optional uploads already in the app), advertising ID, analytics or crash SDKs
 (none in `package.json`), heart rate, sleep, any health-app data the customer did not grant. No data is sold, used for
 advertising or shared for tracking. Processors: Supabase (database/Auth, project region **eu-west-1, Ireland**), Expo
@@ -121,7 +126,7 @@ although nothing uses them; they are now removed with `android.blockedPermission
 - Type: `location` (`FOREGROUND_SERVICE_LOCATION`), declared by expo-location's `LocationTaskService`.
 - Use case (draft): *"User-initiated workout tracking. The service runs only while a walk, run or ride that the user
   started is being recorded, so the distance keeps being measured when the screen is off. A persistent notification
-  'Séance en cours' is shown for the whole session; the service stops when the user pauses, finishes or discards the
+  'Votre activité est en cours' is shown for the whole session; the service stops when the user pauses, finishes or discards the
   session. Deferring or interrupting the task would lose the distance of the workout the user is doing."*
 - Demo video (required): see §4.
 
@@ -135,7 +140,7 @@ battery-optimization exemption is requested (none needed, and Play restricts bot
 
 1. Sign in with a test customer. Open **Suivi**: steps from the phone sensor.
 2. Tap **Démarrer une marche**; show the on-screen explanation, then the system "while using the app" prompt.
-3. Android: pull down the notification shade — **"Séance en cours"** is visible. iPhone: the blue location indicator.
+3. Android: pull down the notification shade — **"Votre activité est en cours"** is visible. iPhone: the blue location indicator.
 4. Lock the screen, walk for about a minute, unlock: the distance increased.
 5. **Pause** (notification disappears on Android / indicator stops), **Reprendre**, **Terminer**: the summary shows the
    distance; mention that the route stays on the phone.

@@ -3,7 +3,11 @@
 Update this file incrementally when the state changes. Last verified: 2026-11-03 (production hardening: Android release build, all harnesses, hosted read-only checks).
 
 ## Current branch
-- **Latest: `claude/v1-production-hardening`** = `claude/v1-standalone-applied` + hardening: per-account phone history
+- **Latest (local, not pushed): `claude/v1-gps-live-map`** = `claude/v1-production-hardening` + live GPS map for walk,
+  run, cycling and hiking (hiking saved as a walk), pre-start locating, current pace/speed, calorie preview mirroring
+  the server, race-free background fix buffer, recovery after the system closes the app, Android map only with a Maps
+  key (`STANDALONE_TRACKING.md` §5a–5b, `DEVICE_TEST_PROCEDURES.md` §4 G1–G17). No migration; nothing on hosted.
+- Previous: `claude/v1-production-hardening` = `claude/v1-standalone-applied` + hardening: per-account phone history
   guard, revoked-access and offline/stale states, measured Android reading stats, in-app account deletion
   (`20261104120000_v1_account_deletion.sql`, **not applied to the hosted project**), unused Android permissions removed,
   calorie-engine tests, privacy/store drafts (`PRIVACY_AND_STORE_RELEASE.md`) and device procedures

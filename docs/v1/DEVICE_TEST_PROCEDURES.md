@@ -44,7 +44,7 @@ A test passes only when the expected result is observed on the device; a mock or
 | D6 | Reboot the phone after walking, then walk 300 steps and open | Steps between the last reading and the reboot are **not** counted (gap); the 300 after it are |
 | D7 | Revoke "Physical activity" permission | Denied state; no new numbers |
 | D8 | Device without a step counter | "Cet appareil ne compte pas les pas" + manual workouts available |
-| D9 | Start a run, screen off 5 min while moving | "Séance en cours" notification visible the whole time; distance increased; notification removed after Terminer |
+| D9 | Start a run, screen off 5 min while moving | "Votre activité est en cours" notification visible the whole time; distance increased; notification removed after Terminer |
 | D10 | Pause a GPS session | Notification and GPS stop while paused; resume restarts them |
 | D11 | Kill the app process during a session (developer options or `adb shell am kill com.loption.app`) | Session restored paused on reopen |
 | D12 | Midnight with the phone on the counter (app closed) | Interval split only if ≤ 3 h; otherwise a gap; never more than measured |
@@ -62,3 +62,31 @@ A test passes only when the expected result is observed on the device; a mock or
 | B7 | Offline: open Suivi in airplane mode after a successful sync | "Hors connexion" banner with the last values; no error screen |
 | B8 | Delete account (test account only, after the migration is applied) | Signed out; signing in again fails; server rows for that user gone; orders kept without the account link |
 | B9 | Battery: 8 h of normal use with background readings on | Note battery use attributed to L'OPTION in system settings (target: no significant share) |
+
+## 4. GPS live map and background tracking (all NOT VERIFIED)
+
+Setup: an outdoor route of about 2 km you can walk or run, the same route measured once on a reference (a known track
+or another GPS app) for comparison. Record for each run: device, OS version, build, start/end time, distance shown,
+reference distance, route screenshot, battery % at start and end, and the "Interruptions" you saw.
+Android builds need `GOOGLE_MAPS_ANDROID_API_KEY` at build time to show map tiles; without it the route is drawn
+without a map (record which one you tested).
+
+| # | Procedure | Expected |
+|---|---|---|
+| G1 | iPhone, screen on: Suivi → Nouvelle activité → Marche → Continuer → allow location "While Using" → wait → Démarrer, walk 1 km with the screen on | Explanation shown before the system prompt; "Recherche de votre position…" then "Prêt à démarrer"; the dot follows you, the route draws as you walk; distance within ±5 % of the reference; current and average pace shown |
+| G2 | iPhone, screen locked ≥ 30 min: start a walk or run, lock the screen, keep moving 30 min, unlock | Blue location indicator while locked; the route covers the whole 30 min (no straight line across); duration = active time |
+| G3 | iPhone, app in background: during a session open another app (e.g. music) for 10 min while moving, come back | Route and distance include those 10 min |
+| G4 | Android, screen locked ≥ 30 min | Notification "Votre activité est en cours" visible the whole time; route covers the 30 min; tapping the notification returns to the app |
+| G5 | Android, app in background: switch apps for 10 min while moving | Same as G3; notification visible |
+| G6 | Android, battery saver on, screen locked 30 min | Record the result honestly (some manufacturers delay or stop location): the app must never join a gap with a straight line; gaps show as separate stretches |
+| G7 | Weak signal: start under a roof / between tall buildings, then walk out | "Signal GPS faible" (pre-start and after 30 s without an accepted point); no jumps drawn; distance resumes outside |
+| G8 | Permission revoked during a session (Settings → L'OPTION → Location → Never) then return | "Localisation désactivée : la distance n’est plus mesurée."; time keeps running; no new points |
+| G9 | Network off during the whole session (airplane mode with GPS on, or no data), finish, then reconnect | Map tiles may be missing offline, the route still draws; "Activité gardée sur le téléphone"; uploaded once after reconnecting (no duplicate) |
+| G10 | App interrupted: during a session, force-quit (swipe away), reopen after 2 min | GPS stops at force-quit (OS rule, both platforms); session restored paused with "Séance interrompue" at the last recorded point; Reprendre continues |
+| G11 | Pause / resume / finish: pause 2 min while walking, resume, finish | No distance and no line during the pause; Android notification disappears during the pause; summary shows the whole route; "Activité enregistrée" |
+| G12 | Cycling 5 km | Current and average speed in km/h; no pace |
+| G13 | Hiking | Tile "Randonnée"; summary titled Randonnée; history shows the session as a walk |
+| G14 | Gym session | No location prompt, no map, no notification |
+| G15 | Discard and route removal: discard a running session; finish another and tap "Supprimer le tracé de ce téléphone" | Discarded session not uploaded, its points gone; the finished session stays on the server, its route disappears from the phone |
+| G16 | Android 13+ with notifications refused | Record whether the activity notification is visible; tracking must continue (document the result) |
+| G17 | Battery: 60 min run with the screen locked | Record battery % used; compare walking (High accuracy) and cycling (best accuracy) |
