@@ -6,7 +6,7 @@
 -- Depends on 20261104120000_v1_account_deletion.sql.
 -- Rollback: supabase/rollback/v1_order_workflow_rollback.sql (archiving).
 --
--- Owner decisions (2026-11-05, DECISIONS.md #29-#32):
+-- Owner decisions (2026-11-05, DECISIONS.md "Confirmed"):
 --   * cash on delivery: the cashier confirms the ORDER (pending -> confirmed);
 --     payment stays 'pending' until the cashier records it after delivery
 --     (paid / failed; refunded later). No status changes on payment;

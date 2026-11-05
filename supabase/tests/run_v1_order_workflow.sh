@@ -212,7 +212,7 @@ full plain
 q postgres -f "$MIG" >/dev/null 2>&1 || fail "migration (Phase 1C regression db)"
 q postgres -f "$P1C_TESTS" >"$OUT/p1c_tests.out" 2>&1 || fail "Phase 1C test file error"
 # Changed on purpose by the owner decision "one active staff role per user"
-# (DECISIONS #32): T13a grants admin to a user who already holds a staff
+# (DECISIONS.md "Confirmed", 2026-11-05): T13a grants admin to a user who already holds a staff
 # role (now refused, 23505), and T16 counts that grant among the audited
 # assignments. Their intent (a revoked role stops working on the same JWT)
 # is covered by O97; the one-role rule by O92.

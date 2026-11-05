@@ -3,7 +3,10 @@
 Update this file incrementally when the state changes. Last verified: 2026-11-03 (production hardening: Android release build, all harnesses, hosted read-only checks).
 
 ## Current branch
-- **Latest (local, not pushed): `claude/v1-gps-live-map`** = `claude/v1-production-hardening` + live GPS map for walk,
+- **Latest (local until pushed): `claude/v1-order-workflow`** = `claude/v1-readiness-pdf` + the delivery order
+  workflow enforced by the database (`ORDER_WORKFLOW.md`; migration `20261105120000_v1_order_workflow.sql`, **not
+  applied**), driver/admin/customer screens moved to the workflow functions. Decisions of 2026-11-05 in DECISIONS.
+- Previous: `claude/v1-gps-live-map` = `claude/v1-production-hardening` + live GPS map for walk,
   run, cycling and hiking (hiking saved as a walk), pre-start locating, current pace/speed, calorie preview mirroring
   the server, race-free background fix buffer, recovery after the system closes the app, Android map only with a Maps
   key (`STANDALONE_TRACKING.md` §5a–5b, `DEVICE_TEST_PROCEDURES.md` §4 G1–G17). No migration; nothing on hosted.
@@ -24,7 +27,7 @@ Update this file incrementally when the state changes. Last verified: 2026-11-03
   `c35da39` and `claude/v1-activity-tracking-docs` before the last docs fix: the ruleset blocks pushes to existing
   branches, so each follow-up is pushed as a new branch.
 - `main` is still `0cb0fe0` (initial commit). Nothing is merged.
-- Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md` (latest: E-27 to E-30).
+- Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md` (latest: E-27 to E-32).
 - **Hosted project `loption-mobile` (`teppcfnpkoxkudajnvad`) has all five V1 migrations since 2026-11-02** (owner-approved;
   initial admin `e898d986-…`; evidence E-22). Branch `claude/v1-rollout-loption-mobile` holds the admin-id commit.
 

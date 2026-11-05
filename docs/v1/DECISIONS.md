@@ -18,6 +18,11 @@ with date and source. Details live in the linked docs; do not copy them here.
 | Daily energy budget: platform total energy, else BMR + platform active energy, else the TDEE baseline; never TDEE + steps + workouts; remaining not clamped | Owner activity brief, 2026-10-30 ([details](ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md#5-daily-energy-calculation)) |
 | Health permissions optional and read-only; GPS only during a workout the customer started; no sharing or public feed in this phase | Owner activity brief, 2026-10-30 |
 | A meal from an order counts only after delivery, never automatically, never beyond the ordered quantity | Owner activity brief, 2026-10-30 |
+| Delivery order state machine pending → confirmed → preparing → ready → picked_up → on_the_way → delivered (+ cancelled), enforced by the database; historical counter orders frozen | Owner order brief, 2026-11-05 ([ORDER_WORKFLOW.md](ORDER_WORKFLOW.md)) |
+| Cash on delivery: the cashier confirms the ORDER (payment stays pending); the cashier records the payment after delivery (paid/failed, refund later) | Owner answer, 2026-11-05 |
+| The cashier (or an admin) assigns drivers; drivers see only orders assigned to them | Owner answer, 2026-11-05 |
+| Cancellation: the customer while pending; cashier/admin until ready with a reason; nobody after pickup | Owner answer, 2026-11-05 |
+| At most one active staff role per user (customers hold none); kitchen scoping kept | Owner answer, 2026-11-05 |
 
 ## Proposed, not approved
 | Proposal | Where |
@@ -77,3 +82,9 @@ with date and source. Details live in the linked docs; do not copy them here.
 | 26 | Android workout notification has no Stop button (expo-location's foreground service supports title and text only; tapping returns to the app). A Stop action would need a separate native location service | §5a |
 | 27 | Google Maps key for the Android live map: create it in Google Cloud, restrict it to `com.loption.app` + the EAS signing SHA-1 and the Maps SDK for Android, store it as EAS environment variable `GOOGLE_MAPS_ANDROID_API_KEY` (never in git). Without it Android shows the route without a map | §5a |
 | 28 | Signing out discards activities not yet uploaded (account isolation); keep, or warn before sign-out when the upload queue is not empty | §5a |
+| 29 | Keep the `support` staff role (read-only helpdesk) or remove it under "one role per user" | `ORDER_WORKFLOW.md` |
+| 30 | Retention period for the driver location history (kept for audit; CNDP: limited duration required) | `ORDER_WORKFLOW.md`, F6 |
+| 31 | Kitchen staff currently read the whole order row (incl. delivery address and customer name): accept, or serve the kitchen a reduced view | `ORDER_WORKFLOW.md` |
+| 32 | Order notifications (cashier: new order; kitchen: confirmed; driver: ready/assigned; customer: picked up, delivered) — not implemented | `ORDER_WORKFLOW.md` |
+| 33 | Prepaid orders ("payment paid moves pending → confirmed") are not offered while V1 is cash on delivery only | `ORDER_WORKFLOW.md` |
+| 34 | Authorize applying `20261105120000_v1_order_workflow.sql` to `loption-mobile` (after the account-deletion migration) | H12 |
