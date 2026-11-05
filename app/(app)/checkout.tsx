@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -15,16 +15,57 @@ import { Button } from '../../src/components/ui/Button';
 import { useCartStore } from '../../src/stores/cartStore';
 import { useUserStore } from '../../src/stores/userStore';
 import { CHECKOUT_CLOSED_MESSAGE, CHECKOUT_CLOSED_TITLE, CHECKOUT_OPEN } from '../../src/checkout/checkoutAvailability';
+import { createOrder, fetchActivePricing, type ActivePricing } from '../../src/services/checkoutApi';
+import { randomUUID } from 'expo-crypto';
 
-// Checkout is locked (owner decision 2026-11-05) until the server creates
-// orders itself (public.create_order, checklist H4) with approved pricing.
-// This screen writes nothing: no order, no order line, no notification.
-// Fees are not shown as numbers because none is approved.
+// Checkout is locked (owner decision 2026-11-05) until create_order() is on
+// the server with approved pricing; then CHECKOUT_OPEN is switched in a
+// reviewed change. Even open, this screen never writes an order: it sends the
+// meal ids and quantities to create_order(), which prices, validates and
+// creates the order. Fees are shown only from the approved pricing.
 export default function CheckoutScreen() {
   // Pre-filled with the delivery address the customer confirmed, if any.
   const [address, setAddress] = useState(() => useUserStore.getState().profile?.delivery_address ?? '');
-  const { items, getTotalPrice } = useCartStore();
+  const { items, getTotalPrice, clearCart } = useCartStore();
   const subtotal = getTotalPrice();
+  const [pricing, setPricing] = useState<ActivePricing | null>(null);
+  const [placing, setPlacing] = useState(false);
+  const [orderMessage, setOrderMessage] = useState<string | null>(null);
+  // One request id per checkout attempt: a retry after a lost answer returns
+  // the same order instead of creating a second one.
+  const requestId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!CHECKOUT_OPEN) return;
+    let cancelled = false;
+    void fetchActivePricing().then((p) => {
+      if (!cancelled) setPricing(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const placeOrder = async () => {
+    if (!CHECKOUT_OPEN || !pricing || items.length === 0) return;
+    requestId.current ??= randomUUID();
+    setPlacing(true);
+    setOrderMessage(null);
+    const result = await createOrder({
+      kitchenId: pricing.kitchenId,
+      items: items.map((i) => ({ mealId: i.id, quantity: i.quantity, notes: i.notes ?? null })),
+      requestId: requestId.current,
+    });
+    setPlacing(false);
+    if (result.ok) {
+      requestId.current = null;
+      clearCart();
+      router.replace(`/(app)/order-tracking/${result.orderId}`);
+    } else {
+      setOrderMessage(result.message);
+    }
+  };
+  const canOrder = CHECKOUT_OPEN && !!pricing && items.length > 0 && address.trim().length > 0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -93,11 +134,19 @@ export default function CheckoutScreen() {
           </View>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Delivery Fee</Text>
-            <Text style={styles.summaryValue}>À confirmer</Text>
+            <Text style={styles.summaryValue}>{pricing ? `${pricing.deliveryFee} MAD` : 'À confirmer'}</Text>
           </View>
+          {pricing ? (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Service Fee</Text>
+              <Text style={styles.summaryValue}>{`${pricing.serviceFee} MAD`}</Text>
+            </View>
+          ) : null}
           <View style={[styles.summaryRow, styles.totalRow]}>
             <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalValue}>Calculé à la commande</Text>
+            <Text style={styles.totalValue}>
+              {pricing ? `${subtotal + pricing.deliveryFee + pricing.serviceFee} MAD (avant offre éventuelle)` : 'Calculé à la commande'}
+            </Text>
           </View>
         </View>
       </ScrollView>
@@ -109,9 +158,10 @@ export default function CheckoutScreen() {
             <Text style={styles.closedText}>{CHECKOUT_CLOSED_MESSAGE}</Text>
           </View>
         ) : null}
-        {/* Disabled until public.create_order() exists and pricing is approved:
-            there is no client-side order creation to fall back to. */}
-        <Button title="Place Order" variant="gold" onPress={() => undefined} disabled size="lg" />
+        {orderMessage ? <Text style={styles.closedText}>{orderMessage}</Text> : null}
+        {/* Disabled until create_order() is on the server with approved pricing
+            (CHECKOUT_OPEN): there is no client-side order creation. */}
+        <Button title="Place Order" variant="gold" onPress={() => void placeOrder()} disabled={!canOrder} loading={placing} size="lg" />
       </View>
     </SafeAreaView>
   );
