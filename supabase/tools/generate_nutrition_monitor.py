@@ -38,6 +38,8 @@ ACCOUNT_MIGRATION = ROOT / "supabase/migrations/20261104120000_v1_account_deleti
 ACCOUNT_ROLLBACK = ROOT / "supabase/rollback/v1_account_deletion_rollback.sql"
 ORDER_MIGRATION = ROOT / "supabase/migrations/20261105120000_v1_order_workflow.sql"
 ORDER_ROLLBACK = ROOT / "supabase/rollback/v1_order_workflow_rollback.sql"
+CREATE_ORDER_MIGRATION = ROOT / "supabase/migrations/20261106120000_v1_create_order.sql"
+CREATE_ORDER_ROLLBACK = ROOT / "supabase/rollback/v1_create_order_rollback.sql"
 BEGIN, END = "-- BEGIN GENERATED MONITOR\n", "-- END GENERATED MONITOR\n"
 
 # Reviewed definitions added by the nutrition migration, as PostgreSQL 17
@@ -152,6 +154,20 @@ def order_monitor() -> str:
                             + ORDER_DEFINER_FUNCTIONS)
 
 
+# The create_order migration: customers read the active (approved) pricing;
+# create_order is the one client definer function it adds.
+CREATE_ORDER_POLICIES = [
+    "pricing_policies|pricing_policies_read_active|PERMISSIVE|{authenticated}|SELECT|active|-",
+]
+CREATE_ORDER_DEFINER_FUNCTIONS = ["public.create_order(uuid,jsonb,uuid,text)"]
+
+
+def create_order_monitor() -> str:
+    return extended_monitor(NEW_POLICIES + ACTIVITY_POLICIES + STANDALONE_POLICIES + ORDER_POLICIES + CREATE_ORDER_POLICIES,
+                            NEW_DEFINER_FUNCTIONS + ACTIVITY_DEFINER_FUNCTIONS + ACCOUNT_DEFINER_FUNCTIONS
+                            + ORDER_DEFINER_FUNCTIONS + CREATE_ORDER_DEFINER_FUNCTIONS)
+
+
 def function_from(path: pathlib.Path, name: str) -> str:
     """One function definition of a migration, as CREATE OR REPLACE."""
     text = path.read_text()
@@ -213,6 +229,8 @@ def main() -> int:
     rendered[ACCOUNT_ROLLBACK] = render(ACCOUNT_ROLLBACK, standalone_monitor())
     rendered[ORDER_MIGRATION] = render(ORDER_MIGRATION, order_monitor())
     rendered[ORDER_ROLLBACK] = render(ORDER_ROLLBACK, account_monitor())
+    rendered[CREATE_ORDER_MIGRATION] = render(CREATE_ORDER_MIGRATION, create_order_monitor())
+    rendered[CREATE_ORDER_ROLLBACK] = render(CREATE_ORDER_ROLLBACK, order_monitor())
     check = "--check" in sys.argv
     stale = []
     for path, new in rendered.items():
