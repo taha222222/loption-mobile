@@ -36,6 +36,8 @@ STANDALONE_MIGRATION = ROOT / "supabase/migrations/20261103120000_v1_standalone_
 STANDALONE_ROLLBACK = ROOT / "supabase/rollback/v1_standalone_tracking_rollback.sql"
 ACCOUNT_MIGRATION = ROOT / "supabase/migrations/20261104120000_v1_account_deletion.sql"
 ACCOUNT_ROLLBACK = ROOT / "supabase/rollback/v1_account_deletion_rollback.sql"
+ORDER_MIGRATION = ROOT / "supabase/migrations/20261105120000_v1_order_workflow.sql"
+ORDER_ROLLBACK = ROOT / "supabase/rollback/v1_order_workflow_rollback.sql"
 BEGIN, END = "-- BEGIN GENERATED MONITOR\n", "-- END GENERATED MONITOR\n"
 
 # Reviewed definitions added by the nutrition migration, as PostgreSQL 17
@@ -123,6 +125,33 @@ def account_monitor() -> str:
                             NEW_DEFINER_FUNCTIONS + ACTIVITY_DEFINER_FUNCTIONS + ACCOUNT_DEFINER_FUNCTIONS)
 
 
+# The order-workflow migration: read policies for kitchen staff and cashiers,
+# items/history visible with their order, admin read of the location
+# history, and the client workflow functions (signatures without spaces).
+ORDER_POLICIES = [
+    "driver_location_points|driver_locations_admin_read|PERMISSIVE|{authenticated}|SELECT|( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)|-",
+    "order_items|order_items_read_with_order|PERMISSIVE|{authenticated}|SELECT|(EXISTS ( SELECT 1 FROM public.orders o WHERE (o.id = order_items.order_id)))|-",
+    "order_status_updates|order_status_read_with_order|PERMISSIVE|{authenticated}|SELECT|(EXISTS ( SELECT 1 FROM public.orders o WHERE (o.id = order_status_updates.order_id)))|-",
+    "orders|orders_cashier_read|PERMISSIVE|{authenticated}|SELECT|((workflow_version IS NOT NULL) AND public.has_kitchen_role(''cashier''::text, kitchen_id))|-",
+    "orders|orders_kitchen_staff_read|PERMISSIVE|{authenticated}|SELECT|((workflow_version IS NOT NULL) AND public.has_kitchen_role(''kitchen_staff''::text, kitchen_id))|-",
+]
+ORDER_DEFINER_FUNCTIONS = [
+    "public.order_confirm(uuid)",
+    "public.order_kitchen_update(uuid,text)",
+    "public.order_assign_driver(uuid,uuid)",
+    "public.order_driver_update(uuid,text)",
+    "public.order_cancel(uuid,text)",
+    "public.order_set_payment(uuid,text)",
+    "public.driver_report_location(uuid,doubleprecision,doubleprecision,real,timestampwithtimezone)",
+]
+
+
+def order_monitor() -> str:
+    return extended_monitor(NEW_POLICIES + ACTIVITY_POLICIES + STANDALONE_POLICIES + ORDER_POLICIES,
+                            NEW_DEFINER_FUNCTIONS + ACTIVITY_DEFINER_FUNCTIONS + ACCOUNT_DEFINER_FUNCTIONS
+                            + ORDER_DEFINER_FUNCTIONS)
+
+
 def function_from(path: pathlib.Path, name: str) -> str:
     """One function definition of a migration, as CREATE OR REPLACE."""
     text = path.read_text()
@@ -182,6 +211,8 @@ def main() -> int:
     rendered[STANDALONE_ROLLBACK] = render_string(standalone_rb, activity_functions(), FN_BEGIN, FN_END)
     rendered[ACCOUNT_MIGRATION] = render(ACCOUNT_MIGRATION, account_monitor())
     rendered[ACCOUNT_ROLLBACK] = render(ACCOUNT_ROLLBACK, standalone_monitor())
+    rendered[ORDER_MIGRATION] = render(ORDER_MIGRATION, order_monitor())
+    rendered[ORDER_ROLLBACK] = render(ORDER_ROLLBACK, account_monitor())
     check = "--check" in sys.argv
     stale = []
     for path, new in rendered.items():
