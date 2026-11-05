@@ -68,10 +68,41 @@ before pickup (the previous driver is refused at once, checked under the row loc
 same JWT; location points repeated, stale, out of range, from another driver, before pickup or after delivery; refund
 only after payment; a menu price change not affecting past orders; account deletion with workflow orders.
 
+## Order creation (`public.create_order`, migration `20261106120000_v1_create_order.sql`, not applied)
+
+The app sends only the kitchen, the meal ids, quantities and notes, and a request id. The server:
+- refuses anonymous callers and staff accounts; requires the customer's confirmed delivery address (copied to the order);
+- reads every price from `meals` (inactive meals refused; a price sent by the client is never read), 1–30 lines,
+  quantities 1–20, each meal once;
+- takes the delivery fee, service fee and minimum order from the kitchen's **owner-approved** `pricing_policies` row; with
+  no approved row it refuses (`55000`, "ordering is not open") and creates nothing — no fee value exists in the code;
+- creates the pending, cash-on-delivery workflow order and its lines in one transaction, applies the existing first-order
+  free delivery, writes the timeline row `pending` and the audit row `order_created`;
+- returns the same order for the same request id (advisory lock; 4 parallel identical requests → 1 order).
+
+Checkout in the app stays closed (`CHECKOUT_OPEN = false`); the open path is built and tested and only calls
+`create_order()`. Harness: `supabase/tests/run_v1_create_order.sh` (25 SQL tests, concurrency, regressions, rollback).
+
+### Approving pricing (owner action, after legal/accounting review)
+
+Pricing is a row, never an edit: insert the approved values as role postgres (audited as `pricing_policy_approved`);
+to change them, insert a new row after deactivating the old one (`update … set active = false`, audited). Template, values
+to be filled by the owner only:
+
+```sql
+insert into public.pricing_policies (kitchen_id, delivery_fee, service_fee, minimum_subtotal, tva_treatment,
+                                     approved_by, approval_reference, approved_at)
+select id, <delivery_fee>, <service_fee>, <minimum_subtotal>, 'included_in_menu_prices',
+       '<approver name>', '<decision reference>', now()
+  from public.kitchens where code = 'A';
+```
+
 ## Not done yet (blocking real use)
 
-- Trusted order creation (`create_order`) with approved pricing (checklist H4–H7): checkout stays disabled, so no
-  workflow order can be created by customers yet.
+- Approved pricing (H1–H3) and the migrations applied to `loption-mobile` (DECISIONS #34, #36); then `CHECKOUT_OPEN`.
+- Kitchen routing when more than one kitchen takes orders (DECISIONS #35): the app orders from the one kitchen with
+  approved pricing.
+- Delivery zones and distance limits (F3, F5): not enforced yet.
 - Kitchen and cashier screens: this repository has customer, driver, admin and partner apps only; the admin orders
   screen acts as cashier meanwhile.
 - Order notifications (cashier on new order, kitchen on confirmation, driver on ready, customer on pickup/delivery)

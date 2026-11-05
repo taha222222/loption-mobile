@@ -90,3 +90,5 @@ with date and source. Details live in the linked docs; do not copy them here.
 | 32 | Order notifications (cashier: new order; kitchen: confirmed; driver: ready/assigned; customer: picked up, delivered) — not implemented | `ORDER_WORKFLOW.md` |
 | 33 | Prepaid orders ("payment paid moves pending → confirmed") are not offered while V1 is cash on delivery only | `ORDER_WORKFLOW.md` |
 | 34 | Authorize applying `20261105120000_v1_order_workflow.sql` to `loption-mobile` (after the account-deletion migration) | H12 |
+| 35 | Kitchen routing when several kitchens take orders (today: the one kitchen with approved pricing) | F3, `ORDER_WORKFLOW.md` |
+| 36 | Authorize applying `20261106120000_v1_create_order.sql` (after #34), then approve pricing (H1–H3) and open checkout | H4 |
