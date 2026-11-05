@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,125 +13,18 @@ import { router } from 'expo-router';
 import { theme } from '../../src/theme';
 import { Button } from '../../src/components/ui/Button';
 import { useCartStore } from '../../src/stores/cartStore';
-import { useAuthStore } from '../../src/stores/authStore';
 import { useUserStore } from '../../src/stores/userStore';
-import { supabase } from '../../src/lib/supabase';
-import { notificationService } from '../../src/services/notificationService';
-import { buildOrderInsert, COD_PAYMENT_METHOD } from '../../src/checkout/orderPayload';
+import { CHECKOUT_CLOSED_MESSAGE, CHECKOUT_CLOSED_TITLE, CHECKOUT_OPEN } from '../../src/checkout/checkoutAvailability';
 
+// Checkout is locked (owner decision 2026-11-05) until the server creates
+// orders itself (public.create_order, checklist H4) with approved pricing.
+// This screen writes nothing: no order, no order line, no notification.
+// Fees are not shown as numbers because none is approved.
 export default function CheckoutScreen() {
   // Pre-filled with the delivery address the customer confirmed, if any.
   const [address, setAddress] = useState(() => useUserStore.getState().profile?.delivery_address ?? '');
-  const [loading, setLoading] = useState(false);
-  const { items, getTotalPrice, clearCart } = useCartStore();
-  const { user } = useAuthStore();
-
-  const deliveryFee = 15;
+  const { items, getTotalPrice } = useCartStore();
   const subtotal = getTotalPrice();
-  const total = subtotal + deliveryFee;
-
-  const generateOrderNumber = () => {
-    return `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-  };
-
-  const handlePlaceOrder = async () => {
-    if (!address) {
-      Alert.alert('Error', 'Please enter your delivery address');
-      return;
-    }
-
-    if (items.length === 0) {
-      Alert.alert('Error', 'Your cart is empty');
-      return;
-    }
-
-    setLoading(true);
-
-    if (!user) {
-      Alert.alert('Error', 'Please sign in again to place your order');
-      setLoading(false);
-      return;
-    }
-
-    const orderNumber = generateOrderNumber();
-
-    // V1 is Cash on Delivery only; buildOrderInsert rejects any other method.
-    let orderInsert: ReturnType<typeof buildOrderInsert>;
-    try {
-      orderInsert = buildOrderInsert({
-        userId: user.id,
-        orderNumber,
-        subtotal,
-        deliveryFee,
-        deliveryAddress: address,
-        paymentMethod: COD_PAYMENT_METHOD,
-      });
-    } catch (error: any) {
-      Alert.alert('Error', error?.message ?? 'This payment method is not available');
-      setLoading(false);
-      return;
-    }
-
-    const { data: order, error: orderError } = await supabase
-      .from('orders')
-      .insert(orderInsert)
-      .select()
-      .single();
-
-    if (orderError) {
-      console.error('Order error:', orderError);
-      Alert.alert('Error', 'Failed to place order');
-      setLoading(false);
-      return;
-    }
-
-    const orderItems = items.map((item) => ({
-      order_id: order.id,
-      meal_id: item.id,
-      meal_name: item.name,
-      quantity: item.quantity,
-      price: item.price,
-      notes: item.notes || null,
-    }));
-
-    const { error: itemsError } = await supabase
-      .from('order_items')
-      .insert(orderItems);
-
-    if (itemsError) {
-      console.error('Order items error:', itemsError);
-      Alert.alert('Error', 'Failed to save order items');
-      setLoading(false);
-      return;
-    }
-
-    clearCart();
-    try {
-  // Send notification to all online drivers
-  await notificationService.sendToAllOnlineDrivers(
-    'New Order Available',
-    `Order #${orderNumber} - ${total} MAD`,
-    { orderId: order.id, type: 'new_order' }
-  );
-} catch (error) {
-  console.log('Notification error:', error);
-}
-
-    Alert.alert(
-      'Order Placed!',
-      `Your order #${orderNumber} has been placed successfully.`,
-      [
-        {
-          text: 'Track Order',
-          onPress: () => router.push(`/(app)/order-tracking/${order.id}`),
-        },
-        {
-          text: 'Back to Home',
-          onPress: () => router.push('/(app)'),
-        },
-      ]
-    );
-  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -201,23 +93,25 @@ export default function CheckoutScreen() {
           </View>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Delivery Fee</Text>
-            <Text style={styles.summaryValue}>{deliveryFee} MAD</Text>
+            <Text style={styles.summaryValue}>À confirmer</Text>
           </View>
           <View style={[styles.summaryRow, styles.totalRow]}>
             <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalValue}>{total} MAD</Text>
+            <Text style={styles.totalValue}>Calculé à la commande</Text>
           </View>
         </View>
       </ScrollView>
 
       <View style={styles.footer}>
-        <Button
-          title={`Place Order • ${total} MAD`}
-          variant="gold"
-          onPress={handlePlaceOrder}
-          loading={loading}
-          size="lg"
-        />
+        {!CHECKOUT_OPEN ? (
+          <View style={styles.closedNotice} testID="checkout-closed" accessibilityLiveRegion="polite">
+            <Text style={styles.closedTitle}>{CHECKOUT_CLOSED_TITLE}</Text>
+            <Text style={styles.closedText}>{CHECKOUT_CLOSED_MESSAGE}</Text>
+          </View>
+        ) : null}
+        {/* Disabled until public.create_order() exists and pricing is approved:
+            there is no client-side order creation to fall back to. */}
+        <Button title="Place Order" variant="gold" onPress={() => undefined} disabled size="lg" />
       </View>
     </SafeAreaView>
   );
@@ -227,6 +121,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
+  },
+  closedNotice: {
+    marginBottom: theme.spacing.md,
+    gap: theme.spacing.xs,
+  },
+  closedTitle: {
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.textDark,
+  },
+  closedText: {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.textLight,
   },
   header: {
     flexDirection: 'row',

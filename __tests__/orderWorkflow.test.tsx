@@ -184,7 +184,15 @@ describe('no direct order writes in the app', () => {
   walk(path.join(__dirname, '../app'));
   walk(path.join(__dirname, '../src'));
 
-  it('no screen or service updates, upserts or deletes public.orders', () => {
+  it('no screen or service writes public.orders or public.order_lines directly (create, change or delete)', () => {
+    const offenders = files.filter((f) => {
+      const text = fs.readFileSync(f, 'utf8');
+      return /from\(['"](orders|order_items)['"]\)(\s*\.\w+\([^)]*\))*?\s*\.(insert|update|upsert|delete)\(/.test(text);
+    });
+    expect(offenders.map((f) => path.relative(path.join(__dirname, '..'), f))).toEqual([]);
+  });
+
+  it('(kept) no screen or service updates, upserts or deletes public.orders', () => {
     const offenders = files.filter((f) => {
       const text = fs.readFileSync(f, 'utf8');
       return /from\(['"]orders['"]\)(\s*\.\w+\([^)]*\))*?\s*\.(update|upsert|delete)\(/.test(text);

@@ -1,85 +1,57 @@
+// Checkout is locked (owner decision 2026-11-05) until public.create_order()
+// exists and pricing is approved: the screen writes nothing and shows no
+// unapproved fee.
 import React from 'react';
-import { Alert } from 'react-native';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen } from '@testing-library/react-native';
 import CheckoutScreen from '../app/(app)/checkout';
 import { useAuthStore } from '../src/stores/authStore';
 import { useCartStore } from '../src/stores/cartStore';
+import { CHECKOUT_CLOSED_TITLE, CHECKOUT_OPEN } from '../src/checkout/checkoutAvailability';
 
-const mockInserts: Record<string, any[]> = {};
-const mockSupabase = {
-  from: jest.fn((table: string) => ({
-    insert: (payload: any) => {
-      (mockInserts[table] ??= []).push(payload);
-      const result = table === 'orders' ? { data: { id: 'order-1', ...payload }, error: null } : { error: null };
-      return Object.assign(Promise.resolve(result), {
-        select: () => ({ single: async () => result }),
-      });
-    },
-  })),
-};
-
-// Lazy getter: jest.mock is hoisted above the mockSupabase declaration.
+const mockFrom = jest.fn();
+const mockRpc = jest.fn();
 jest.mock('../src/lib/supabase', () => ({
-  get supabase() {
-    return mockSupabase;
-  },
+  supabase: { from: (...a: unknown[]) => mockFrom(...a), rpc: (...a: unknown[]) => mockRpc(...a) },
 }));
+const mockNotify = jest.fn();
 jest.mock('../src/services/notificationService', () => ({
-  notificationService: { sendToAllOnlineDrivers: jest.fn(async () => {}) },
+  notificationService: { sendToAllOnlineDrivers: (...a: unknown[]) => mockNotify(...a) },
 }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn(), back: jest.fn(), replace: jest.fn() } }));
 
 beforeEach(() => {
-  for (const key of Object.keys(mockInserts)) delete mockInserts[key];
-  jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-  useAuthStore.setState({ user: { id: 'user-1' } as any });
+  jest.clearAllMocks();
+  useAuthStore.setState({ user: { id: 'user-1' } as never });
   useCartStore.setState({
     ownerId: 'user-1',
     items: [{ id: 'meal-1', name: 'Chicken Bowl', price: 60, calories: 450, protein: 35, quantity: 2 }],
   });
 });
 
-describe('Checkout (COD only)', () => {
-  it('offers Cash on Delivery and no card option', async () => {
-    await render(<CheckoutScreen />);
-    expect(screen.getByTestId('payment-method-cod')).toBeTruthy();
-    expect(screen.getByText('Cash on Delivery')).toBeTruthy();
-    expect(screen.queryByText(/credit|debit/i)).toBeNull();
-    expect(screen.queryByText('Credit/Debit Card')).toBeNull();
+describe('Checkout lockdown', () => {
+  it('is closed until the server creates orders', () => {
+    expect(CHECKOUT_OPEN).toBe(false);
   });
 
-  it('submits the order as COD and does not mark it paid', async () => {
+  it('shows why ordering is closed, keeps cash on delivery as the only method, and shows no unapproved fee', async () => {
+    await render(<CheckoutScreen />);
+    expect(screen.getByTestId('checkout-closed')).toBeTruthy();
+    expect(screen.getByText(CHECKOUT_CLOSED_TITLE)).toBeTruthy();
+    expect(screen.getByTestId('payment-method-cod')).toBeTruthy();
+    expect(screen.queryByText(/credit|debit/i)).toBeNull();
+    expect(screen.getAllByText('120 MAD')).toHaveLength(2); // line and subtotal of menu prices, for information
+    expect(screen.queryByText(/15 MAD/)).toBeNull(); // the old unapproved delivery fee
+    expect(screen.getByText('À confirmer')).toBeTruthy();
+  });
+
+  it('the Place Order button is disabled and pressing it writes nothing', async () => {
     await render(<CheckoutScreen />);
     await fireEvent.changeText(screen.getByPlaceholderText('Enter your full address'), '12 Rue Test, Casablanca');
-    await fireEvent.press(screen.getByText(/Place Order/));
-
-    await waitFor(() => expect(mockInserts.order_items).toHaveLength(1));
-    expect(mockInserts.orders).toHaveLength(1);
-    const order = mockInserts.orders[0];
-    expect(order.payment_method).toBe('cash');
-    expect(order.user_id).toBe('user-1');
-
-    // The insert sent to Supabase has exactly these keys: no paid flag,
-    // payment status or transaction field can be added without failing here.
-    expect(Object.keys(order).sort()).toEqual(
-      [
-        'created_at',
-        'delivery_address',
-        'delivery_fee',
-        'order_number',
-        'payment_method',
-        'status',
-        'subtotal',
-        'total',
-        'user_id',
-      ].sort()
-    );
-    for (const field of ['paid', 'is_paid', 'paid_at', 'payment_status', 'paymentStatus', 'payment_state', 'transaction_id']) {
-      expect(order).not.toHaveProperty(field);
-    }
-    for (const key of Object.keys(order)) {
-      expect(key).not.toMatch(/paid|pay(ment)?[_-]?(status|state)|transaction|settle/i);
-    }
-    expect(Alert.alert).toHaveBeenCalledWith('Order Placed!', expect.any(String), expect.any(Array));
+    const button = screen.getByText('Place Order');
+    await fireEvent.press(button);
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockNotify).not.toHaveBeenCalled();
+    expect(useCartStore.getState().items).toHaveLength(1); // the cart is kept
   });
 });

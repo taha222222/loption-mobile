@@ -23,6 +23,8 @@ with date and source. Details live in the linked docs; do not copy them here.
 | The cashier (or an admin) assigns drivers; drivers see only orders assigned to them | Owner answer, 2026-11-05 |
 | Cancellation: the customer while pending; cashier/admin until ready with a reason; nobody after pickup | Owner answer, 2026-11-05 |
 | At most one active staff role per user (customers hold none); kitchen scoping kept | Owner answer, 2026-11-05 |
+| `order_status_updates` (customer timeline) records status changes only; driver assignment and payment changes are audit-only (`security_audit_log`); driver location history stays separate from both | Owner approval, 2026-11-05 |
+| Checkout disabled (Place Order button off, no client-side order writes) until `public.create_order()` exists with approved pricing | Owner approval, 2026-11-05 |
 
 ## Proposed, not approved
 | Proposal | Where |

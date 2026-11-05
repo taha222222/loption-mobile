@@ -34,7 +34,9 @@ the order row, checks the caller's active role in `staff_roles` **and** its scop
 the transition, writes the customer-visible `order_status_updates` row and an immutable `security_audit_log` row
 (`order_confirmed`, `kitchen_preparing`, `order_ready`, `driver_assigned`/`driver_reassigned`, `order_picked_up`,
 `order_on_the_way`, `order_delivered`, `order_cancelled`, `payment_confirmed`, `payment_failed`, `payment_refunded`).
-A repeated call returns `unchanged` and writes nothing (double taps, retries). A refusal never says whether an order
+A repeated call returns `unchanged` and writes nothing (double taps, retries).
+Approved audit model (2026-11-05): the timeline `order_status_updates` holds status changes only; driver assignment and
+payment changes are audit-only; the location history is separate from both. A refusal never says whether an order
 the caller may not see exists ("order not found or not allowed").
 
 ## What the database refuses whatever the client does
