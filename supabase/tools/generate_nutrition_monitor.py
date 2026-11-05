@@ -40,6 +40,8 @@ ORDER_MIGRATION = ROOT / "supabase/migrations/20261105120000_v1_order_workflow.s
 ORDER_ROLLBACK = ROOT / "supabase/rollback/v1_order_workflow_rollback.sql"
 CREATE_ORDER_MIGRATION = ROOT / "supabase/migrations/20261106120000_v1_create_order.sql"
 CREATE_ORDER_ROLLBACK = ROOT / "supabase/rollback/v1_create_order_rollback.sql"
+ZONES_MIGRATION = ROOT / "supabase/migrations/20261107120000_v1_delivery_zones.sql"
+ZONES_ROLLBACK = ROOT / "supabase/rollback/v1_delivery_zones_rollback.sql"
 BEGIN, END = "-- BEGIN GENERATED MONITOR\n", "-- END GENERATED MONITOR\n"
 
 # Reviewed definitions added by the nutrition migration, as PostgreSQL 17
@@ -168,6 +170,21 @@ def create_order_monitor() -> str:
                             + ORDER_DEFINER_FUNCTIONS + CREATE_ORDER_DEFINER_FUNCTIONS)
 
 
+# The delivery-zones migration: customers read the active zones. It replaces
+# create_order() (already reviewed as a client definer function); its
+# rollback restores the create_order migration's definition.
+ZONES_POLICIES = [
+    "delivery_zones|delivery_zones_read_active|PERMISSIVE|{authenticated}|SELECT|active|-",
+]
+
+
+def zones_monitor() -> str:
+    return extended_monitor(NEW_POLICIES + ACTIVITY_POLICIES + STANDALONE_POLICIES + ORDER_POLICIES + CREATE_ORDER_POLICIES
+                            + ZONES_POLICIES,
+                            NEW_DEFINER_FUNCTIONS + ACTIVITY_DEFINER_FUNCTIONS + ACCOUNT_DEFINER_FUNCTIONS
+                            + ORDER_DEFINER_FUNCTIONS + CREATE_ORDER_DEFINER_FUNCTIONS)
+
+
 def function_from(path: pathlib.Path, name: str) -> str:
     """One function definition of a migration, as CREATE OR REPLACE."""
     text = path.read_text()
@@ -231,6 +248,9 @@ def main() -> int:
     rendered[ORDER_ROLLBACK] = render(ORDER_ROLLBACK, account_monitor())
     rendered[CREATE_ORDER_MIGRATION] = render(CREATE_ORDER_MIGRATION, create_order_monitor())
     rendered[CREATE_ORDER_ROLLBACK] = render(CREATE_ORDER_ROLLBACK, order_monitor())
+    rendered[ZONES_MIGRATION] = render(ZONES_MIGRATION, zones_monitor())
+    zones_rb = render(ZONES_ROLLBACK, create_order_monitor())
+    rendered[ZONES_ROLLBACK] = render_string(zones_rb, function_from(CREATE_ORDER_MIGRATION, "create_order"), FN_BEGIN, FN_END)
     check = "--check" in sys.argv
     stale = []
     for path, new in rendered.items():
