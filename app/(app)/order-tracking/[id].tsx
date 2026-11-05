@@ -15,24 +15,28 @@ import { supabase } from '../../../src/lib/supabase';
 import { locationService } from '../../../src/services/locationService';
 import { DriverMap } from '../../../src/components/maps/DriverMap';
 import { RECEIVED_ORDER_STATUSES } from '../../../src/services/nutritionApi';
-
-type OrderStatus = 'confirmed' | 'preparing' | 'accepted' | 'picked_up' | 'on_the_way' | 'delivered';
+import { confirmAction } from '../../../src/components/v2';
+import { isOrderStatus, LOCATION_STATUSES, ORDER_STATUS_LABEL_FR, nextStatuses } from '../../../src/orders/orderWorkflow';
+import { cancelOrder } from '../../../src/services/orderWorkflowApi';
 
 interface Order {
   id: string;
   order_number: string;
-  status: OrderStatus;
+  status: string; // workflow status, or a historical counter status
   total: number;
   delivery_address: string;
   created_at: string;
 }
 
 const statusSteps = [
-  { key: 'confirmed', label: 'Confirmed', icon: 'checkmark-circle' },
-  { key: 'preparing', label: 'Preparing', icon: 'restaurant' },
-  { key: 'on_the_way', label: 'On The Way', icon: 'bicycle' },
-  { key: 'delivered', label: 'Delivered', icon: 'home' },
+  { key: 'pending', label: 'Reçue', icon: 'receipt' },
+  { key: 'confirmed', label: 'Confirmée', icon: 'checkmark-circle' },
+  { key: 'preparing', label: 'En préparation', icon: 'restaurant' },
+  { key: 'on_the_way', label: 'En route', icon: 'bicycle' },
+  { key: 'delivered', label: 'Livrée', icon: 'home' },
 ];
+// 'ready' is still in the kitchen; 'picked_up' is already with the driver.
+const STEP_OF: Record<string, string> = { ready: 'preparing', picked_up: 'on_the_way' };
 
 export default function OrderTrackingScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -41,6 +45,8 @@ export default function OrderTrackingScreen() {
   const [driverLocation, setDriverLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationSubscription, setLocationSubscription] = useState<any>(null);
   const [orderSubscription, setOrderSubscription] = useState<any>(null);
+  const [cancelMessage, setCancelMessage] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     fetchOrder();
@@ -72,7 +78,8 @@ export default function OrderTrackingScreen() {
   }, [id]);
 
   useEffect(() => {
-    if (order && (order.status === 'accepted' || order.status === 'picked_up' || order.status === 'on_the_way')) {
+    // The driver's position is shared by the server only between pickup and delivery.
+    if (order && LOCATION_STATUSES.some((st) => st === order.status)) {
       // Subscribe to driver location updates
       const subscription = locationService.subscribeToDriverLocation(order.id, (location) => {
         setDriverLocation({ latitude: location.latitude, longitude: location.longitude });
@@ -109,7 +116,28 @@ export default function OrderTrackingScreen() {
 
   const getCurrentStepIndex = () => {
     if (!order) return 0;
-    return statusSteps.findIndex((step) => step.key === order.status);
+    return statusSteps.findIndex((step) => step.key === (STEP_OF[order.status] ?? order.status));
+  };
+
+  // The customer may cancel only while the order waits for confirmation;
+  // the server enforces it (own order, pending only).
+  const onCancel = () => {
+    if (!order) return;
+    confirmAction('Annuler la commande ?', 'La commande ne sera pas préparée.', 'Annuler la commande', async () => {
+      setCancelling(true);
+      const result = await cancelOrder(order.id, null);
+      setCancelling(false);
+      if (result.ok) {
+        setCancelMessage('Commande annulée.');
+        await fetchOrder();
+      } else {
+        setCancelMessage(
+          result.error.kind === 'invalid' ? 'La commande est déjà confirmée : contactez L’OPTION pour l’annuler.'
+          : result.error.kind === 'network' ? 'Pas de connexion : la commande n’a pas été annulée. Réessayez.'
+          : 'L’annulation n’a pas été acceptée.'
+        );
+      }
+    });
   };
 
   if (loading) {
@@ -152,12 +180,7 @@ export default function OrderTrackingScreen() {
         <Text style={styles.orderNumber}>Order #{order.order_number}</Text>
         <View style={styles.statusBadge}>
           <Text style={styles.statusText}>
-            {order.status === 'confirmed' && 'Confirmed'}
-            {order.status === 'preparing' && 'Being Prepared'}
-            {order.status === 'accepted' && 'Accepted'}
-            {order.status === 'picked_up' && 'Picked Up'}
-            {order.status === 'on_the_way' && 'On The Way'}
-            {order.status === 'delivered' && 'Delivered'}
+            {isOrderStatus(order.status) ? ORDER_STATUS_LABEL_FR[order.status] : order.status}
           </Text>
         </View>
       </View>
@@ -205,7 +228,7 @@ export default function OrderTrackingScreen() {
       </View>
 
       {/* Driver Map - Show when order is active */}
-      {(order.status === 'accepted' || order.status === 'picked_up' || order.status === 'on_the_way') && (
+      {LOCATION_STATUSES.some((st) => st === order.status) && (
         <View style={styles.mapSection}>
           <Text style={styles.mapTitle}>Driver Location</Text>
           <DriverMap 
@@ -224,11 +247,7 @@ export default function OrderTrackingScreen() {
       <View style={styles.infoCard}>
         <Text style={styles.infoTitle}>Estimated Delivery</Text>
         <Text style={styles.infoText}>
-          {order.status === 'delivered'
-            ? 'Delivered'
-            : order.status === 'on_the_way'
-            ? '15-25 minutes'
-            : 'Processing your order'}
+          {isOrderStatus(order.status) ? ORDER_STATUS_LABEL_FR[order.status] : 'Commande traitée'}
         </Text>
       </View>
 
@@ -236,6 +255,11 @@ export default function OrderTrackingScreen() {
         <Text style={styles.infoTitle}>Total Amount</Text>
         <Text style={styles.infoText}>{order.total} MAD</Text>
       </View>
+
+      {nextStatuses(order.status, 'customer').includes('cancelled') ? (
+        <Button title="Annuler la commande" variant="outline" onPress={onCancel} loading={cancelling} style={styles.backButton} />
+      ) : null}
+      {cancelMessage ? <Text style={styles.infoText}>{cancelMessage}</Text> : null}
 
       {RECEIVED_ORDER_STATUSES.includes(order.status) ? (
         <Button

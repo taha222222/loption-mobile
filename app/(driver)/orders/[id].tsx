@@ -16,6 +16,7 @@ import { theme } from '../../../src/theme';
 import { Button } from '../../../src/components/ui/Button';
 import { useAuthStore } from '../../../src/stores/authStore';
 import { supabase } from '../../../src/lib/supabase';
+import { driverUpdate } from '../../../src/services/orderWorkflowApi';
 
 interface OrderDetails {
   id: string;
@@ -31,7 +32,7 @@ interface OrderDetails {
   customer_email: string;
   created_at: string;
   items: any[];
-  cash_collected: boolean;
+  payment_status: string | null;
 }
 
 export default function DriverOrderDetails() {
@@ -66,13 +67,6 @@ export default function DriverOrderDetails() {
         .eq('user_id', orderData.user_id)
         .maybeSingle();
       
-      // Check if cash was already collected
-      const { data: cashData } = await supabase
-        .from('cash_collections')
-        .select('id')
-        .eq('order_id', orderData.id)
-        .eq('driver_id', user?.id)
-        .maybeSingle();
       
       setOrder({
         id: orderData.id,
@@ -88,7 +82,7 @@ export default function DriverOrderDetails() {
         customer_email: '',
         created_at: orderData.created_at,
         items: orderData.order_items || [],
-        cash_collected: !!cashData,
+        payment_status: orderData.payment_status ?? null,
       });
     }
     setLoading(false);
@@ -118,79 +112,23 @@ export default function DriverOrderDetails() {
     };
   };
 
-  const updateOrderStatus = async (newStatus: string) => {
+  // The server checks that this driver is assigned and that the step is
+  // allowed (ready -> picked_up -> on_the_way -> delivered); the screen shows
+  // the status the server now holds, never an optimistic one.
+  const updateOrderStatus = async (newStatus: 'picked_up' | 'on_the_way' | 'delivered') => {
     if (!order || !user) return;
-    
     setUpdating(true);
-    
-    const updateData: any = { status: newStatus };
-    if (newStatus === 'picked_up') {
-      updateData.picked_up_at = new Date().toISOString();
-    } else if (newStatus === 'delivered') {
-      updateData.delivered_at = new Date().toISOString();
-    }
-    
-    const { error } = await supabase
-      .from('orders')
-      .update(updateData)
-      .eq('id', order.id);
-    
-    if (!error) {
-      setOrder({ ...order, status: newStatus });
-      Alert.alert('Success', `Order status updated to ${newStatus}`);
-    } else {
-      Alert.alert('Error', 'Failed to update order status');
-    }
-    
+    const result = await driverUpdate(order.id, newStatus);
     setUpdating(false);
-  };
-
-  const handleCashCollected = async () => {
-    if (!order || !user) return;
-    
-    const deliveryAmount = order.delivery_fee;
-    
-    Alert.alert(
-      'Collect Cash',
-      `Confirm you have collected ${deliveryAmount} MAD (delivery fee) from the customer?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm Collected',
-          onPress: async () => {
-            setUpdating(true);
-            
-            // Record cash collection
-            const { error } = await supabase
-              .from('cash_collections')
-              .insert({
-                driver_id: user.id,
-                order_id: order.id,
-                amount: deliveryAmount,
-                order_number: order.order_number,
-                collected_at: new Date().toISOString(),
-              });
-            
-            if (!error) {
-              setOrder({ ...order, cash_collected: true });
-              Alert.alert(
-                'Cash Collected', 
-                `You have collected ${deliveryAmount} MAD.\n\nThis amount will be recorded and you will receive your 15% commission (${Math.round(deliveryAmount * 0.15)} MAD) in your weekly payout.`
-              );
-              
-              // Auto-mark as delivered if not already
-              if (order.status !== 'delivered') {
-                await updateOrderStatus('delivered');
-              }
-            } else {
-              Alert.alert('Error', 'Failed to record cash collection');
-            }
-            
-            setUpdating(false);
-          },
-        },
-      ]
-    );
+    if (!result.ok) {
+      const text =
+        result.error.kind === 'not_allowed' ? 'This order is no longer assigned to you.'
+        : result.error.kind === 'invalid' ? 'This step is not possible now (the order changed). The screen has been refreshed.'
+        : result.error.kind === 'network' ? 'No connection. Nothing was changed; try again.'
+        : 'The server refused the change.';
+      Alert.alert('Status not changed', text);
+    }
+    await fetchOrderDetails();
   };
 
   const openNavigation = () => {
@@ -208,7 +146,7 @@ export default function DriverOrderDetails() {
 
   const getStatusSteps = () => {
     const steps = [
-      { key: 'accepted', label: 'Accepted', icon: 'checkmark-circle' },
+      { key: 'ready', label: 'Ready', icon: 'checkmark-circle' },
       { key: 'picked_up', label: 'Picked Up', icon: 'restaurant' },
       { key: 'on_the_way', label: 'On The Way', icon: 'bicycle' },
       { key: 'delivered', label: 'Delivered', icon: 'home' },
@@ -243,7 +181,6 @@ export default function DriverOrderDetails() {
 
   const statusSteps = getStatusSteps();
   const isCashPayment = order.payment_method === 'cash';
-  const needsCashCollection = isCashPayment && !order.cash_collected && order.status === 'delivered';
   const commissionAmount = Math.round(order.delivery_fee * 0.15);
 
   return (
@@ -302,16 +239,16 @@ export default function DriverOrderDetails() {
           </Text>
         </View>
 
-        {/* Cash Collection Status */}
+        {/* Cash on delivery: the cashier records the payment */}
         {isCashPayment && (
-          <View style={[styles.cashStatusCard, { backgroundColor: order.cash_collected ? '#10b98120' : '#f59e0b20' }]}>
-            <Ionicons 
-              name={order.cash_collected ? "checkmark-circle" : "alert-circle"} 
-              size={20} 
-              color={order.cash_collected ? '#10b981' : '#f59e0b'} 
+          <View style={[styles.cashStatusCard, { backgroundColor: order.payment_status === 'paid' ? '#10b98120' : '#f59e0b20' }]}>
+            <Ionicons
+              name={order.payment_status === 'paid' ? 'checkmark-circle' : 'alert-circle'}
+              size={20}
+              color={order.payment_status === 'paid' ? '#10b981' : '#f59e0b'}
             />
-            <Text style={[styles.cashStatusText, { color: order.cash_collected ? '#10b981' : '#f59e0b' }]}>
-              {order.cash_collected ? 'Cash collected ✓' : 'Awaiting cash collection'}
+            <Text style={[styles.cashStatusText, { color: order.payment_status === 'paid' ? '#10b981' : '#f59e0b' }]}>
+              {order.payment_status === 'paid' ? 'Payment recorded by the cashier ✓' : 'Collect the cash; the cashier records the payment'}
             </Text>
           </View>
         )}
@@ -392,7 +329,10 @@ export default function DriverOrderDetails() {
 
         {/* Action Buttons */}
         <View style={styles.actionContainer}>
-          {order.status === 'accepted' && (
+          {(order.status === 'confirmed' || order.status === 'preparing') && (
+            <Text style={styles.cashStatusText}>Assigned to you. Pick up when the kitchen marks the order ready.</Text>
+          )}
+          {order.status === 'ready' && (
             <Button
               title="Picked Up Order"
               variant="primary"
@@ -419,21 +359,12 @@ export default function DriverOrderDetails() {
               style={styles.actionButton}
             />
           )}
-          {order.status === 'delivered' && isCashPayment && !order.cash_collected && (
-            <Button
-              title="Collect Cash"
-              variant="gold"
-              onPress={handleCashCollected}
-              loading={updating}
-              style={styles.actionButton}
-            />
-          )}
           {order.status === 'delivered' && (
             <View style={styles.deliveredBadge}>
               <Ionicons name="checkmark-circle" size={24} color={theme.colors.success} />
               <Text style={styles.deliveredText}>Order Completed</Text>
-              {isCashPayment && order.cash_collected && (
-                <Text style={styles.cashConfirmText}>✓ Cash collected</Text>
+              {isCashPayment && order.payment_status === 'paid' && (
+                <Text style={styles.cashConfirmText}>✓ Payment recorded</Text>
               )}
             </View>
           )}

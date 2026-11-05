@@ -7,11 +7,14 @@ import {
   TouchableOpacity,
   RefreshControl,
   Modal,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/lib/supabase';
 import { Button } from '../../src/components/ui/Button';
+import { ASSIGNABLE_STATUSES, isWorkflowOrder, nextPayments, nextStatuses } from '../../src/orders/orderWorkflow';
+import { assignDriver, cancelOrder, confirmOrder, setPayment, type WorkflowResult } from '../../src/services/orderWorkflowApi';
 
 interface Order {
   id: string;
@@ -22,6 +25,15 @@ interface Order {
   delivery_address: string;
   created_at: string;
   driver_name?: string;
+  driver_id: string | null;
+  workflow_version: number | null;
+  payment_status: string | null;
+}
+
+interface DriverOption {
+  id: string;
+  name: string;
+  status: string;
 }
 
 export default function AdminOrders() {
@@ -29,6 +41,10 @@ export default function AdminOrders() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [filter, setFilter] = useState<string>('all');
+  const [drivers, setDrivers] = useState<DriverOption[]>([]);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchOrders();
@@ -61,6 +77,9 @@ export default function AdminOrders() {
         driver_name: order.drivers?.first_name 
           ? `${order.drivers.first_name} ${order.drivers.last_name}`
           : 'Unassigned',
+        driver_id: order.driver_id ?? null,
+        workflow_version: order.workflow_version ?? null,
+        payment_status: order.payment_status ?? null,
       }));
       setOrders(formatted);
     }
@@ -72,15 +91,42 @@ export default function AdminOrders() {
     setRefreshing(false);
   };
 
-  const updateOrderStatus = async (orderId: string, status: string) => {
-    const { error } = await supabase
-      .from('orders')
-      .update({ status })
-      .eq('id', orderId);
-    
-    if (!error) {
+  // Every change goes through the order workflow functions: the server
+  // checks the admin's role, the order's state and the allowed transition
+  // (an admin acts as cashier: confirm, assign a driver, cancel, record the
+  // payment). Kitchen and delivery steps belong to kitchen staff and drivers.
+  const fetchDrivers = async () => {
+    const { data } = await supabase.from('drivers').select('id, first_name, last_name, status').order('status');
+    setDrivers((data ?? []).map((d: { id: string; first_name: string | null; last_name: string | null; status: string }) => ({
+      id: d.id,
+      name: [d.first_name, d.last_name].filter(Boolean).join(' ') || d.id.slice(0, 8),
+      status: d.status,
+    })));
+  };
+
+  const openOrder = (order: Order) => {
+    setSelectedOrder(order);
+    setReason('');
+    setActionMessage(null);
+    if (isWorkflowOrder(order) && ASSIGNABLE_STATUSES.some((st) => st === order.status)) void fetchDrivers();
+  };
+
+  const run = async (label: string, call: () => Promise<WorkflowResult>) => {
+    setBusy(true);
+    const result = await call();
+    setBusy(false);
+    if (result.ok) {
+      setActionMessage(result.changed ? `${label}: done.` : `${label}: already done, nothing changed.`);
       await fetchOrders();
       setSelectedOrder(null);
+    } else {
+      setActionMessage(
+        result.error.kind === 'invalid' ? `${label}: not possible in the current state (${result.error.message}).`
+        : result.error.kind === 'not_allowed' ? `${label}: not allowed for this account.`
+        : result.error.kind === 'not_available' ? `${label}: the server does not have the order workflow yet.`
+        : result.error.kind === 'network' ? `${label}: no connection, nothing changed.`
+        : `${label}: refused (${result.error.message}).`
+      );
     }
   };
 
@@ -106,10 +152,13 @@ export default function AdminOrders() {
 
   const filters = [
     { id: 'all', label: 'All' },
+    { id: 'pending', label: 'Pending' },
     { id: 'confirmed', label: 'Confirmed' },
     { id: 'preparing', label: 'Preparing' },
+    { id: 'ready', label: 'Ready' },
     { id: 'on_the_way', label: 'On The Way' },
     { id: 'delivered', label: 'Delivered' },
+    { id: 'cancelled', label: 'Cancelled' },
   ];
 
   return (
@@ -147,7 +196,7 @@ export default function AdminOrders() {
             <TouchableOpacity
               key={order.id}
               style={styles.orderCard}
-              onPress={() => setSelectedOrder(order)}
+              onPress={() => openOrder(order)}
               activeOpacity={0.7}
             >
               <View style={styles.orderHeader}>
@@ -195,26 +244,59 @@ export default function AdminOrders() {
 
                 <View style={styles.detailSection}>
                   <Text style={styles.detailLabel}>Status</Text>
-                  <View style={styles.statusButtons}>
-                    {['confirmed', 'preparing', 'on_the_way', 'delivered'].map((status) => (
-                      <TouchableOpacity
-                        key={status}
-                        style={[
-                          styles.statusButton,
-                          selectedOrder.status === status && styles.statusButtonActive,
-                        ]}
-                        onPress={() => updateOrderStatus(selectedOrder.id, status)}
-                      >
-                        <Text style={[
-                          styles.statusButtonText,
-                          selectedOrder.status === status && styles.statusButtonTextActive,
-                        ]}>
-                          {status.replace('_', ' ').toUpperCase()}
+                  <Text style={styles.detailValue}>
+                    {selectedOrder.status.replace('_', ' ')}
+                    {isWorkflowOrder(selectedOrder) ? ` · payment ${selectedOrder.payment_status ?? '-'}` : ''}
+                  </Text>
+                  {!isWorkflowOrder(selectedOrder) ? (
+                    <Text style={styles.detailLabel}>Historical order (before the delivery workflow): read-only.</Text>
+                  ) : (
+                    <View style={styles.statusButtons}>
+                      {nextStatuses(selectedOrder.status, 'cashier').includes('confirmed') && (
+                        <TouchableOpacity style={styles.statusButton} disabled={busy}
+                          onPress={() => run('Confirm', () => confirmOrder(selectedOrder.id))}>
+                          <Text style={styles.statusButtonText}>CONFIRM ORDER</Text>
+                        </TouchableOpacity>
+                      )}
+                      {nextPayments(selectedOrder.payment_status, selectedOrder.status).map((p) => (
+                        <TouchableOpacity key={p} style={styles.statusButton} disabled={busy}
+                          onPress={() => run(`Payment ${p}`, () => setPayment(selectedOrder.id, p as 'paid' | 'failed' | 'refunded'))}>
+                          <Text style={styles.statusButtonText}>{p === 'paid' ? 'RECORD CASH PAID' : p === 'failed' ? 'RECORD NOT PAID' : 'REFUND'}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+
+                {isWorkflowOrder(selectedOrder) && ASSIGNABLE_STATUSES.some((st) => st === selectedOrder.status) && (
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailLabel}>Assign a driver (before pickup)</Text>
+                    {drivers.length === 0 ? <Text style={styles.detailValue}>No driver found.</Text> : null}
+                    {drivers.map((d) => (
+                      <TouchableOpacity key={d.id} disabled={busy}
+                        style={[styles.statusButton, selectedOrder.driver_id === d.id && styles.statusButtonActive]}
+                        onPress={() => run('Assign driver', () => assignDriver(selectedOrder.id, d.id))}>
+                        <Text style={[styles.statusButtonText, selectedOrder.driver_id === d.id && styles.statusButtonTextActive]}>
+                          {d.name} ({d.status})
                         </Text>
                       </TouchableOpacity>
                     ))}
                   </View>
-                </View>
+                )}
+
+                {isWorkflowOrder(selectedOrder) && nextStatuses(selectedOrder.status, 'cashier').includes('cancelled') && (
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailLabel}>Cancel (reason required, shown to the customer)</Text>
+                    <TextInput value={reason} onChangeText={setReason} placeholder="Reason" maxLength={300}
+                      style={styles.reasonInput} accessibilityLabel="Cancellation reason" />
+                    <TouchableOpacity style={styles.statusButton} disabled={busy || reason.trim().length < 3}
+                      onPress={() => run('Cancel', () => cancelOrder(selectedOrder.id, reason.trim()))}>
+                      <Text style={styles.statusButtonText}>CANCEL ORDER</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {actionMessage ? <Text style={styles.detailValue}>{actionMessage}</Text> : null}
 
                 <View style={styles.detailSection}>
                   <Text style={styles.detailLabel}>Total Amount</Text>
@@ -422,6 +504,15 @@ const styles = StyleSheet.create({
   },
   statusButtonTextActive: {
     color: '#FFFFFF',
+  },
+  reasonInput: {
+    borderWidth: 1,
+    borderColor: '#D1D1D6',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+    fontSize: 15,
   },
   closeButton: {
     marginTop: 16,

@@ -16,6 +16,8 @@ import { Button } from '../../src/components/ui/Button';
 import { useAuthStore } from '../../src/stores/authStore';
 import { supabase } from '../../src/lib/supabase';
 import * as Location from 'expo-location';
+import { reportDriverLocation, setDriverAvailability } from '../../src/services/orderWorkflowApi';
+import { ASSIGNABLE_STATUSES, LOCATION_STATUSES } from '../../src/orders/orderWorkflow';
 
 interface Order {
   id: string;
@@ -24,13 +26,16 @@ interface Order {
   total: number;
   delivery_fee: number;
   created_at: string;
+  status?: string;
 }
 
+// Orders are assigned by the cashier (or an admin); a driver sees only the
+// orders assigned to them and changes their status through the server.
 export default function DriverDashboard() {
   const { user } = useAuthStore();
   const [isOnline, setIsOnline] = useState(false);
   const [isTrackingLocation, setIsTrackingLocation] = useState(false);
-  const [availableOrders, setAvailableOrders] = useState<Order[]>([]);
+  const [assignedOrders, setAssignedOrders] = useState<Order[]>([]);
   const [activeOrder, setActiveOrder] = useState<Order | null>(null);
   const [earnings, setEarnings] = useState({ today: 0, week: 0, total: 0 });
   const [refreshing, setRefreshing] = useState(false);
@@ -39,25 +44,31 @@ export default function DriverDashboard() {
   useEffect(() => {
     if (user) {
       fetchDriverStatus();
-      fetchAvailableOrders();
+      fetchAssignedOrders();
       fetchActiveOrder();
       fetchEarnings();
     }
   }, [user]);
 
+  // Assignment and status changes of my orders (Realtime is a convenience:
+  // pull to refresh still works if it fails).
   useEffect(() => {
+    if (!user) return;
     const subscription = supabase
-      .channel('driver-orders')
-      .on('postgres_changes', 
-        { event: 'INSERT', schema: 'public', table: 'orders', filter: 'driver_id=is.null' },
-        () => fetchAvailableOrders()
+      .channel(`driver-orders-${user.id}`)
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'orders', filter: `driver_id=eq.${user.id}` },
+        () => {
+          fetchAssignedOrders();
+          fetchActiveOrder();
+        }
       )
       .subscribe();
 
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clean up location tracking on unmount
   useEffect(() => {
@@ -83,7 +94,7 @@ export default function DriverDashboard() {
 
     // Get initial location
     const location = await Location.getCurrentPositionAsync({});
-    await updateDriverLocation(driverId, location.coords.latitude, location.coords.longitude);
+    await updateDriverLocation(driverId, location);
 
     // Start watching position
     const subscription = await Location.watchPositionAsync(
@@ -93,15 +104,16 @@ export default function DriverDashboard() {
         distanceInterval: 10,
       },
       async (newLocation) => {
-        await updateDriverLocation(driverId, newLocation.coords.latitude, newLocation.coords.longitude);
+        await updateDriverLocation(driverId, newLocation);
       }
     );
 
     setLocationSubscription(subscription);
   };
 
-  const updateDriverLocation = async (driverId: string, latitude: number, longitude: number) => {
-    // Update drivers table
+  const updateDriverLocation = async (driverId: string, location: Location.LocationObject) => {
+    const { latitude, longitude, accuracy } = location.coords;
+    // Own driver row (allowed by the drivers_self_update_profile_location policy)
     await supabase
       .from('drivers')
       .update({
@@ -111,17 +123,10 @@ export default function DriverDashboard() {
       })
       .eq('id', driverId);
 
-    // Update active order if any
-    if (activeOrder) {
-      await supabase
-        .from('orders')
-        .update({
-          driver_latitude: latitude,
-          driver_longitude: longitude,
-          last_location_update: new Date().toISOString(),
-        })
-        .eq('driver_id', driverId)
-        .in('status', ['accepted', 'picked_up', 'on_the_way']);
+    // The customer's view of the delivery: only between pickup and delivery,
+    // validated and recorded by the server.
+    if (activeOrder && LOCATION_STATUSES.some((s) => s === activeOrder.status)) {
+      await reportDriverLocation(activeOrder.id, { latitude, longitude, accuracy: accuracy ?? null, timestamp: location.timestamp });
     }
   };
 
@@ -154,16 +159,16 @@ const fetchDriverStatus = async () => {
   }
 };
 
-  const fetchAvailableOrders = async () => {
+  // Orders assigned to me that are not picked up yet.
+  const fetchAssignedOrders = async () => {
+    if (!user) return;
     const { data } = await supabase
       .from('orders')
-      .select('id, order_number, delivery_address, total, delivery_fee, created_at')
-      .eq('status', 'confirmed')
-      .is('driver_id', null);
-    
-    if (data) {
-      setAvailableOrders(data);
-    }
+      .select('id, order_number, delivery_address, total, delivery_fee, created_at, status')
+      .eq('driver_id', user.id)
+      .in('status', [...ASSIGNABLE_STATUSES]);
+
+    setAssignedOrders(data ?? []);
   };
 
 const fetchActiveOrder = async () => {
@@ -171,10 +176,11 @@ const fetchActiveOrder = async () => {
   
   const { data } = await supabase
     .from('orders')
-    .select('id, order_number, delivery_address, total, delivery_fee, created_at')
+    .select('id, order_number, delivery_address, total, delivery_fee, created_at, status')
     .eq('driver_id', user.id)
-    .in('status', ['accepted', 'picked_up', 'on_the_way'])
-    .maybeSingle();  
+    .in('status', [...LOCATION_STATUSES])
+    .limit(1)
+    .maybeSingle();
   
   if (data) {
     setActiveOrder(data);
@@ -218,7 +224,7 @@ const fetchEarnings = async () => {
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchDriverStatus();
-    await fetchAvailableOrders();
+    await fetchAssignedOrders();
     await fetchActiveOrder();
     await fetchEarnings();
     setRefreshing(false);
@@ -228,65 +234,26 @@ const fetchEarnings = async () => {
     if (!user) return;
     
     const newStatus = !isOnline;
-    const { error } = await supabase
-      .from('drivers')
-      .update({ status: newStatus ? 'online' : 'offline' })
-      .eq('id', user.id);
-    
-    if (!error) {
-      setIsOnline(newStatus);
-      
-      if (newStatus) {
-        // Start location tracking when going online
-        await startLocationTracking(user.id);
-        setIsTrackingLocation(true);
-        Alert.alert('You are now ONLINE', 'Your location will be shared with customers');
-      } else {
-        // Stop location tracking when going offline
-        stopLocationTracking();
-        setIsTrackingLocation(false);
-        Alert.alert('You are now OFFLINE', 'You will not receive new orders');
-      }
+    // Availability goes through the server: only an approved driver can go online.
+    const result = await setDriverAvailability(newStatus);
+    if (!result.ok) {
+      Alert.alert('Status not changed', result.error.kind === 'not_allowed'
+        ? 'Your driver account is not approved yet. Contact L\'OPTION.'
+        : 'The server refused the change. Please try again.');
+      return;
+    }
+    setIsOnline(newStatus);
+    if (newStatus) {
+      // Location is shared with a customer only during their delivery (after pickup).
+      await startLocationTracking(user.id);
+      setIsTrackingLocation(true);
+      Alert.alert('You are now ONLINE', 'Your position is shared with a customer only during their delivery');
+    } else {
+      stopLocationTracking();
+      setIsTrackingLocation(false);
+      Alert.alert('You are now OFFLINE', 'You will not receive new deliveries');
     }
   };
-
-  const handleAcceptOrder = async (orderId: string) => {
-  if (!user) return;
-  
-  Alert.alert(
-    'Accept Delivery',
-    'Are you sure you want to accept this delivery?',
-    [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Accept',
-        onPress: async () => {
-          // Atomic update - only accept if driver_id is still null
-          const { data, error } = await supabase
-            .from('orders')
-            .update({ 
-              driver_id: user.id, 
-              status: 'accepted', 
-              accepted_at: new Date().toISOString() 
-            })
-            .eq('id', orderId)
-            .is('driver_id', null)  // ✅ Only accept if no driver assigned yet
-            .select();
-          
-          if (error) {
-            Alert.alert('Error', 'Failed to accept order');
-          } else if (data && data.length === 0) {
-            Alert.alert('Order Taken', 'This order has already been accepted by another driver');
-          } else {
-            await fetchAvailableOrders();
-            await fetchActiveOrder();
-            Alert.alert('Order Accepted', 'Navigate to pick up the order');
-          }
-        },
-      },
-    ]
-  );
-};
 
   return (
     <SafeAreaView style={styles.container}>
@@ -368,18 +335,18 @@ const fetchEarnings = async () => {
           </TouchableOpacity>
         </View>
 
-        {/* Available Orders */}
+        {/* Orders assigned to me (assigned by the cashier) */}
         {isOnline && (
           <View style={styles.ordersSection}>
-            <Text style={styles.sectionTitle}>AVAILABLE ORDERS ({availableOrders.length})</Text>
-            {availableOrders.length === 0 ? (
+            <Text style={styles.sectionTitle}>ASSIGNED TO YOU ({assignedOrders.length})</Text>
+            {assignedOrders.length === 0 ? (
               <View style={styles.emptyState}>
                 <Ionicons name="bicycle-outline" size={48} color={theme.colors.textLight} />
-                <Text style={styles.emptyText}>No orders available</Text>
-                <Text style={styles.emptySubtext}>Check back later</Text>
+                <Text style={styles.emptyText}>No order assigned</Text>
+                <Text style={styles.emptySubtext}>The cashier assigns deliveries to you</Text>
               </View>
             ) : (
-              availableOrders.map((order) => (
+              assignedOrders.map((order) => (
                 <View key={order.id} style={styles.orderCard}>
                   <View style={styles.orderHeader}>
                     <Text style={styles.orderNumber}>{order.order_number}</Text>
@@ -392,10 +359,10 @@ const fetchEarnings = async () => {
                   <View style={styles.orderFooter}>
                     <Text style={styles.orderTotal}>{order.total} MAD</Text>
                     <Button
-                      title="ACCEPT"
+                      title={order.status === 'ready' ? 'PICK UP' : 'WAITING FOR KITCHEN'}
                       variant="primary"
                       size="sm"
-                      onPress={() => handleAcceptOrder(order.id)}
+                      onPress={() => router.push(`/(driver)/orders/${order.id}`)}
                     />
                   </View>
                 </View>

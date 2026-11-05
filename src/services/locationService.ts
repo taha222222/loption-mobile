@@ -1,5 +1,7 @@
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
+import { LOCATION_STATUSES } from '../orders/orderWorkflow';
+import { reportDriverLocation } from './orderWorkflowApi';
 
 class LocationService {
   private locationSubscription: any = null;
@@ -71,11 +73,13 @@ class LocationService {
    * Update driver location in database
    */
   private async updateDriverLocation(driverId: string, location?: Location.LocationObject) {
-    let latitude: number, longitude: number;
+    let latitude: number, longitude: number, accuracy: number | null, timestamp: number;
 
     if (location) {
       latitude = location.coords.latitude;
       longitude = location.coords.longitude;
+      accuracy = location.coords.accuracy ?? null;
+      timestamp = location.timestamp;
     } else {
       try {
         const currentLocation = await Location.getCurrentPositionAsync({
@@ -83,6 +87,8 @@ class LocationService {
         });
         latitude = currentLocation.coords.latitude;
         longitude = currentLocation.coords.longitude;
+        accuracy = currentLocation.coords.accuracy ?? null;
+        timestamp = currentLocation.timestamp;
       } catch (error) {
         console.error('Error getting current location:', error);
         return;
@@ -103,12 +109,15 @@ class LocationService {
       console.error('Error updating driver location:', driverError);
     }
 
-    // Update any active order this driver is handling
+    // The delivery in progress (between pickup and delivery): the server
+    // checks the assignment and the step, keeps the history and shows the
+    // position to that order's customer only.
     const { data: activeOrder, error: orderError } = await supabase
       .from('orders')
       .select('id')
       .eq('driver_id', driverId)
-      .in('status', ['accepted', 'picked_up', 'on_the_way'])
+      .in('status', [...LOCATION_STATUSES])
+      .limit(1)
       .maybeSingle();
 
     if (orderError) {
@@ -116,17 +125,9 @@ class LocationService {
     }
 
     if (activeOrder && activeOrder.id) {
-      const { error: updateError } = await supabase
-        .from('orders')
-        .update({
-          driver_latitude: latitude,
-          driver_longitude: longitude,
-          last_location_update: new Date().toISOString(),
-        })
-        .eq('id', activeOrder.id);
-
-      if (updateError) {
-        console.error('Error updating order location:', updateError);
+      const result = await reportDriverLocation(activeOrder.id, { latitude, longitude, accuracy, timestamp });
+      if (!result.ok) {
+        console.error('Error reporting delivery location:', result.error.kind);
       }
     }
   }
