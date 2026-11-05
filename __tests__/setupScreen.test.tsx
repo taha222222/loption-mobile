@@ -29,6 +29,12 @@ jest.mock('../src/services/permissions', () => ({
   suggestDeliveryAddress: () => mockPerm.suggest(),
   openAppSettings: () => mockPerm.openSettings(),
 }));
+// Served cities as the server would list them (delivery_zones).
+const mockServed: { list: string[] | null } = { list: ['casablanca'] };
+jest.mock('../src/delivery/cities', () => ({
+  ...jest.requireActual('../src/delivery/cities'),
+  fetchServedCities: async () => mockServed.list,
+}));
 const mockPush = { register: jest.fn(async () => 'ExponentPushToken[x]'), save: jest.fn(async () => {}) };
 jest.mock('../src/services/notificationService', () => ({
   notificationService: {
@@ -48,6 +54,7 @@ beforeEach(() => {
   saveDeliveryAddress.mockResolvedValue({ ok: true, profile: {} });
   mockPerm.notification.mockResolvedValue('undetermined');
   mockPerm.location.mockResolvedValue('undetermined');
+  mockServed.list = ['casablanca'];
 });
 
 async function toLocationStep() {
@@ -113,7 +120,8 @@ describe('location step', () => {
     expect(mockPerm.suggest).not.toHaveBeenCalled();
     await fireEvent.changeText(screen.getByLabelText('Adresse'), '12 Rue Exemple, Maarif, Casablanca');
     await fireEvent.press(screen.getByText('Enregistrer l’adresse'));
-    await waitFor(() => expect(saveDeliveryAddress).toHaveBeenCalledWith('u1', '12 Rue Exemple, Maarif, Casablanca', null));
+    // The city typed last in the address is recognised and sent with it.
+    await waitFor(() => expect(saveDeliveryAddress).toHaveBeenCalledWith('u1', '12 Rue Exemple, Maarif, Casablanca', null, 'casablanca'));
     expect(markDone).toHaveBeenCalledWith('u1');
   });
 
@@ -127,8 +135,36 @@ describe('location step', () => {
     expect(markDone).not.toHaveBeenCalled();
     await fireEvent.press(screen.getByText('Enregistrer l’adresse'));
     await waitFor(() =>
-      expect(saveDeliveryAddress).toHaveBeenCalledWith('u1', 'Bd Anfa, Casablanca', { latitude: 33.59, longitude: -7.63 })
+      expect(saveDeliveryAddress).toHaveBeenCalledWith('u1', 'Bd Anfa, Casablanca', { latitude: 33.59, longitude: -7.63 }, 'casablanca')
     );
+  });
+
+  it('outside Casablanca the address is saved and the customer is told delivery is not available in their city yet', async () => {
+    mockPerm.requestLocation.mockResolvedValue('granted');
+    mockPerm.suggest.mockResolvedValue({ kind: 'found', address: 'Av. Mohammed V', latitude: 34.02, longitude: -6.84, city: 'Rabat' });
+    await toLocationStep();
+    await fireEvent.press(screen.getByText('Autoriser la localisation'));
+    await waitFor(() => expect(screen.getByLabelText('Adresse').props.value).toBe('Av. Mohammed V'));
+    await fireEvent.press(screen.getByText('Enregistrer l’adresse'));
+    await waitFor(() => expect(screen.getByText('Pas encore dans votre ville')).toBeTruthy());
+    expect(saveDeliveryAddress).toHaveBeenCalledWith('u1', 'Av. Mohammed V', { latitude: 34.02, longitude: -6.84 }, 'rabat');
+    expect(screen.getByText(/La livraison n’est pas encore disponible à Rabat/)).toBeTruthy();
+    expect(markDone).not.toHaveBeenCalled(); // the customer reads the message first
+    await fireEvent.press(screen.getByText('Continuer'));
+    expect(markDone).toHaveBeenCalledWith('u1');
+  });
+
+  it('asks for the city when it cannot be recognised, and accepts it from the city chips', async () => {
+    await toLocationStep();
+    await fireEvent.press(screen.getByText('Saisir mon adresse'));
+    await fireEvent.changeText(screen.getByLabelText('Adresse'), '12 Rue Exemple, Maarif');
+    await fireEvent.press(screen.getByText('Enregistrer l’adresse'));
+    expect(screen.getByText('Choisissez la ville de votre adresse.')).toBeTruthy();
+    expect(saveDeliveryAddress).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByText('Casablanca'));
+    await fireEvent.press(screen.getByText('Enregistrer l’adresse'));
+    await waitFor(() => expect(saveDeliveryAddress).toHaveBeenCalledWith('u1', '12 Rue Exemple, Maarif', null, 'casablanca'));
+    expect(markDone).toHaveBeenCalledWith('u1'); // Casablanca is served: no message
   });
 
   it('handles a location error by asking for the address', async () => {

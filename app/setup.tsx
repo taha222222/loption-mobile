@@ -3,7 +3,8 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, Touchable
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { RouteGate } from '../src/components/navigation/RouteGate';
-import { BrandButton, IconBadge, StepProgress, SurfaceCard, TextField } from '../src/components/v2';
+import { BrandButton, Chip, IconBadge, StepProgress, SurfaceCard, TextField } from '../src/components/v2';
+import { CITY_OPTIONS, cityKeyFromName, fetchServedCities, notServedMessage } from '../src/delivery/cities';
 import { notificationService } from '../src/services/notificationService';
 import {
   getLocationPermission,
@@ -120,6 +121,21 @@ function LocationStep({ onDone }: { onDone: () => void }) {
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // The city of the address (delivery zones: Casablanca first). Chosen by the
+  // customer; pre-filled from the position or from the city typed last.
+  const [city, setCity] = useState<string | null>(profile?.delivery_city ?? null);
+  const [served, setServed] = useState<string[] | null>(null);
+  const [notServed, setNotServed] = useState<string | null>(null);
+  const typedCity = cityKeyFromName(address.split(',').pop());
+  const chosenCity = city ?? typedCity;
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchServedCities().then((list) => !cancelled && setServed(list));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const hasAddress = !!profile?.delivery_address;
   useEffect(() => {
@@ -133,6 +149,8 @@ function LocationStep({ onDone }: { onDone: () => void }) {
     const suggestion = await suggestDeliveryAddress();
     if (suggestion.kind === 'found') {
       setAddress(suggestion.address);
+      const fromPosition = cityKeyFromName(suggestion.city);
+      if (fromPosition) setCity(fromPosition);
       setCoords({ latitude: suggestion.latitude, longitude: suggestion.longitude });
       setNote('Adresse proposée à partir de votre position. Vérifiez-la et complétez-la (étage, appartement…).');
     } else if (suggestion.kind === 'position_only') {
@@ -160,18 +178,40 @@ function LocationStep({ onDone }: { onDone: () => void }) {
       setError('Saisissez une adresse de livraison complète (rue, quartier, ville).');
       return;
     }
+    if (!chosenCity) {
+      setError('Choisissez la ville de votre adresse.');
+      return;
+    }
     if (!user) return;
     setSaving(true);
     setError(null);
     // A coordinate is kept only with the address the customer confirmed.
-    const result = await saveDeliveryAddress(user.id, value, coords);
+    const result = await saveDeliveryAddress(user.id, value, coords, chosenCity);
     setSaving(false);
     if (!result.ok) {
       setError(result.message);
       return;
     }
+    // Saved in any case; outside the served cities the customer is told now,
+    // not at checkout. (No list from the server: nothing is promised.)
+    if (served && !served.includes(chosenCity)) {
+      setNotServed(notServedMessage(chosenCity));
+      return;
+    }
     onDone();
   };
+
+  if (notServed) {
+    return (
+      <StepLayout
+        icon="location-outline"
+        title="Pas encore dans votre ville"
+        intro={notServed}
+        points={[]}
+        footer={<BrandButton title="Continuer" onPress={onDone} />}
+      />
+    );
+  }
 
   if (phase === 'address' || phase === 'locating') {
     return (
@@ -198,6 +238,21 @@ function LocationStep({ onDone }: { onDone: () => void }) {
             error={error}
             hint="Utilisée pour vos livraisons. Vous pourrez la modifier à la commande."
           />
+          <Text style={styles.cityLabel}>Ville</Text>
+          <View style={styles.cityGrid} accessibilityLabel="Ville de livraison">
+            {CITY_OPTIONS.map((c) => (
+              <Chip
+                key={c.key}
+                label={c.name}
+                active={chosenCity === c.key}
+                onPress={() => {
+                  setCity(c.key);
+                  setError(null);
+                }}
+              />
+            ))}
+          </View>
+          <Text style={styles.intro}>L’OPTION livre d’abord à Casablanca ; d’autres villes arrivent bientôt.</Text>
           {phase === 'locating' ? <Text style={styles.intro}>Recherche de votre position…</Text> : null}
         </ScrollView>
         <View style={styles.actions}>
@@ -304,6 +359,13 @@ function SkipButton({ label, onPress }: { label: string; onPress: () => void }) 
 }
 
 const styles = StyleSheet.create({
+  cityLabel: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: theme.colors.ink,
+    alignSelf: 'stretch',
+  },
+  cityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, alignSelf: 'stretch' },
   safe: {
     flex: 1,
     backgroundColor: theme.colors.canvas,

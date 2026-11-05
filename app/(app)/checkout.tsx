@@ -16,6 +16,7 @@ import { useCartStore } from '../../src/stores/cartStore';
 import { useUserStore } from '../../src/stores/userStore';
 import { CHECKOUT_CLOSED_MESSAGE, CHECKOUT_CLOSED_TITLE, CHECKOUT_OPEN } from '../../src/checkout/checkoutAvailability';
 import { createOrder, fetchActivePricing, type ActivePricing } from '../../src/services/checkoutApi';
+import { fetchServedCities, notServedMessage } from '../../src/delivery/cities';
 import { randomUUID } from 'expo-crypto';
 
 // Checkout is locked (owner decision 2026-11-05) until create_order() is on
@@ -34,6 +35,18 @@ export default function CheckoutScreen() {
   // One request id per checkout attempt: a retry after a lost answer returns
   // the same order instead of creating a second one.
   const requestId = useRef<string | null>(null);
+  // Delivery zones (Casablanca first): a customer whose city is not served is
+  // told here too. The server refuses the order anyway (create_order).
+  const deliveryCity = useUserStore((s) => s.profile?.delivery_city ?? null);
+  const [served, setServed] = useState<string[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchServedCities().then((list) => !cancelled && setServed(list));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const outOfZone = !!deliveryCity && !!served && !served.includes(deliveryCity);
 
   useEffect(() => {
     if (!CHECKOUT_OPEN) return;
@@ -65,7 +78,7 @@ export default function CheckoutScreen() {
       setOrderMessage(result.message);
     }
   };
-  const canOrder = CHECKOUT_OPEN && !!pricing && items.length > 0 && address.trim().length > 0;
+  const canOrder = CHECKOUT_OPEN && !outOfZone && !!pricing && items.length > 0 && address.trim().length > 0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -152,6 +165,12 @@ export default function CheckoutScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
+        {outOfZone ? (
+          <View style={styles.closedNotice} testID="checkout-out-of-zone">
+            <Text style={styles.closedTitle}>Pas encore dans votre ville</Text>
+            <Text style={styles.closedText}>{notServedMessage(deliveryCity)}</Text>
+          </View>
+        ) : null}
         {!CHECKOUT_OPEN ? (
           <View style={styles.closedNotice} testID="checkout-closed" accessibilityLiveRegion="polite">
             <Text style={styles.closedTitle}>{CHECKOUT_CLOSED_TITLE}</Text>

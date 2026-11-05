@@ -25,6 +25,7 @@ export interface UserProfile {
   delivery_address?: string | null;
   delivery_latitude?: number | null;
   delivery_longitude?: number | null;
+  delivery_city?: string | null; // e.g. 'casablanca' (20261107120000_v1_delivery_zones.sql)
   first_order_offer_status?: FirstOrderOfferStatus | null;
   time_zone?: string | null;
   created_at: string;
@@ -56,7 +57,8 @@ interface UserState {
   saveDeliveryAddress: (
     userId: string,
     address: string,
-    coords: { latitude: number; longitude: number } | null
+    coords: { latitude: number; longitude: number } | null,
+    city?: string | null
   ) => Promise<SaveResult>;
   calculateBMR: () => number;
   calculateTDEE: () => number;
@@ -150,12 +152,19 @@ export const useUserStore = create<UserState>((set, get) => {
     // The server stamps the time and checks that every answer is present.
     completeOnboarding: (userId) => writeProfile(userId, { onboarding_completed_at: new Date().toISOString() }),
 
-    saveDeliveryAddress: (userId, address, coords) =>
-      writeProfile(userId, {
+    // The city goes with the address (delivery zones). A server without the
+    // zones migration does not know the column yet: the address is still saved.
+    saveDeliveryAddress: async (userId, address, coords, city) => {
+      const values = {
         delivery_address: address.trim(),
         delivery_latitude: coords?.latitude ?? null,
         delivery_longitude: coords?.longitude ?? null,
-      }),
+      };
+      if (city === undefined) return writeProfile(userId, values);
+      const result = await writeProfile(userId, { ...values, delivery_city: city });
+      if (!result.ok && (result.code === 'PGRST204' || result.code === '42703')) return writeProfile(userId, values);
+      return result;
+    },
 
     // Estimates: the server-computed values when available, otherwise the
     // same formula on the device. 0 means "no estimate" (missing or

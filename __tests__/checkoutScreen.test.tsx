@@ -18,6 +18,11 @@ jest.mock('../src/services/notificationService', () => ({
   notificationService: { sendToAllOnlineDrivers: (...a: unknown[]) => mockNotify(...a) },
 }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn(), back: jest.fn(), replace: jest.fn() } }));
+const mockServed: { list: string[] | null } = { list: ['casablanca'] };
+jest.mock('../src/delivery/cities', () => ({
+  ...jest.requireActual('../src/delivery/cities'),
+  fetchServedCities: async () => mockServed.list,
+}));
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -42,6 +47,15 @@ describe('Checkout lockdown', () => {
     expect(screen.getAllByText('120 MAD')).toHaveLength(2); // line and subtotal of menu prices, for information
     expect(screen.queryByText(/15 MAD/)).toBeNull(); // the old unapproved delivery fee
     expect(screen.getByText('À confirmer')).toBeTruthy();
+  });
+
+  it('tells a customer outside Casablanca that delivery is not available in their city yet', async () => {
+    const { useUserStore } = jest.requireActual('../src/stores/userStore');
+    useUserStore.setState({ profile: { delivery_city: 'marrakech', delivery_address: 'Gueliz' } });
+    await render(<CheckoutScreen />);
+    expect(await screen.findByTestId('checkout-out-of-zone')).toBeTruthy();
+    expect(screen.getByText(/La livraison n’est pas encore disponible à Marrakech/)).toBeTruthy();
+    useUserStore.setState({ profile: { delivery_city: 'casablanca', delivery_address: 'Maarif' } });
   });
 
   it('the Place Order button is disabled and pressing it writes nothing', async () => {

@@ -64,7 +64,7 @@ export async function requestLocationPermission(): Promise<PermissionState> {
 }
 
 export type AddressSuggestion =
-  | { kind: 'found'; address: string; latitude: number; longitude: number }
+  | { kind: 'found'; address: string; latitude: number; longitude: number; city: string | null }
   | { kind: 'position_only'; latitude: number; longitude: number }
   | { kind: 'error' };
 
@@ -84,7 +84,7 @@ export async function suggestDeliveryAddress(): Promise<AddressSuggestion> {
     try {
       const [place] = await Location.reverseGeocodeAsync({ latitude, longitude });
       const address = place ? formatPlace(place) : '';
-      return address ? { kind: 'found', address, latitude, longitude } : { kind: 'position_only', latitude, longitude };
+      return address ? { kind: 'found', address, latitude, longitude, city: place?.city ?? null } : { kind: 'position_only', latitude, longitude };
     } catch {
       return { kind: 'position_only', latitude, longitude };
     }

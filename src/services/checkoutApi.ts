@@ -14,7 +14,7 @@ export interface OrderLineRequest {
   notes?: string | null;
 }
 
-export type CreateOrderFailure = 'closed' | 'invalid' | 'not_allowed' | 'not_available' | 'network' | 'other';
+export type CreateOrderFailure = 'closed' | 'out_of_zone' | 'no_city' | 'invalid' | 'not_allowed' | 'not_available' | 'network' | 'other';
 export type CreateOrderResult = { ok: true; orderId: string } | { ok: false; reason: CreateOrderFailure; message: string };
 
 export interface ActivePricing {
@@ -27,6 +27,8 @@ export interface ActivePricing {
 // Customer-facing messages (French).
 const MESSAGES: Record<CreateOrderFailure, string> = {
   closed: 'La commande en ligne n’est pas encore ouverte.',
+  out_of_zone: 'La livraison n’est pas encore disponible dans votre ville. L’OPTION livre d’abord à Casablanca et arrivera bientôt dans d’autres villes.',
+  no_city: 'Indiquez la ville de votre adresse de livraison dans votre profil.',
   invalid: 'Votre panier ne peut pas être commandé tel quel (plat indisponible, quantité ou minimum de commande). Vérifiez-le.',
   not_allowed: 'Ce compte ne peut pas passer de commande client.',
   not_available: 'La commande en ligne n’est pas encore activée sur le serveur.',
@@ -38,6 +40,8 @@ export function classifyCreateOrderError(error: { code?: string; message?: strin
   const code = String(error.code ?? '');
   if (isMissingServerFeature(error)) return 'not_available';
   if (code === '55000') return 'closed';
+  if (code === '22023' && /delivery is not available in your city|this kitchen does not deliver to your city/.test(String(error.message ?? ''))) return 'out_of_zone';
+  if (code === '22023' && /choose your delivery city/.test(String(error.message ?? ''))) return 'no_city';
   if (code === '22023') return 'invalid';
   if (code === '42501') return 'not_allowed';
   if (!/^[0-9A-Z]{5}$/.test(code) && !code.startsWith('PGRST')) return 'network';

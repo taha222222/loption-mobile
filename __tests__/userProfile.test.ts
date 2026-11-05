@@ -143,6 +143,21 @@ describe('saving onboarding', () => {
     });
   });
 
+  it('saves the delivery city with the address (delivery zones)', async () => {
+    const result = await useUserStore.getState().saveDeliveryAddress('u1', 'Av. Mohammed V', null, 'rabat');
+    expect(result.ok).toBe(true);
+    expect(mockCalls.filter((c) => c.op === 'update').pop()!.payload).toMatchObject({ delivery_address: 'Av. Mohammed V', delivery_city: 'rabat' });
+  });
+
+  it('still saves the address on a server without delivery zones (unknown column), without the city', async () => {
+    mockFailNext = { op: 'update', error: { code: 'PGRST204', message: "Could not find the 'delivery_city' column" } };
+    const result = await useUserStore.getState().saveDeliveryAddress('u1', '12 Rue Exemple, Casablanca', null, 'casablanca');
+    expect(result.ok).toBe(true);
+    const update = mockCalls.filter((c) => c.op === 'update').pop()!;
+    expect(update.payload.delivery_address).toBe('12 Rue Exemple, Casablanca');
+    expect(update.payload).not.toHaveProperty('delivery_city');
+  });
+
   it('returns 0 (no estimate) for an unspecified sex input instead of using a formula', async () => {
     await useUserStore
       .getState()
