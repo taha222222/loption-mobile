@@ -111,6 +111,8 @@ else
     && pass "V1 order workflow migration applied" || { fail "order workflow migration: $(tail -3 "$OUT/orders.log")"; exit 1; }
   q postgres -f "$ROOT/supabase/migrations/20261106120000_v1_create_order.sql" >"$OUT/create_order.log" 2>&1 \
     && pass "V1 create_order migration applied" || { fail "create_order migration: $(tail -3 "$OUT/create_order.log")"; exit 1; }
+  q postgres -f "$ROOT/supabase/migrations/20261107120000_v1_delivery_zones.sql" >"$OUT/zones.log" 2>&1 \
+    && pass "V1 delivery zones migration applied" || { fail "delivery zones migration: $(tail -3 "$OUT/zones.log")"; exit 1; }
   [ "$(qa "select count(*) from public.containment_violations() where category in ('drift','containment')")" = "0" ] \
     && pass "containment_violations() = 0" || fail "containment violations present"
 fi

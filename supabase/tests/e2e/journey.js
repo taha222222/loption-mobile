@@ -184,6 +184,8 @@ let sink = null; // SMTP sink process, always stopped on exit
   pass('home screen (V2) shows the first-order free-delivery offer from the server status');
   check(sql(`select delivery_address || '|' || first_order_offer_status from public.user_profiles where user_id = '${userId}'`) ===
     '12 Rue Exemple, Maarif, Casablanca|eligible', 'manual address saved; offer status eligible (server-maintained)');
+  check(sql(`select coalesce(delivery_city, '-') from public.user_profiles where user_id = '${userId}'`) === 'casablanca',
+    'the address city is recognised and saved: Casablanca, the launch delivery zone');
   await shot(page, '08-home');
 
   // ------------------------------------------------- server-side protections

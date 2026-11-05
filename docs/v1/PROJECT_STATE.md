@@ -3,7 +3,10 @@
 Update this file incrementally when the state changes. Last verified: 2026-11-03 (production hardening: Android release build, all harnesses, hosted read-only checks).
 
 ## Current branch
-- **Latest: `claude/v1-create-order`** = order workflow + checkout lockdown (Place Order disabled, no client order
+- **Latest: `claude/v1-delivery-zones`** = `claude/v1-create-order` + delivery zones (Casablanca only, Kitchen A;
+  `20261107120000_v1_delivery_zones.sql`, **not applied**); the app asks the city with the address and tells customers
+  outside Casablanca that delivery is not available in their city yet. Notifications: later (owner).
+- Previous: `claude/v1-create-order` = order workflow + checkout lockdown (Place Order disabled, no client order
   writes) + trusted `create_order()` (`20261106120000_v1_create_order.sql`, **not applied**; owner-approved pricing table,
   empty). Checkout opens only after #34, #36 and pricing approval (`ORDER_WORKFLOW.md`).
 - Previous: `claude/v1-order-workflow` = `claude/v1-readiness-pdf` + the delivery order
@@ -30,7 +33,7 @@ Update this file incrementally when the state changes. Last verified: 2026-11-03
   `c35da39` and `claude/v1-activity-tracking-docs` before the last docs fix: the ruleset blocks pushes to existing
   branches, so each follow-up is pushed as a new branch.
 - `main` is still `0cb0fe0` (initial commit). Nothing is merged.
-- Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md` (latest: E-27 to E-33).
+- Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md` (latest: E-27 to E-34).
 - **Hosted project `loption-mobile` (`teppcfnpkoxkudajnvad`) has all five V1 migrations since 2026-11-02** (owner-approved;
   initial admin `e898d986-…`; evidence E-22). Branch `claude/v1-rollout-loption-mobile` holds the admin-id commit.
 

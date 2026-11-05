@@ -97,12 +97,23 @@ select id, <delivery_fee>, <service_fee>, <minimum_subtotal>, 'included_in_menu_
   from public.kitchens where code = 'A';
 ```
 
+## Delivery zones (`20261107120000_v1_delivery_zones.sql`, not applied)
+
+Launch: **Casablanca only, from Kitchen A** (owner, 2026-11-06). Each customer's address carries a city key
+(`user_profiles.delivery_city`, chosen in the app, pre-filled from the position or the typed address). `create_order()`
+accepts only cities with an active `delivery_zones` row served by the requested kitchen; otherwise « choose your
+delivery city » / « delivery is not available in your city yet » and nothing is written. The app tells the customer at
+the address step and at checkout. Opening a city later is one owner-approved row (audited):
+
+```sql
+insert into public.delivery_zones (city_key, city_name, kitchen_id)
+select '<city_key>', '<City name>', id from public.kitchens where code = '<kitchen code>';
+```
+
 ## Not done yet (blocking real use)
 
 - Approved pricing (H1–H3) and the migrations applied to `loption-mobile` (DECISIONS #34, #36); then `CHECKOUT_OPEN`.
-- Kitchen routing when more than one kitchen takes orders (DECISIONS #35): the app orders from the one kitchen with
-  approved pricing.
-- Delivery zones and distance limits (F3, F5): not enforced yet.
+- Limits inside Casablanca (districts or distance from Kitchen A) are not decided (DECISIONS #7); the zone is the city.
 - Kitchen and cashier screens: this repository has customer, driver, admin and partner apps only; the admin orders
   screen acts as cashier meanwhile.
 - Order notifications (cashier on new order, kitchen on confirmation, driver on ready, customer on pickup/delivery)

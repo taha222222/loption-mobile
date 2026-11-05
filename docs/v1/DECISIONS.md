@@ -25,6 +25,9 @@ with date and source. Details live in the linked docs; do not copy them here.
 | At most one active staff role per user (customers hold none); kitchen scoping kept | Owner answer, 2026-11-05 |
 | `order_status_updates` (customer timeline) records status changes only; driver assignment and payment changes are audit-only (`security_audit_log`); driver location history stays separate from both | Owner approval, 2026-11-05 |
 | Checkout disabled (Place Order button off, no client-side order writes) until `public.create_order()` exists with approved pricing | Owner approval, 2026-11-05 |
+| Delivery at launch: Casablanca only; a customer in another city keeps their address and is told delivery is not available in their city yet; other cities open later | Owner answer, 2026-11-06 |
+| One kitchen at launch: Kitchen A (serves the Casablanca zone) | Owner answer, 2026-11-06 |
+| Order notifications come in a later phase | Owner answer, 2026-11-06 |
 
 ## Proposed, not approved
 | Proposal | Where |
@@ -62,7 +65,7 @@ with date and source. Details live in the linked docs; do not copy them here.
 | 4 | Reminder cadence above | L |
 | 5 | Minimum age; whether minors get estimates and reminders | C7, L12 |
 | 6 | Account linking across providers (Apple relay addresses) | C |
-| 7 | Delivery zones | F |
+| 7 | ~~Delivery zones~~ — decided 2026-11-06 (Casablanca only at launch; see Confirmed). Open: exact boundary rules beyond the city (districts, distance) | F |
 | 8 | Customer language: FR only or FR/EN/AR | I9 |
 | 9 | Hide out-of-scope screens (upgrade, my-plan, reorder, subscription deep link) | I3, Phase 0 X1 |
 | 10 | Phase 1C: independent review, initial-admin UUID, staging gates, meal-images (M2) mitigation | J |
@@ -87,8 +90,8 @@ with date and source. Details live in the linked docs; do not copy them here.
 | 29 | Keep the `support` staff role (read-only helpdesk) or remove it under "one role per user" | `ORDER_WORKFLOW.md` |
 | 30 | Retention period for the driver location history (kept for audit; CNDP: limited duration required) | `ORDER_WORKFLOW.md`, F6 |
 | 31 | Kitchen staff currently read the whole order row (incl. delivery address and customer name): accept, or serve the kitchen a reduced view | `ORDER_WORKFLOW.md` |
-| 32 | Order notifications (cashier: new order; kitchen: confirmed; driver: ready/assigned; customer: picked up, delivered) — not implemented | `ORDER_WORKFLOW.md` |
+| 32 | Order notifications — owner 2026-11-06: to be added soon (not in this phase) (cashier: new order; kitchen: confirmed; driver: ready/assigned; customer: picked up, delivered) — not implemented | `ORDER_WORKFLOW.md` |
 | 33 | Prepaid orders ("payment paid moves pending → confirmed") are not offered while V1 is cash on delivery only | `ORDER_WORKFLOW.md` |
 | 34 | Authorize applying `20261105120000_v1_order_workflow.sql` to `loption-mobile` (after the account-deletion migration) | H12 |
-| 35 | Kitchen routing when several kitchens take orders (today: the one kitchen with approved pricing) | F3, `ORDER_WORKFLOW.md` |
-| 36 | Authorize applying `20261106120000_v1_create_order.sql` (after #34), then approve pricing (H1–H3) and open checkout | H4 |
+| 35 | ~~Kitchen routing~~ — decided 2026-11-06: one kitchen (Kitchen A) at launch; each delivery zone names its kitchen when more open | F3 |
+| 36 | Authorize applying `20261106120000_v1_create_order.sql` (after #34) and `20261107120000_v1_delivery_zones.sql`, then approve pricing (H1–H3) and open checkout | H4, F3 |
