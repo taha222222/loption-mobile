@@ -169,3 +169,27 @@ describe('admin orders screen', () => {
     expect(screen.queryByText('CANCEL ORDER')).toBeNull();
   });
 });
+
+describe('no direct order writes in the app', () => {
+  // Workflow orders change only through the server functions; the database
+  // refuses direct writes anyway, this keeps the app code honest.
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(ts|tsx)$/.test(e.name)) files.push(p);
+    }
+  };
+  walk(path.join(__dirname, '../app'));
+  walk(path.join(__dirname, '../src'));
+
+  it('no screen or service updates, upserts or deletes public.orders', () => {
+    const offenders = files.filter((f) => {
+      const text = fs.readFileSync(f, 'utf8');
+      return /from\(['"]orders['"]\)(\s*\.\w+\([^)]*\))*?\s*\.(update|upsert|delete)\(/.test(text);
+    });
+    expect(offenders.map((f) => path.relative(path.join(__dirname, '..'), f))).toEqual([]);
+  });
+});
+

@@ -66,7 +66,6 @@ interface AdminState {
   // Actions
   approveDriver: (driverId: string) => Promise<void>;
   rejectDriver: (driverId: string) => Promise<void>;
-  updateOrderStatus: (orderId: string, status: string, driverId?: string) => Promise<void>;
   addMeal: (meal: Omit<Meal, 'id'>) => Promise<void>;
   updateMeal: (id: string, meal: Partial<Meal>) => Promise<void>;
   deleteMeal: (id: string) => Promise<void>;
@@ -253,25 +252,9 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     }
   },
 
-  updateOrderStatus: async (orderId: string, status: string, driverId?: string) => {
-    try {
-      const updateData: any = { status };
-      if (driverId) updateData.driver_id = driverId;
-      
-      const { error } = await supabase
-        .from('orders')
-        .update(updateData)
-        .eq('id', orderId);
-      
-      if (!error) {
-        await get().fetchOrders();
-        await get().fetchStats();
-        await get().logAdminAction('update_order_status', { orderId, status, driverId });
-      }
-    } catch (err) {
-      console.error('Error updating order status:', err);
-    }
-  },
+  // Order changes are not made here: workflow orders change only through the
+  // order workflow functions (src/services/orderWorkflowApi.ts), which the
+  // database enforces (20261105120000_v1_order_workflow.sql).
 
   addMeal: async (meal: Omit<Meal, 'id'>) => {
     try {
