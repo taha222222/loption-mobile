@@ -15,6 +15,9 @@ nothing else changed; its rollback re-creates the previous monitor.
     versions of the functions it replaced.
   * account deletion (20261104120000): one client-callable definer function,
     public.delete_my_account(text). Rollback: the standalone monitor.
+  * order workflow, create_order, delivery zones (20261105-07): see below.
+  * pricing engine (20261108120000): no monitor change; its rollback gets the
+    functions it replaced.
 
 Both blocks are copied mechanically from the committed Phase 1C migration so
 that a reviewer only has to read the appended entries below.
@@ -42,6 +45,8 @@ CREATE_ORDER_MIGRATION = ROOT / "supabase/migrations/20261106120000_v1_create_or
 CREATE_ORDER_ROLLBACK = ROOT / "supabase/rollback/v1_create_order_rollback.sql"
 ZONES_MIGRATION = ROOT / "supabase/migrations/20261107120000_v1_delivery_zones.sql"
 ZONES_ROLLBACK = ROOT / "supabase/rollback/v1_delivery_zones_rollback.sql"
+PRICING_MIGRATION = ROOT / "supabase/migrations/20261108120000_v1_pricing_engine.sql"
+PRICING_ROLLBACK = ROOT / "supabase/rollback/v1_pricing_engine_rollback.sql"
 BEGIN, END = "-- BEGIN GENERATED MONITOR\n", "-- END GENERATED MONITOR\n"
 
 # Reviewed definitions added by the nutrition migration, as PostgreSQL 17
@@ -251,6 +256,13 @@ def main() -> int:
     rendered[ZONES_MIGRATION] = render(ZONES_MIGRATION, zones_monitor())
     zones_rb = render(ZONES_ROLLBACK, create_order_monitor())
     rendered[ZONES_ROLLBACK] = render_string(zones_rb, function_from(CREATE_ORDER_MIGRATION, "create_order"), FN_BEGIN, FN_END)
+    # The pricing engine adds no policy and no client definer function (the
+    # monitor stays the zones one); its rollback restores the create_order
+    # migration's pricing_policies_guard() and the zones create_order().
+    rendered[PRICING_ROLLBACK] = render_string(
+        PRICING_ROLLBACK.read_text(),
+        function_from(CREATE_ORDER_MIGRATION, "pricing_policies_guard") + function_from(ZONES_MIGRATION, "create_order"),
+        FN_BEGIN, FN_END)
     check = "--check" in sys.argv
     stale = []
     for path, new in rendered.items():
