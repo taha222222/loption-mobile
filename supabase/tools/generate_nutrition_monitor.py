@@ -47,6 +47,8 @@ ZONES_MIGRATION = ROOT / "supabase/migrations/20261107120000_v1_delivery_zones.s
 ZONES_ROLLBACK = ROOT / "supabase/rollback/v1_delivery_zones_rollback.sql"
 PRICING_MIGRATION = ROOT / "supabase/migrations/20261108120000_v1_pricing_engine.sql"
 PRICING_ROLLBACK = ROOT / "supabase/rollback/v1_pricing_engine_rollback.sql"
+CHECKOUT_MIGRATION = ROOT / "supabase/migrations/20261109120000_v1_checkout_experience.sql"
+CHECKOUT_ROLLBACK = ROOT / "supabase/rollback/v1_checkout_experience_rollback.sql"
 BEGIN, END = "-- BEGIN GENERATED MONITOR\n", "-- END GENERATED MONITOR\n"
 
 # Reviewed definitions added by the nutrition migration, as PostgreSQL 17
@@ -190,6 +192,32 @@ def zones_monitor() -> str:
                             + ORDER_DEFINER_FUNCTIONS + CREATE_ORDER_DEFINER_FUNCTIONS)
 
 
+# The checkout-experience migration: signed-in customers read the active
+# customization of a meal; admins manage it (like meals). Client definer
+# functions: the price preview, popularity, phone code check, and
+# create_order() with its new signature (the previous one is dropped).
+ADMIN = "( SELECT public.has_staff_role(''admin''::text) AS has_staff_role)"
+CHECKOUT_POLICIES = [
+    "meal_option_groups|meal_option_groups_read_active|PERMISSIVE|{authenticated}|SELECT|active|-",
+    f"meal_option_groups|staff_admin_all_meal_option_groups|PERMISSIVE|{{authenticated}}|ALL|{ADMIN}|{ADMIN}",
+    "meal_options|meal_options_read_available|PERMISSIVE|{authenticated}|SELECT|(available AND (EXISTS ( SELECT 1 FROM public.meal_option_groups g WHERE ((g.id = meal_options.group_id) AND g.active))))|-",
+    f"meal_options|staff_admin_all_meal_options|PERMISSIVE|{{authenticated}}|ALL|{ADMIN}|{ADMIN}",
+]
+CHECKOUT_DEFINER_FUNCTIONS = [
+    "public.create_order(uuid,jsonb,uuid,text,text,numeric)",
+    "public.checkout_preview(uuid,jsonb,text)",
+    "public.meal_popularity(uuid)",
+    "public.phone_otp_verify(uuid,text)",
+]
+
+
+def checkout_monitor() -> str:
+    return extended_monitor(NEW_POLICIES + ACTIVITY_POLICIES + STANDALONE_POLICIES + ORDER_POLICIES + CREATE_ORDER_POLICIES
+                            + ZONES_POLICIES + CHECKOUT_POLICIES,
+                            NEW_DEFINER_FUNCTIONS + ACTIVITY_DEFINER_FUNCTIONS + ACCOUNT_DEFINER_FUNCTIONS
+                            + ORDER_DEFINER_FUNCTIONS + CHECKOUT_DEFINER_FUNCTIONS)
+
+
 def function_from(path: pathlib.Path, name: str) -> str:
     """One function definition of a migration, as CREATE OR REPLACE."""
     text = path.read_text()
@@ -262,6 +290,14 @@ def main() -> int:
     rendered[PRICING_ROLLBACK] = render_string(
         PRICING_ROLLBACK.read_text(),
         function_from(CREATE_ORDER_MIGRATION, "pricing_policies_guard") + function_from(ZONES_MIGRATION, "create_order"),
+        FN_BEGIN, FN_END)
+    rendered[CHECKOUT_MIGRATION] = render(CHECKOUT_MIGRATION, checkout_monitor())
+    # Its rollback restores the zones monitor and the pricing-engine versions
+    # of create_order() and the line snapshot guard.
+    checkout_rb = render(CHECKOUT_ROLLBACK, zones_monitor())
+    rendered[CHECKOUT_ROLLBACK] = render_string(
+        checkout_rb,
+        function_from(PRICING_MIGRATION, "order_items_tax_snapshot_guard") + function_from(PRICING_MIGRATION, "create_order"),
         FN_BEGIN, FN_END)
     check = "--check" in sys.argv
     stale = []

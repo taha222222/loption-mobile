@@ -115,6 +115,8 @@ else
     && pass "V1 delivery zones migration applied" || { fail "delivery zones migration: $(tail -3 "$OUT/zones.log")"; exit 1; }
   q postgres -f "$ROOT/supabase/migrations/20261108120000_v1_pricing_engine.sql" >"$OUT/pricing.log" 2>&1 \
     && pass "V1 pricing engine migration applied" || { fail "pricing engine migration: $(tail -3 "$OUT/pricing.log")"; exit 1; }
+  q postgres -f "$ROOT/supabase/migrations/20261109120000_v1_checkout_experience.sql" >"$OUT/checkout.log" 2>&1 \
+    && pass "V1 checkout experience migration applied" || { fail "checkout experience migration: $(tail -3 "$OUT/checkout.log")"; exit 1; }
   [ "$(qa "select count(*) from public.containment_violations() where category in ('drift','containment')")" = "0" ] \
     && pass "containment_violations() = 0" || fail "containment violations present"
 fi
