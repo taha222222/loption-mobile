@@ -4,6 +4,7 @@
 // available), and its popularity (public.meal_popularity: distinct
 // customers who received it). RLS-scoped reads with the anon key only.
 import { supabase } from '../lib/supabase';
+import { isMissingServerFeature } from '../lib/serverFeatures';
 import type { OptionGroup } from '../menu/customization';
 
 export interface MealDetail {
@@ -47,10 +48,23 @@ export function toGroups(rows: GroupRow[]): OptionGroup[] {
     .filter((g) => g.options.length > 0);
 }
 
+const MEAL_COLUMNS = 'id, name, price, image_url, calories, protein, carbs, fat, available';
+
+// The meal row. A server without the checkout migration has no
+// `description` column yet: the meal is then read without it (no
+// description shown) instead of failing.
+async function readMeal(mealId: string) {
+  const withDescription = await supabase.from('meals').select(`${MEAL_COLUMNS}, description`).eq('id', mealId).maybeSingle();
+  if (withDescription.error && isMissingServerFeature(withDescription.error)) {
+    return supabase.from('meals').select(MEAL_COLUMNS).eq('id', mealId).maybeSingle();
+  }
+  return withDescription;
+}
+
 export async function fetchMealDetail(mealId: string): Promise<MealDetailResult> {
   try {
     const [meal, groups] = await Promise.all([
-      supabase.from('meals').select('id, name, price, description, image_url, calories, protein, carbs, fat, available').eq('id', mealId).maybeSingle(),
+      readMeal(mealId),
       supabase
         .from('meal_option_groups')
         .select('id, name, min_select, max_select, sort_order, meal_options (id, name, price_delta, sort_order)')
