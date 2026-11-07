@@ -3,6 +3,8 @@
 // products subtotal, service fee, delivery fee (after the first-order offer)
 // and the total, which is the cash the driver collects. Nothing is
 // recomputed or defaulted here: a missing amount stays unknown (null).
+import { formatMad } from '../menu/customization';
+
 export interface OrderAmountsRow {
   subtotal?: number | string | null;
   delivery_fee?: number | string | null;
@@ -32,4 +34,4 @@ export function orderAmounts(row: OrderAmountsRow): OrderAmounts {
   };
 }
 
-export const madOrDash = (v: number | null) => (v === null ? '—' : `${Number.isInteger(v) ? v : v.toFixed(2)} MAD`);
+export const madOrDash = (v: number | null) => (v === null ? '—' : formatMad(v));

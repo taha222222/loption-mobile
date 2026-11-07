@@ -61,10 +61,12 @@ export default function DriverOrderDetails() {
       .maybeSingle();
     
     if (!orderError && orderData) {
-      // Get customer profile
+      // Customer name if readable; the phone is the WhatsApp-verified number
+      // copied on the order (orders.delivery_phone), visible to the assigned
+      // driver only (RLS). The customer's profile phone is not used.
       const { data: profileData } = await supabase
         .from('user_profiles')
-        .select('full_name, phone')
+        .select('full_name')
         .eq('user_id', orderData.user_id)
         .maybeSingle();
       
@@ -79,7 +81,7 @@ export default function DriverOrderDetails() {
         delivery_address: orderData.delivery_address,
         payment_method: orderData.payment_method || 'cash',
         customer_name: profileData?.full_name || 'Customer',
-        customer_phone: profileData?.phone || '',
+        customer_phone: orderData.delivery_phone || '',
         customer_email: '',
         created_at: orderData.created_at,
         items: orderData.order_items || [],

@@ -26,6 +26,8 @@ export interface UserProfile {
   delivery_latitude?: number | null;
   delivery_longitude?: number | null;
   delivery_city?: string | null; // e.g. 'casablanca' (20261107120000_v1_delivery_zones.sql)
+  phone_e164?: string | null; // WhatsApp-verified number (20261109120000_v1_checkout_experience.sql), server-written
+  phone_verified_at?: string | null;
   first_order_offer_status?: FirstOrderOfferStatus | null;
   time_zone?: string | null;
   created_at: string;

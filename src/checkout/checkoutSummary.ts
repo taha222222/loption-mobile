@@ -30,7 +30,7 @@ export function checkoutSummary(
   };
 }
 
-// "120 MAD", "12.50 MAD".
-export const mad = (value: number) => `${Number.isInteger(value) ? value : value.toFixed(2)} MAD`;
+// "120 MAD", "12,50 MAD" (one formatter for every customer amount).
+export { formatMad as mad } from '../menu/customization';
 
 export const TVA_INCLUDED_NOTE = 'TVA incluse dans les prix affichés.';

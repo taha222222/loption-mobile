@@ -1,19 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { RouteGate } from '../src/components/navigation/RouteGate';
-import { BrandButton, Chip, IconBadge, StepProgress, SurfaceCard, TextField } from '../src/components/v2';
-import { CITY_OPTIONS, cityKeyFromName, fetchServedCities, notServedMessage } from '../src/delivery/cities';
+import { BrandButton, IconBadge, StepProgress, SurfaceCard } from '../src/components/v2';
+import { DeliveryAddressForm } from '../src/components/checkout/DeliveryAddressForm';
+import { fetchServedCities, notServedMessage } from '../src/delivery/cities';
 import { notificationService } from '../src/services/notificationService';
 import {
   getLocationPermission,
   getNotificationPermission,
   openAppSettings,
   PermissionState,
-  requestLocationPermission,
   requestNotificationPermission,
-  suggestDeliveryAddress,
 } from '../src/services/permissions';
 import { useAuthStore } from '../src/stores/authStore';
 import { useSetupStore } from '../src/stores/setupStore';
@@ -111,23 +110,12 @@ function NotificationsStep({ onDone }: { onDone: () => void }) {
 }
 
 function LocationStep({ onDone }: { onDone: () => void }) {
-  const user = useAuthStore((s) => s.user);
   const profile = useUserStore((s) => s.profile);
-  const saveDeliveryAddress = useUserStore((s) => s.saveDeliveryAddress);
   const [state, setState] = useState<PermissionState | null>(null);
-  const [phase, setPhase] = useState<'explain' | 'locating' | 'address'>('explain');
-  const [address, setAddress] = useState(profile?.delivery_address ?? '');
-  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  // The city of the address (delivery zones: Casablanca first). Chosen by the
-  // customer; pre-filled from the position or from the city typed last.
-  const [city, setCity] = useState<string | null>(profile?.delivery_city ?? null);
+  const [phase, setPhase] = useState<'explain' | 'address'>('explain');
+  const [start, setStart] = useState<'locate' | 'manual'>('manual');
   const [served, setServed] = useState<string[] | null>(null);
   const [notServed, setNotServed] = useState<string | null>(null);
-  const typedCity = cityKeyFromName(address.split(',').pop());
-  const chosenCity = city ?? typedCity;
 
   useEffect(() => {
     let cancelled = false;
@@ -144,58 +132,11 @@ function LocationStep({ onDone }: { onDone: () => void }) {
     else getLocationPermission().then(setState);
   }, [hasAddress, onDone]);
 
-  const locate = async () => {
-    setPhase('locating');
-    const suggestion = await suggestDeliveryAddress();
-    if (suggestion.kind === 'found') {
-      setAddress(suggestion.address);
-      const fromPosition = cityKeyFromName(suggestion.city);
-      if (fromPosition) setCity(fromPosition);
-      setCoords({ latitude: suggestion.latitude, longitude: suggestion.longitude });
-      setNote('Adresse proposée à partir de votre position. Vérifiez-la et complétez-la (étage, appartement…).');
-    } else if (suggestion.kind === 'position_only') {
-      setCoords({ latitude: suggestion.latitude, longitude: suggestion.longitude });
-      setNote('Position trouvée, mais pas d’adresse. Saisissez votre adresse de livraison.');
-    } else {
-      setNote('Votre position n’a pas pu être déterminée. Saisissez votre adresse de livraison.');
-    }
-    setPhase('address');
-  };
-
-  const allow = async () => {
-    const result = await requestLocationPermission();
-    setState(result);
-    if (result === 'granted') await locate();
-    else {
-      setNote(null);
-      setPhase('address');
-    }
-  };
-
-  const save = async () => {
-    const value = address.trim();
-    if (value.length < 5) {
-      setError('Saisissez une adresse de livraison complète (rue, quartier, ville).');
-      return;
-    }
-    if (!chosenCity) {
-      setError('Choisissez la ville de votre adresse.');
-      return;
-    }
-    if (!user) return;
-    setSaving(true);
-    setError(null);
-    // A coordinate is kept only with the address the customer confirmed.
-    const result = await saveDeliveryAddress(user.id, value, coords, chosenCity);
-    setSaving(false);
-    if (!result.ok) {
-      setError(result.message);
-      return;
-    }
-    // Saved in any case; outside the served cities the customer is told now,
-    // not at checkout. (No list from the server: nothing is promised.)
-    if (served && !served.includes(chosenCity)) {
-      setNotServed(notServedMessage(chosenCity));
+  // Saved in any case; outside the served cities the customer is told now,
+  // not at checkout. (No list from the server: nothing is promised.)
+  const saved = (city: string) => {
+    if (served && !served.includes(city)) {
+      setNotServed(notServedMessage(city));
       return;
     }
     onDone();
@@ -213,58 +154,14 @@ function LocationStep({ onDone }: { onDone: () => void }) {
     );
   }
 
-  if (phase === 'address' || phase === 'locating') {
-    return (
-      <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <IconBadge icon="location-outline" size={56} />
-          <Text style={styles.title} accessibilityRole="header">
-            Votre adresse de livraison
-          </Text>
-          {state === 'denied' || state === 'blocked' ? (
-            <BlockedNote kind="location" blocked={state === 'blocked'} />
-          ) : null}
-          {note ? <Text style={styles.intro}>{note}</Text> : null}
-          <TextField
-            label="Adresse"
-            value={address}
-            onChangeText={(t) => {
-              setAddress(t);
-              setError(null);
-            }}
-            placeholder="N°, rue, quartier, Casablanca"
-            multiline
-            editable={phase !== 'locating'}
-            error={error}
-            hint="Utilisée pour vos livraisons. Vous pourrez la modifier à la commande."
-          />
-          <Text style={styles.cityLabel}>Ville</Text>
-          <View style={styles.cityGrid} accessibilityLabel="Ville de livraison">
-            {CITY_OPTIONS.map((c) => (
-              <Chip
-                key={c.key}
-                label={c.name}
-                active={chosenCity === c.key}
-                onPress={() => {
-                  setCity(c.key);
-                  setError(null);
-                }}
-              />
-            ))}
-          </View>
-          <Text style={styles.intro}>L’OPTION livre d’abord à Casablanca ; d’autres villes arrivent bientôt.</Text>
-          {phase === 'locating' ? <Text style={styles.intro}>Recherche de votre position…</Text> : null}
-        </ScrollView>
-        <View style={styles.actions}>
-          <BrandButton title="Enregistrer l’adresse" onPress={save} loading={saving || phase === 'locating'} />
-          {state === 'granted' && phase === 'address' ? (
-            <BrandButton title="Utiliser ma position" variant="soft" onPress={locate} />
-          ) : null}
-          <SkipButton label="Plus tard" onPress={onDone} />
-        </View>
-      </KeyboardAvoidingView>
-    );
+  if (phase === 'address') {
+    return <DeliveryAddressForm start={start} onSaved={saved} footerExtra={<SkipButton label="Plus tard" onPress={onDone} />} />;
   }
+
+  const open = (how: 'locate' | 'manual') => {
+    setStart(how);
+    setPhase('address');
+  };
 
   return (
     <StepLayout
@@ -279,18 +176,11 @@ function LocationStep({ onDone }: { onDone: () => void }) {
       footer={
         <>
           {state === 'granted' ? (
-            <BrandButton title="Utiliser ma position" onPress={locate} />
+            <BrandButton title="Utiliser ma position" onPress={() => open('locate')} />
           ) : state === 'blocked' ? null : (
-            <BrandButton title="Autoriser la localisation" onPress={allow} disabled={state === null} />
+            <BrandButton title="Autoriser la localisation" onPress={() => open('locate')} disabled={state === null} />
           )}
-          <BrandButton
-            title="Saisir mon adresse"
-            variant="soft"
-            onPress={() => {
-              setNote(null);
-              setPhase('address');
-            }}
-          />
+          <BrandButton title="Saisir mon adresse" variant="soft" onPress={() => open('manual')} />
           {state === 'blocked' ? <BlockedNote kind="location" blocked /> : null}
           <SkipButton label="Plus tard" onPress={onDone} />
         </>
@@ -359,13 +249,6 @@ function SkipButton({ label, onPress }: { label: string; onPress: () => void }) 
 }
 
 const styles = StyleSheet.create({
-  cityLabel: {
-    fontSize: theme.typography.sizes.sm,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.ink,
-    alignSelf: 'stretch',
-  },
-  cityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, alignSelf: 'stretch' },
   safe: {
     flex: 1,
     backgroundColor: theme.colors.canvas,

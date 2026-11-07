@@ -14,8 +14,8 @@ describe('checkout summary', () => {
     const s = checkoutSummary([{ price: 0.1, quantity: 1 }, { price: 0.2, quantity: 1 }, { price: 19.99, quantity: 3 }], 3, { deliveryFee: 10, distanceKm: 1 });
     expect(s.productsSubtotal).toBe(60.27);
     expect(s.total).toBe(73.27);
-    expect(mad(60.27)).toBe('60.27 MAD');
-    expect(mad(120)).toBe('120 MAD');
+    expect(mad(60.27)).toBe('60,27\u00A0MAD');
+    expect(mad(120)).toBe('120\u00A0MAD');
   });
 
   it('no total until the server quote is known (no default fee)', () => {
@@ -43,6 +43,6 @@ describe('driver order amounts', () => {
     expect(a.deliveryFee).toBeNull();
     expect(a.serviceFee).toBeNull();
     expect(madOrDash(a.deliveryFee)).toBe('—');
-    expect(madOrDash(12.5)).toBe('12.50 MAD');
+    expect(madOrDash(12.5)).toBe('12,50\u00A0MAD');
   });
 });

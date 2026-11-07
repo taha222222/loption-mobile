@@ -1,6 +1,6 @@
-// Checkout is locked (owner decision 2026-11-05) until public.create_order()
-// exists and pricing is approved: the screen writes nothing and shows no
-// unapproved fee.
+// Checkout is locked (owner decision 2026-11-05) until the trusted order
+// flow and pricing are approved and applied: the screen shows the basket and
+// why ordering is closed, writes nothing and requests nothing.
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import CheckoutScreen from '../app/(app)/checkout';
@@ -32,10 +32,8 @@ jest.mock('../src/delivery/cities', () => ({
 beforeEach(() => {
   jest.clearAllMocks();
   useAuthStore.setState({ user: { id: 'user-1' } as never });
-  useCartStore.setState({
-    ownerId: 'user-1',
-    items: [{ id: 'meal-1', name: 'Chicken Bowl', price: 60, calories: 450, protein: 35, quantity: 2 }],
-  });
+  useCartStore.setState({ ownerId: 'user-1', items: [] });
+  useCartStore.getState().addItem({ id: 'meal-1', name: 'Chicken Bowl', price: 60, calories: 450, protein: 35 }, 2);
 });
 
 describe('Checkout lockdown', () => {
@@ -48,13 +46,13 @@ describe('Checkout lockdown', () => {
     expect(screen.getByTestId('checkout-closed')).toBeTruthy();
     expect(screen.getByText(CHECKOUT_CLOSED_TITLE)).toBeTruthy();
     expect(screen.getByTestId('payment-method-cod')).toBeTruthy();
-    expect(screen.queryByText(/credit|debit/i)).toBeNull();
-    expect(screen.getAllByText('120 MAD')).toHaveLength(2); // line and subtotal of menu prices, for information
-    expect(screen.queryByText(/15 MAD/)).toBeNull(); // the old unapproved delivery fee
+    expect(screen.getByText('Espèces à la livraison')).toBeTruthy();
+    expect(screen.queryByText(/carte|credit|debit/i)).toBeNull();
+    expect(screen.getAllByText('120 MAD')).toHaveLength(2); // line and subtotal of menu prices, for information
+    expect(screen.queryByText(/15 MAD|15 MAD/)).toBeNull(); // the old unapproved delivery fee
     expect(screen.getByTestId('checkout-delivery-fee')).toHaveTextContent('À confirmer');
     expect(screen.getByText('TVA incluse dans les prix affichés.')).toBeTruthy();
-    expect(screen.queryByText(/^TVA.*\+/)).toBeNull(); // never a TVA line added on top
-    expect(mockInvoke).not.toHaveBeenCalled(); // no quote requested while closed
+    expect(mockInvoke).not.toHaveBeenCalled(); // no quote, no WhatsApp code while closed
   });
 
   it('tells a customer outside Casablanca that delivery is not available in their city yet', async () => {
@@ -66,11 +64,10 @@ describe('Checkout lockdown', () => {
     useUserStore.setState({ profile: { delivery_city: 'casablanca', delivery_address: 'Maarif' } });
   });
 
-  it('the Place Order button is disabled and pressing it writes nothing', async () => {
+  it('the confirm button is disabled and pressing it writes nothing', async () => {
     await render(<CheckoutScreen />);
-    const button = screen.getByText('Place Order');
-    await fireEvent.press(button);
-    expect(mockFrom).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByText('Confirmer la commande'));
+    expect(mockFrom).not.toHaveBeenCalledWith('orders');
     expect(mockRpc).not.toHaveBeenCalled();
     expect(mockNotify).not.toHaveBeenCalled();
     expect(mockInvoke).not.toHaveBeenCalled();

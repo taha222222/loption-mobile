@@ -12,8 +12,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { theme } from '../../src/theme';
 import { QuantitySelector } from '../../src/components/ui/QuantitySelector';
-import { BrandButton, EmptyState, Screen, SurfaceCard, formatNumber, formatPrice } from '../../src/components/v2';
+import { BrandButton, EmptyState, Screen, SurfaceCard, formatNumber } from '../../src/components/v2';
 import { useCartStore } from '../../src/stores/cartStore';
+import { describeOptions, formatMad } from '../../src/menu/customization';
 
 export default function CartScreen() {
   const {
@@ -98,11 +99,16 @@ export default function CartScreen() {
             <View style={styles.itemTop}>
               <View style={styles.itemInfo}>
                 <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
+                {item.options.length ? (
+                  <Text style={styles.itemOptions} testID={`cart-options-${item.id}`}>
+                    {describeOptions(item.options)}
+                  </Text>
+                ) : null}
                 <Text style={styles.itemMacros}>
                   {`${formatNumber(item.calories)}\u00A0kcal · ${item.protein}\u00A0g protéines`}
                 </Text>
               </View>
-              <Text style={styles.itemPrice}>{formatPrice(item.price)}</Text>
+              <Text style={styles.itemPrice}>{formatMad(Math.round(item.price * 100 * item.quantity) / 100)}</Text>
             </View>
 
             <View style={styles.itemActions}>
@@ -111,6 +117,14 @@ export default function CartScreen() {
                 onIncrease={() => updateQuantity(item.id, item.quantity + 1)}
                 onDecrease={() => updateQuantity(item.id, item.quantity - 1)}
               />
+              <TouchableOpacity
+                onPress={() => router.push({ pathname: '/(app)/meal/[id]', params: { id: item.mealId, line: item.id } })}
+                style={styles.editButton}
+                accessibilityRole="button"
+                accessibilityLabel={`Modifier ${item.name}`}
+              >
+                <Text style={styles.editText}>Modifier</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => removeItem(item.id)}
                 style={styles.removeButton}
@@ -124,7 +138,7 @@ export default function CartScreen() {
               style={styles.notesInput}
               placeholder="Instructions spéciales..."
               placeholderTextColor={theme.colors.inkFaint}
-              value={notes[item.id] || ''}
+              value={notes[item.id] ?? item.notes ?? ''}
               onChangeText={(text) => handleUpdateNotes(item.id, text)}
             />
           </SurfaceCard>
@@ -134,7 +148,7 @@ export default function CartScreen() {
           <Text style={styles.summaryTitle}>Récapitulatif</Text>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Sous-total</Text>
-            <Text style={styles.summaryValue}>{formatPrice(getTotalPrice())}</Text>
+            <Text style={styles.summaryValue}>{formatMad(getTotalPrice())}</Text>
           </View>
           {/* Service and delivery fees come from the server at checkout (road
               distance quote); the cart shows no fee of its own. */}
@@ -152,7 +166,7 @@ export default function CartScreen() {
           </View>
           <View style={[styles.summaryRow, styles.totalRow]}>
             <Text style={styles.totalLabel}>Total produits</Text>
-            <Text style={styles.totalValue}>{formatPrice(getTotalPrice())}</Text>
+            <Text style={styles.totalValue}>{formatMad(getTotalPrice())}</Text>
           </View>
         </SurfaceCard>
       </ScrollView>
@@ -235,6 +249,23 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.sizes.xs,
     color: theme.colors.inkMuted,
     marginTop: 4,
+  },
+  itemOptions: {
+    fontSize: theme.typography.sizes.sm,
+    lineHeight: theme.typography.lineHeights.sm,
+    color: theme.colors.ink,
+    marginTop: 2,
+  },
+  editButton: {
+    marginLeft: 'auto',
+    minHeight: 44,
+    paddingHorizontal: theme.spacing.md,
+    justifyContent: 'center',
+  },
+  editText: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.brand,
   },
   itemPrice: {
     fontSize: theme.typography.sizes.md,

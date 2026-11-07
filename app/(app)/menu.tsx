@@ -9,12 +9,14 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { theme } from '../../src/theme';
 import { MealCard } from '../../src/components/ui/MealCard';
 import { BasketButton, Chip, EmptyState, Screen, ScreenHeader } from '../../src/components/v2';
 import { supabase } from '../../src/lib/supabase';
 import { useCartStore } from '../../src/stores/cartStore';
 import { useUserStore } from '../../src/stores/userStore';
+import { fetchMealsWithChoices } from '../../src/services/menuApi';
 
 interface Meal {
   id: string;
@@ -47,10 +49,22 @@ export default function MenuScreen() {
   const [smartFilterEnabled, setSmartFilterEnabled] = useState(false);
   const { addItem } = useCartStore();
   const { profile } = useUserStore();
+  // Meals with choices open their page from "+" (choices must be made there).
+  const [withChoices, setWithChoices] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchMeals();
   }, [selectedCategory, smartFilterEnabled]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchMealsWithChoices().then((set) => !cancelled && setWithChoices(set));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const openMeal = (mealId: string) => router.push({ pathname: '/(app)/meal/[id]', params: { id: mealId } });
 
   const fetchMeals = async () => {
     setLoading(true);
@@ -102,6 +116,10 @@ export default function MenuScreen() {
   };
 
   const handleAddToCart = (meal: Meal) => {
+    if (withChoices.has(meal.id)) {
+      openMeal(meal.id);
+      return;
+    }
     addItem({
       id: meal.id,
       name: meal.name,
@@ -210,8 +228,7 @@ export default function MenuScreen() {
               image={meal.image_url || undefined}
               popular={meal.popular}
               onAddToCart={() => handleAddToCart(meal)}
-              // No meal detail screen exists yet; the card used to navigate to
-              // the missing route /(app)/meal/[id] ("Unmatched route").
+              onPress={() => openMeal(meal.id)}
             />
           ))}
         </ScrollView>

@@ -4,7 +4,7 @@ import { RouteGate } from '../../src/components/navigation/RouteGate';
 import { createPillTabBar } from '../../src/components/v2';
 import { CUSTOMER_TABS } from '../../src/navigation/customerTabs';
 
-const PillTabBar = createPillTabBar(CUSTOMER_TABS);
+const PillTabBar = createPillTabBar(CUSTOMER_TABS, ['meal/[id]', 'checkout', 'delivery-address']);
 
 export default function AppLayout() {
   return (
@@ -41,6 +41,8 @@ function AppTabs() {
       <Tabs.Screen name="reorder" />
       <Tabs.Screen name="upgrade" />
       <Tabs.Screen name="checkout" />
+      <Tabs.Screen name="meal/[id]" />
+      <Tabs.Screen name="delivery-address" />
       <Tabs.Screen name="order-tracking/[id]" />
       <Tabs.Screen name="nutrition" />
       <Tabs.Screen name="log-meal" />

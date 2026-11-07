@@ -17,11 +17,13 @@ export interface PillTab {
 
 // Floating white pill nav. The active tab expands into an indigo pill with its
 // label. It is rendered in normal layout flow (not absolutely positioned) so it
-// never covers screen content.
-export const createPillTabBar = (tabs: PillTab[]) =>
+// never covers screen content. Screens listed in `hiddenOn` (a product page,
+// checkout) keep the whole height for their own bottom action.
+export const createPillTabBar = (tabs: PillTab[], hiddenOn: readonly string[] = []) =>
   function PillTabBar({ state, emitter, navigateToTab }: TabBarProps) {
     const insets = useSafeAreaInsets();
     const activeName = state.routes[state.index]?.name;
+    if (activeName && hiddenOn.includes(activeName)) return null;
 
     return (
       <View style={[styles.outer, { paddingBottom: Math.max(insets.bottom, theme.spacing.md) }]}>
