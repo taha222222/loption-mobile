@@ -28,6 +28,9 @@ with date and source. Details live in the linked docs; do not copy them here.
 | Delivery at launch: Casablanca only; a customer in another city keeps their address and is told delivery is not available in their city yet; other cities open later | Owner answer, 2026-11-06 |
 | One kitchen at launch: Kitchen A (serves the Casablanca zone) | Owner answer, 2026-11-06 |
 | Order notifications come in a later phase | Owner answer, 2026-11-06 |
+| V1 pricing: service fee 3 MAD per order; delivery fee `round_half_up(min(25, max(10, 8 + 1.5 × road km)))` from the order's kitchen (server-side road distance, no straight-line fallback); menu prices TTC; TVA never added at checkout; total = products + service + delivery = cash due. Applied as data (pricing row), not code | Owner proposal, 2026-11-07 ([V1_PRICING_SPECIFICATION.md](V1_PRICING_SPECIFICATION.md)) |
+| No minimum order in V1 (not approved; removed from the pricing model) | Owner proposal, 2026-11-07 |
+| Restaurant TVA 10 % is a **proposal pending the accountant**; the service- and delivery-fee tax classifications are pending and have no rate; checkout stays blocked until they are approved | Owner proposal, 2026-11-07 |
 
 ## Proposed, not approved
 | Proposal | Where |
@@ -59,7 +62,7 @@ with date and source. Details live in the linked docs; do not copy them here.
 ## Needs owner approval
 | # | Decision | Checklist |
 |---|---|---|
-| 1 | Delivery fee, service fee, TVA, minimum order (legacy 15 / 10 / 19 MAD values conflict; Phase 0 asked about 8 MAD service fee) | H1–H3 |
+| 1 | ~~Delivery fee, service fee, minimum order~~ — owner proposal 2026-11-07 (see Confirmed). Open: the tax items #38–#40 | H1–H3 |
 | 2 | First-order offer rules: eligibility, which order statuses release it, minimum order, expiry, stacking | G |
 | 3 | Goal-based calorie targets (loss/gain) and whether to keep collecting `goal` | L, `V1_ONBOARDING_AUTH_OFFER.md` §7 |
 | 4 | Reminder cadence above | L |
@@ -95,3 +98,13 @@ with date and source. Details live in the linked docs; do not copy them here.
 | 34 | Authorize applying `20261105120000_v1_order_workflow.sql` to `loption-mobile` (after the account-deletion migration) | H12 |
 | 35 | ~~Kitchen routing~~ — decided 2026-11-06: one kitchen (Kitchen A) at launch; each delivery zone names its kitchen when more open | F3 |
 | 36 | Authorize applying `20261106120000_v1_create_order.sql` (after #34) and `20261107120000_v1_delivery_zones.sql`, then approve pricing (H1–H3) and open checkout | H4, F3 |
+| 37 | Authorize applying `20261108120000_v1_pricing_engine.sql` (after #36); then insert Kitchen A's pricing row (needs #41) and deploy `quote-delivery` with its key (#42) | H1, H4 |
+| 38 | Accountant: TVA rate of restaurant food (10 % proposed; category `restaurant_food`, pending) and whether other product categories (drinks, packaged goods) are needed | H3 |
+| 39 | Accountant: tax classification and rate of the **service fee** (category `service_fee`, no rate) | H2, H3 |
+| 40 | Accountant: tax classification and rate of the **delivery fee** (category `delivery_fee`, no rate); and whether receipts must show the TVA breakdown | H1, H3 |
+| 41 | Kitchen A's dispatch coordinates (origin of every road distance) | H1 |
+| 42 | Routing provider (Google Routes + Geocoding proposed), Google Cloud billing and a server key restricted to those APIs as Edge Function secret `ROUTING_API_KEY`; travel mode (`DRIVE` used) | H1, B |
+| 43 | Delivery destination: server geocoding of the typed address (implemented; the app's map pin is not trusted for pricing) or the pin with a consistency check | H1 |
+| 44 | Quote validity: 15 minutes (implemented); a per-customer limit on new quotes (each costs one Geocoding + one Routes call; not built) | H1 |
+| 45 | Delivery radius and profitability: no maximum distance exists (the 25 MAD cap is not a radius); a profile set to Casablanca can be quoted up to 200 km for 25 MAD. Decide a maximum road distance or districts (see #7) | F3, H1 |
+| 46 | First-order free delivery now waives a distance-based fee (up to 25 MAD): confirm (see #2); driver commission (15 % of the delivery fee in the driver screens) unchanged (see #11) | G, H1 |

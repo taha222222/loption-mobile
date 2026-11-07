@@ -74,8 +74,12 @@ The app sends only the kitchen, the meal ids, quantities and notes, and a reques
 - refuses anonymous callers and staff accounts; requires the customer's confirmed delivery address (copied to the order);
 - reads every price from `meals` (inactive meals refused; a price sent by the client is never read), 1–30 lines,
   quantities 1–20, each meal once;
-- takes the delivery fee, service fee and minimum order from the kitchen's **owner-approved** `pricing_policies` row; with
-  no approved row it refuses (`55000`, "ordering is not open") and creates nothing — no fee value exists in the code;
+- takes the service fee from the kitchen's **owner-approved** `pricing_policies` row; with no approved row it refuses
+  (`55000`, "ordering is not open") and creates nothing — no fee value exists in the code;
+- since the pricing engine (`20261108120000_v1_pricing_engine.sql`, not applied): the delivery fee comes from the
+  customer's server-side road-distance quote, the TVA is split per tax category (refused while a category is pending),
+  there is no minimum order, and every amount is snapshotted on the order — see
+  [V1_PRICING_SPECIFICATION.md](V1_PRICING_SPECIFICATION.md);
 - creates the pending, cash-on-delivery workflow order and its lines in one transaction, applies the existing first-order
   free delivery, writes the timeline row `pending` and the audit row `order_created`;
 - returns the same order for the same request id (advisory lock; 4 parallel identical requests → 1 order).
@@ -85,17 +89,10 @@ Checkout in the app stays closed (`CHECKOUT_OPEN = false`); the open path is bui
 
 ### Approving pricing (owner action, after legal/accounting review)
 
-Pricing is a row, never an edit: insert the approved values as role postgres (audited as `pricing_policy_approved`);
-to change them, insert a new row after deactivating the old one (`update … set active = false`, audited). Template, values
-to be filled by the owner only:
-
-```sql
-insert into public.pricing_policies (kitchen_id, delivery_fee, service_fee, minimum_subtotal, tva_treatment,
-                                     approved_by, approval_reference, approved_at)
-select id, <delivery_fee>, <service_fee>, <minimum_subtotal>, 'included_in_menu_prices',
-       '<approver name>', '<decision reference>', now()
-  from public.kitchens where code = 'A';
-```
+Pricing is a row, never an edit (audited as `pricing_policy_approved`); to change it, deactivate the old row
+(`update … set active = false`, audited) and insert a new one. With the pricing engine the row holds the service fee,
+the delivery formula values and Kitchen A's dispatch point: template in
+[V1_PRICING_SPECIFICATION.md §6](V1_PRICING_SPECIFICATION.md#6-activating-pricing-owner-and-accountant-actions-in-order).
 
 ## Delivery zones (`20261107120000_v1_delivery_zones.sql`, not applied)
 
@@ -112,7 +109,8 @@ select '<city_key>', '<City name>', id from public.kitchens where code = '<kitch
 
 ## Not done yet (blocking real use)
 
-- Approved pricing (H1–H3) and the migrations applied to `loption-mobile` (DECISIONS #34, #36); then `CHECKOUT_OPEN`.
+- Approved taxes (DECISIONS #38–#40), Kitchen A's pricing row and routing key (#41, #42), and the migrations applied to
+  `loption-mobile` (#34, #36, #37); then `CHECKOUT_OPEN`.
 - Limits inside Casablanca (districts or distance from Kitchen A) are not decided (DECISIONS #7); the zone is the city.
 - Kitchen and cashier screens: this repository has customer, driver, admin and partner apps only; the admin orders
   screen acts as cashier meanwhile.

@@ -3,7 +3,12 @@
 Update this file incrementally when the state changes. Last verified: 2026-11-03 (production hardening: Android release build, all harnesses, hosted read-only checks).
 
 ## Current branch
-- **Latest: `claude/v1-delivery-zones`** = `claude/v1-create-order` + delivery zones (Casablanca only, Kitchen A;
+- **Latest: `claude/v1-pricing-engine`** (local commits, **not pushed**) = `claude/v1-delivery-zones` + the V1 pricing
+  engine (`V1_PRICING_SPECIFICATION.md`; `20261108120000_v1_pricing_engine.sql`, **not applied**): 3 MAD service fee,
+  road-distance delivery fee from the order's kitchen (`quote-delivery` Edge Function, not deployed, fail closed), TVA
+  by tax category (all pending the accountant, so `create_order()` refuses), no minimum order, full order snapshot. Cart,
+  checkout and driver screens show server amounts only. Evidence E-35.
+- Previous: `claude/v1-delivery-zones` = `claude/v1-create-order` + delivery zones (Casablanca only, Kitchen A;
   `20261107120000_v1_delivery_zones.sql`, **not applied**); the app asks the city with the address and tells customers
   outside Casablanca that delivery is not available in their city yet. Notifications: later (owner).
 - Previous: `claude/v1-create-order` = order workflow + checkout lockdown (Place Order disabled, no client order
@@ -33,7 +38,7 @@ Update this file incrementally when the state changes. Last verified: 2026-11-03
   `c35da39` and `claude/v1-activity-tracking-docs` before the last docs fix: the ruleset blocks pushes to existing
   branches, so each follow-up is pushed as a new branch.
 - `main` is still `0cb0fe0` (initial commit). Nothing is merged.
-- Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md` (latest: E-27 to E-34).
+- Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md` (latest: E-27 to E-35).
 - **Hosted project `loption-mobile` (`teppcfnpkoxkudajnvad`) has all five V1 migrations since 2026-11-02** (owner-approved;
   initial admin `e898d986-…`; evidence E-22). Branch `claude/v1-rollout-loption-mobile` holds the admin-id commit.
 
@@ -80,7 +85,8 @@ The repository ruleset covers all branches: PR + 1 approving review, no bypass, 
    `ACTIVITY_TRACKING_AND_DAILY_DASHBOARD.md` §10; owner approval of the calorie-engine constants (DECISIONS).
 3. Remove remaining fake data from customer screens (checklist I1, I3).
 4. Owner decisions and credentials that unblock staging (`DECISIONS.md`, checklist A–C, H, L, M).
-5. Trusted server-side order creation once pricing is approved (checklist H4–H10).
+5. Accountant tax decisions (#38–#40), Kitchen A coordinates and routing key (#41–#42), then the order migrations on
+   staging and the lifecycle walkthrough (checklist H10).
 
 ## Blockers
 - Phase 1C has still had no independent review (applied on the owner's decision, E-22); meal-images finding M2 open.
@@ -90,7 +96,9 @@ The repository ruleset covers all branches: PR + 1 approving review, no bypass, 
 - Android: a full `assembleRelease` succeeds (E-28, debug-key signed, never installed). iOS: never compiled (no Xcode
   here; the first EAS iOS build is also the first Swift compile). No EAS build (no Expo token). HealthKit capability, Health Connect and activity-recognition /
   location-foreground-service Play declarations and privacy texts are owner actions (checklist M).
-- Pricing, fees, TVA and minimum order not approved, so checkout cannot be enabled.
+- Pricing values decided (owner proposal 2026-11-07) but the tax categories are pending the accountant, Kitchen A's
+  coordinates and the routing key are missing, and no V1 order migration is applied: checkout cannot be enabled
+  (DECISIONS #37–#46).
 - No reviewer other than the author for PRs (ruleset needs 1 approval).
 - Order lifecycle undecided: the app uses `delivered`, the staging schema allows `served` (both count as received).
 - Lint: 45 pre-existing errors (none in new files). `expo install --check` is up to date (react-native 0.88.1).
