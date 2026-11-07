@@ -136,9 +136,11 @@ export default function CartScreen() {
             <Text style={styles.summaryLabel}>Sous-total</Text>
             <Text style={styles.summaryValue}>{formatPrice(getTotalPrice())}</Text>
           </View>
+          {/* Service and delivery fees come from the server at checkout (road
+              distance quote); the cart shows no fee of its own. */}
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Livraison</Text>
-            <Text style={styles.summaryValue}>{formatPrice(15)}</Text>
+            <Text style={styles.summaryLabel}>Frais de service et livraison</Text>
+            <Text style={styles.summaryValue}>Calculés au paiement</Text>
           </View>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Calories totales</Text>
@@ -149,15 +151,15 @@ export default function CartScreen() {
             <Text style={styles.summaryValue}>{`${getTotalProtein()}\u00A0g`}</Text>
           </View>
           <View style={[styles.summaryRow, styles.totalRow]}>
-            <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalValue}>{formatPrice(getTotalPrice() + 15)}</Text>
+            <Text style={styles.totalLabel}>Total produits</Text>
+            <Text style={styles.totalValue}>{formatPrice(getTotalPrice())}</Text>
           </View>
         </SurfaceCard>
       </ScrollView>
 
       <View style={styles.footer}>
         <BrandButton
-          title={`Passer la commande · ${formatPrice(getTotalPrice() + 15)}`}
+          title="Continuer vers le paiement"
           onPress={handleCheckout}
         />
       </View>

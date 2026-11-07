@@ -1,12 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-} from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -15,28 +8,38 @@ import { Button } from '../../src/components/ui/Button';
 import { useCartStore } from '../../src/stores/cartStore';
 import { useUserStore } from '../../src/stores/userStore';
 import { CHECKOUT_CLOSED_MESSAGE, CHECKOUT_CLOSED_TITLE, CHECKOUT_OPEN } from '../../src/checkout/checkoutAvailability';
-import { createOrder, fetchActivePricing, type ActivePricing } from '../../src/services/checkoutApi';
+import { checkoutSummary, mad, TVA_INCLUDED_NOTE } from '../../src/checkout/checkoutSummary';
+import {
+  createOrder,
+  fetchActivePricing,
+  requestDeliveryQuote,
+  type ActivePricing,
+  type DeliveryQuote,
+} from '../../src/services/checkoutApi';
 import { fetchServedCities, notServedMessage } from '../../src/delivery/cities';
 import { randomUUID } from 'expo-crypto';
 
 // Checkout is locked (owner decision 2026-11-05) until create_order() is on
-// the server with approved pricing; then CHECKOUT_OPEN is switched in a
-// reviewed change. Even open, this screen never writes an order: it sends the
-// meal ids and quantities to create_order(), which prices, validates and
-// creates the order. Fees are shown only from the approved pricing.
+// the server with approved pricing and approved taxes; then CHECKOUT_OPEN is
+// switched in a reviewed change. Even open, this screen never writes an
+// order and computes no price: the delivery fee comes from the server's
+// road-distance quote (quote-delivery), the service fee from the approved
+// pricing, and create_order() prices, validates and creates the order.
 export default function CheckoutScreen() {
-  // Pre-filled with the delivery address the customer confirmed, if any.
-  const [address, setAddress] = useState(() => useUserStore.getState().profile?.delivery_address ?? '');
-  const { items, getTotalPrice, clearCart } = useCartStore();
-  const subtotal = getTotalPrice();
+  // The delivery address is the one confirmed in the profile: it is the one
+  // the server delivers to and measures the distance to.
+  const address = useUserStore((s) => s.profile?.delivery_address ?? '');
+  const { items, clearCart } = useCartStore();
   const [pricing, setPricing] = useState<ActivePricing | null>(null);
+  const [quote, setQuote] = useState<DeliveryQuote | null>(null);
+  const [quoteMessage, setQuoteMessage] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
   const [orderMessage, setOrderMessage] = useState<string | null>(null);
   // One request id per checkout attempt: a retry after a lost answer returns
   // the same order instead of creating a second one.
   const requestId = useRef<string | null>(null);
   // Delivery zones (Casablanca first): a customer whose city is not served is
-  // told here too. The server refuses the order anyway (create_order).
+  // told here too. The server refuses the quote and the order anyway.
   const deliveryCity = useUserStore((s) => s.profile?.delivery_city ?? null);
   const [served, setServed] = useState<string[] | null>(null);
   useEffect(() => {
@@ -48,24 +51,37 @@ export default function CheckoutScreen() {
   }, []);
   const outOfZone = !!deliveryCity && !!served && !served.includes(deliveryCity);
 
+  const loadQuote = useCallback(async () => {
+    const r = await requestDeliveryQuote();
+    setQuote(r.ok ? r.quote : null);
+    setQuoteMessage(r.ok ? null : r.message);
+  }, []);
+
   useEffect(() => {
     if (!CHECKOUT_OPEN) return;
     let cancelled = false;
     void fetchActivePricing().then((p) => {
       if (!cancelled) setPricing(p);
     });
+    void requestDeliveryQuote().then((r) => {
+      if (cancelled) return;
+      setQuote(r.ok ? r.quote : null);
+      setQuoteMessage(r.ok ? null : r.message);
+    });
     return () => {
       cancelled = true;
     };
   }, []);
 
+  const summary = checkoutSummary(items, quote?.serviceFee ?? pricing?.serviceFee ?? null, quote);
+
   const placeOrder = async () => {
-    if (!CHECKOUT_OPEN || !pricing || items.length === 0) return;
+    if (!CHECKOUT_OPEN || !quote || items.length === 0) return;
     requestId.current ??= randomUUID();
     setPlacing(true);
     setOrderMessage(null);
     const result = await createOrder({
-      kitchenId: pricing.kitchenId,
+      kitchenId: quote.kitchenId, // the kitchen the distance was measured from
       items: items.map((i) => ({ mealId: i.id, quantity: i.quantity, notes: i.notes ?? null })),
       requestId: requestId.current,
     });
@@ -76,9 +92,10 @@ export default function CheckoutScreen() {
       router.replace(`/(app)/order-tracking/${result.orderId}`);
     } else {
       setOrderMessage(result.message);
+      if (result.reason === 'quote_required') void loadQuote();
     }
   };
-  const canOrder = CHECKOUT_OPEN && !outOfZone && !!pricing && items.length > 0 && address.trim().length > 0;
+  const canOrder = CHECKOUT_OPEN && !outOfZone && !!quote && items.length > 0 && address.trim().length > 0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -92,15 +109,13 @@ export default function CheckoutScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} style={styles.content}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Delivery Address</Text>
-          <TextInput
-            style={styles.addressInput}
-            placeholder="Enter your full address"
-            placeholderTextColor={theme.colors.textLight}
-            value={address}
-            onChangeText={setAddress}
-            multiline
-          />
+          <Text style={styles.sectionTitle}>Adresse de livraison</Text>
+          <Text style={styles.addressText} testID="checkout-address">
+            {address.trim() ? address : 'Aucune adresse confirmée'}
+          </Text>
+          <Text style={styles.paymentNote}>
+            L’adresse de votre profil : c’est là que nous livrons et d’où la distance de livraison est calculée.
+          </Text>
         </View>
 
         <View style={styles.section}>
@@ -116,7 +131,7 @@ export default function CheckoutScreen() {
                 )}
               </View>
               <Text style={styles.orderItemPrice}>
-                {item.price * item.quantity} MAD
+                {mad(item.price * item.quantity)}
               </Text>
             </View>
           ))}
@@ -140,27 +155,40 @@ export default function CheckoutScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Order Summary</Text>
+          <Text style={styles.sectionTitle}>Récapitulatif</Text>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Subtotal</Text>
-            <Text style={styles.summaryValue}>{subtotal} MAD</Text>
+            <Text style={styles.summaryLabel}>Sous-total produits</Text>
+            <Text style={styles.summaryValue}>{mad(summary.productsSubtotal)}</Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Delivery Fee</Text>
-            <Text style={styles.summaryValue}>{pricing ? `${pricing.deliveryFee} MAD` : 'À confirmer'}</Text>
+            <Text style={styles.summaryLabel}>Frais de service</Text>
+            <Text style={styles.summaryValue}>{summary.serviceFee != null ? mad(summary.serviceFee) : 'À confirmer'}</Text>
           </View>
-          {pricing ? (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Service Fee</Text>
-              <Text style={styles.summaryValue}>{`${pricing.serviceFee} MAD`}</Text>
-            </View>
-          ) : null}
-          <View style={[styles.summaryRow, styles.totalRow]}>
-            <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalValue}>
-              {pricing ? `${subtotal + pricing.deliveryFee + pricing.serviceFee} MAD (avant offre éventuelle)` : 'Calculé à la commande'}
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>
+              {summary.distanceKm != null ? `Frais de livraison (${summary.distanceKm.toFixed(1)} km)` : 'Frais de livraison'}
+            </Text>
+            <Text style={styles.summaryValue} testID="checkout-delivery-fee">
+              {summary.deliveryFee != null ? mad(summary.deliveryFee) : 'À confirmer'}
             </Text>
           </View>
+          <View style={[styles.summaryRow, styles.totalRow]}>
+            <Text style={styles.totalLabel}>Total</Text>
+            <Text style={styles.totalValue} testID="checkout-total">
+              {summary.total != null ? mad(summary.total) : 'Calculé à la commande'}
+            </Text>
+          </View>
+          <Text style={styles.paymentNote}>{TVA_INCLUDED_NOTE}</Text>
+          {summary.total != null ? (
+            <Text style={styles.paymentNote}>
+              À payer en espèces à la livraison. Le montant final est celui de votre commande (livraison offerte sur la première commande si vous y avez droit).
+            </Text>
+          ) : null}
+          {quoteMessage ? (
+            <Text style={styles.closedText} testID="checkout-quote-message">
+              {quoteMessage}
+            </Text>
+          ) : null}
         </View>
       </ScrollView>
 
@@ -179,7 +207,7 @@ export default function CheckoutScreen() {
         ) : null}
         {orderMessage ? <Text style={styles.closedText}>{orderMessage}</Text> : null}
         {/* Disabled until create_order() is on the server with approved pricing
-            (CHECKOUT_OPEN): there is no client-side order creation. */}
+            and taxes (CHECKOUT_OPEN), and without a server delivery quote. */}
         <Button title="Place Order" variant="gold" onPress={() => void placeOrder()} disabled={!canOrder} loading={placing} size="lg" />
       </View>
     </SafeAreaView>
@@ -233,14 +261,9 @@ const styles = StyleSheet.create({
     color: theme.colors.textDark,
     marginBottom: theme.spacing.md,
   },
-  addressInput: {
-    backgroundColor: theme.colors.backgroundDark,
-    borderRadius: theme.spacing.md,
-    padding: theme.spacing.md,
+  addressText: {
     fontSize: theme.typography.sizes.md,
     color: theme.colors.textDark,
-    minHeight: 80,
-    textAlignVertical: 'top',
   },
   orderItem: {
     flexDirection: 'row',

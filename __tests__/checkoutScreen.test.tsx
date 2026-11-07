@@ -10,8 +10,13 @@ import { CHECKOUT_CLOSED_TITLE, CHECKOUT_OPEN } from '../src/checkout/checkoutAv
 
 const mockFrom = jest.fn();
 const mockRpc = jest.fn();
+const mockInvoke = jest.fn();
 jest.mock('../src/lib/supabase', () => ({
-  supabase: { from: (...a: unknown[]) => mockFrom(...a), rpc: (...a: unknown[]) => mockRpc(...a) },
+  supabase: {
+    from: (...a: unknown[]) => mockFrom(...a),
+    rpc: (...a: unknown[]) => mockRpc(...a),
+    functions: { invoke: (...a: unknown[]) => mockInvoke(...a) },
+  },
 }));
 const mockNotify = jest.fn();
 jest.mock('../src/services/notificationService', () => ({
@@ -46,7 +51,10 @@ describe('Checkout lockdown', () => {
     expect(screen.queryByText(/credit|debit/i)).toBeNull();
     expect(screen.getAllByText('120 MAD')).toHaveLength(2); // line and subtotal of menu prices, for information
     expect(screen.queryByText(/15 MAD/)).toBeNull(); // the old unapproved delivery fee
-    expect(screen.getByText('À confirmer')).toBeTruthy();
+    expect(screen.getByTestId('checkout-delivery-fee')).toHaveTextContent('À confirmer');
+    expect(screen.getByText('TVA incluse dans les prix affichés.')).toBeTruthy();
+    expect(screen.queryByText(/^TVA.*\+/)).toBeNull(); // never a TVA line added on top
+    expect(mockInvoke).not.toHaveBeenCalled(); // no quote requested while closed
   });
 
   it('tells a customer outside Casablanca that delivery is not available in their city yet', async () => {
@@ -60,12 +68,12 @@ describe('Checkout lockdown', () => {
 
   it('the Place Order button is disabled and pressing it writes nothing', async () => {
     await render(<CheckoutScreen />);
-    await fireEvent.changeText(screen.getByPlaceholderText('Enter your full address'), '12 Rue Test, Casablanca');
     const button = screen.getByText('Place Order');
     await fireEvent.press(button);
     expect(mockFrom).not.toHaveBeenCalled();
     expect(mockRpc).not.toHaveBeenCalled();
     expect(mockNotify).not.toHaveBeenCalled();
+    expect(mockInvoke).not.toHaveBeenCalled();
     expect(useCartStore.getState().items).toHaveLength(1); // the cart is kept
   });
 });

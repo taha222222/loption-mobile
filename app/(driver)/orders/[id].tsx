@@ -17,6 +17,7 @@ import { Button } from '../../../src/components/ui/Button';
 import { useAuthStore } from '../../../src/stores/authStore';
 import { supabase } from '../../../src/lib/supabase';
 import { driverUpdate } from '../../../src/services/orderWorkflowApi';
+import { madOrDash, orderAmounts, type OrderAmounts } from '../../../src/orders/orderAmounts';
 
 interface OrderDetails {
   id: string;
@@ -24,7 +25,7 @@ interface OrderDetails {
   status: string;
   total: number;
   delivery_fee: number;
-  platform_service_fee: number;
+  amounts: OrderAmounts; // as stored by the server (never defaulted)
   delivery_address: string;
   payment_method: string;
   customer_name: string;
@@ -73,8 +74,8 @@ export default function DriverOrderDetails() {
         order_number: orderData.order_number,
         status: orderData.status,
         total: orderData.total,
-        delivery_fee: orderData.delivery_fee || 15,
-        platform_service_fee: orderData.platform_service_fee || 19,
+        delivery_fee: Number(orderData.delivery_fee ?? 0),
+        amounts: orderAmounts(orderData),
         delivery_address: orderData.delivery_address,
         payment_method: orderData.payment_method || 'cash',
         customer_name: profileData?.full_name || 'Customer',
@@ -293,21 +294,23 @@ export default function DriverOrderDetails() {
           
           <View style={styles.infoDivider} />
           
+          {/* Server amounts only: the total already includes the fees (and
+              the first-order offer); it is the cash to collect. */}
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Subtotal</Text>
-            <Text style={styles.totalValue}>{order.total - order.delivery_fee} MAD</Text>
+            <Text style={styles.totalValue}>{madOrDash(order.amounts.subtotal)}</Text>
           </View>
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Delivery Fee</Text>
-            <Text style={styles.totalValue}>+{order.delivery_fee} MAD</Text>
+            <Text style={styles.totalValue}>{madOrDash(order.amounts.deliveryFee)}</Text>
           </View>
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Service Fee</Text>
-            <Text style={styles.totalValue}>+{order.platform_service_fee} MAD</Text>
+            <Text style={styles.totalValue}>{madOrDash(order.amounts.serviceFee)}</Text>
           </View>
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total to Collect (if cash)</Text>
-            <Text style={styles.totalValueGold}>{order.total + order.platform_service_fee} MAD</Text>
+            <Text style={styles.totalValueGold}>{madOrDash(order.amounts.cashToCollect)}</Text>
           </View>
           
           <View style={styles.commissionRow}>
