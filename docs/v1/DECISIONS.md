@@ -31,6 +31,10 @@ with date and source. Details live in the linked docs; do not copy them here.
 | V1 pricing: service fee 3 MAD per order; delivery fee `round_half_up(min(25, max(10, 8 + 1.5 × road km)))` from the order's kitchen (server-side road distance, no straight-line fallback); menu prices TTC; TVA never added at checkout; total = products + service + delivery = cash due. Applied as data (pricing row), not code | Owner proposal, 2026-11-07 ([V1_PRICING_SPECIFICATION.md](V1_PRICING_SPECIFICATION.md)) |
 | No minimum order in V1 (not approved; removed from the pricing model) | Owner proposal, 2026-11-07 |
 | Restaurant TVA 10 % is a **proposal pending the accountant**; the service- and delivery-fee tax classifications are pending and have no rate; checkout stays blocked until they are approved | Owner proposal, 2026-11-07 |
+| First qualifying order: service fee 0 and delivery fee 0; later orders: 3 MAD service fee + road-distance delivery fee. Qualifying = the server's first-order rule (cancelled orders do not use it), never a client flag | Owner brief "Product detail, customization & checkout", 2026-11-07 ([spec §8](V1_PRICING_SPECIFICATION.md)) |
+| Product page with meal choices configured in the database (required/optional, paid extras); the same meal with other choices is another cart line | same |
+| Checkout steps: confirmed delivery address (a position only suggests it), phone verified by a WhatsApp code, server-priced summary with promo code, "Confirmer la commande" (cash on delivery only); the final total is shown before confirming and checked by the server | same |
+| Popularity messages only from real orders (distinct customers who received the meal); no fake urgency, scarcity or reviews | same |
 
 ## Proposed, not approved
 | Proposal | Where |
@@ -98,7 +102,7 @@ with date and source. Details live in the linked docs; do not copy them here.
 | 34 | Authorize applying `20261105120000_v1_order_workflow.sql` to `loption-mobile` (after the account-deletion migration) | H12 |
 | 35 | ~~Kitchen routing~~ — decided 2026-11-06: one kitchen (Kitchen A) at launch; each delivery zone names its kitchen when more open | F3 |
 | 36 | Authorize applying `20261106120000_v1_create_order.sql` (after #34) and `20261107120000_v1_delivery_zones.sql`, then approve pricing (H1–H3) and open checkout | H4, F3 |
-| 37 | Authorize applying `20261108120000_v1_pricing_engine.sql` (after #36); then insert Kitchen A's pricing row (needs #41) and deploy `quote-delivery` with its key (#42) | H1, H4 |
+| 37 | Authorize applying `20261108120000_v1_pricing_engine.sql` (after #36) and `20261109120000_v1_checkout_experience.sql`; then insert Kitchen A's pricing row (needs #41) and deploy `quote-delivery` with its key (#42) | H1, H4 |
 | 38 | Accountant: TVA rate of restaurant food (10 % proposed; category `restaurant_food`, pending) and whether other product categories (drinks, packaged goods) are needed | H3 |
 | 39 | Accountant: tax classification and rate of the **service fee** (category `service_fee`, no rate) | H2, H3 |
 | 40 | Accountant: tax classification and rate of the **delivery fee** (category `delivery_fee`, no rate); and whether receipts must show the TVA breakdown | H1, H3 |
@@ -108,3 +112,9 @@ with date and source. Details live in the linked docs; do not copy them here.
 | 44 | Quote validity: 15 minutes (implemented); a per-customer limit on new quotes (each costs one Geocoding + one Routes call; not built) | H1 |
 | 45 | Delivery radius and profitability: no maximum distance exists (the 25 MAD cap is not a radius); a profile set to Casablanca can be quoted up to 200 km for 25 MAD. Decide a maximum road distance or districts (see #7) | F3, H1 |
 | 46 | First-order free delivery now waives a distance-based fee (up to 25 MAD): confirm (see #2); driver commission (15 % of the delivery fee in the driver screens) unchanged (see #11) | G, H1 |
+| 47 | WhatsApp Business Platform: verified business, sending number, approved French authentication template; Edge Function secrets `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_OTP_TEMPLATE`. Until then no number can be verified, so no order can be placed. Confirm that a verified phone is mandatory | H4, B |
+| 48 | "Qualifying" first order = existing rule: any order not cancelled/rejected uses the benefit (also a delivered order whose cash payment failed, and a still-pending first order). Confirm | G1–G3 |
+| 49 | Promo codes: once per customer; products only (fees excluded); stacking with the first-order benefit set per code; no code defined yet. Accountant: a discount reduces the lines' taxable amount (implemented proportionally) | G3, H3 |
+| 50 | Meal descriptions and choices must be entered per meal (no admin screen yet; admins may write them through the API); choice prices are extras ≥ 0 (a removal never lowers the price) | I |
+| 51 | Popularity shown from 10 customers who received the meal (counter orders without an account are not counted); wording « Déjà commandé par N clients » | I |
+| 52 | Phone code parameters: 6 digits, 10 minutes, 5 attempts, 1 code per minute, 5 per hour per customer and per number; Moroccan mobiles (06/07) only, landlines refused | H4 |

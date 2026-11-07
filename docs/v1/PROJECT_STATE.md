@@ -3,7 +3,12 @@
 Update this file incrementally when the state changes. Last verified: 2026-11-03 (production hardening: Android release build, all harnesses, hosted read-only checks).
 
 ## Current branch
-- **Latest: `claude/v1-pricing-engine`** (local commits, **not pushed**) = `claude/v1-delivery-zones` + the V1 pricing
+- **Latest: `claude/v1-checkout-experience`** (local commits, **not pushed**) = `claude/v1-not-done-yet` + product page
+  with meal choices, cart lines, step checkout (confirmed address, WhatsApp-verified phone, promo code, server-priced
+  summary, total checked by the server), first order free of service and delivery fees
+  (`20261109120000_v1_checkout_experience.sql` and `phone-otp`, **not applied / not deployed**; checkout still closed).
+  Evidence E-36; spec `V1_PRICING_SPECIFICATION.md` §8; open DECISIONS #47–#52.
+- Previous: `claude/v1-pricing-engine` (pushed) = `claude/v1-delivery-zones` + the V1 pricing
   engine (`V1_PRICING_SPECIFICATION.md`; `20261108120000_v1_pricing_engine.sql`, **not applied**): 3 MAD service fee,
   road-distance delivery fee from the order's kitchen (`quote-delivery` Edge Function, not deployed, fail closed), TVA
   by tax category (all pending the accountant, so `create_order()` refuses), no minimum order, full order snapshot. Cart,
@@ -38,7 +43,7 @@ Update this file incrementally when the state changes. Last verified: 2026-11-03
   `c35da39` and `claude/v1-activity-tracking-docs` before the last docs fix: the ruleset blocks pushes to existing
   branches, so each follow-up is pushed as a new branch.
 - `main` is still `0cb0fe0` (initial commit). Nothing is merged.
-- Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md` (latest: E-27 to E-35).
+- Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md` (latest: E-27 to E-36).
 - Everything still open (keys, decisions, hosted, tests, legal) in one place: `NOT_DONE_YET.md` (2026-11-07).
 - **Hosted project `loption-mobile` (`teppcfnpkoxkudajnvad`) has all five V1 migrations since 2026-11-02** (owner-approved;
   initial admin `e898d986-…`; evidence E-22). Branch `claude/v1-rollout-loption-mobile` holds the admin-id commit.

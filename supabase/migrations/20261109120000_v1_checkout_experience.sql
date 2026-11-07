@@ -7,7 +7,7 @@
 -- Depends on 20261108120000_v1_pricing_engine.sql. The order workflow
 -- migration is not touched. Rollback: supabase/rollback/
 -- v1_checkout_experience_rollback.sql (archiving). Specification:
--- docs/v1/V1_PRICING_SPECIFICATION.md (§9 checkout).
+-- docs/v1/V1_PRICING_SPECIFICATION.md (§8 checkout).
 --
 -- Owner rules applied (brief of 2026-11-07, "Product detail, customization
 -- and checkout"):

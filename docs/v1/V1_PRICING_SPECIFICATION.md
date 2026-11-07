@@ -9,15 +9,16 @@ concurrency, regressions, rollback), Edge Function `supabase/functions/quote-del
 ## 1. What the customer pays
 
 ```
-total (cash on delivery) = products subtotal TTC + service fee + delivery fee
+total (cash on delivery) = products subtotal TTC (incl. choices) − promo discount + service fee + delivery fee
 ```
 
 | Part | Rule | Source of truth |
 |---|---|---|
 | Products | Menu prices are **TTC** (TVA included). Line = unit price × quantity | `meals.price`, read by `create_order()` |
-| Service fee | **3 MAD**, fixed, once per order | the kitchen's approved `pricing_policies` row |
+| Service fee | **0 MAD on the first qualifying order, then 3 MAD** per order (owner, 2026-11-07, §8) | the kitchen's approved `pricing_policies` row |
 | Delivery fee | `D = round_half_up(min(25, max(10, 8 + 1.5 × d)))`, d = road distance in km from the order's kitchen | `delivery_fee_v1()` + the server's road-distance quote |
-| First order | free delivery (existing offer, unchanged): the delivery fee becomes 0, the discount is recorded | `apply_first_order_offer()` |
+| First order | service fee 0 and delivery fee 0; both waivers recorded on the order (§8) | `apply_first_order_offer()` + `create_order()` |
+| Promo code | discount on the products, by the code's own rules (§8) | `promotions` row of the code |
 | TVA | never added at checkout; broken down inside the amounts (HT + TVA = TTC) | `tax_split()` + `tax_categories` |
 | Minimum order | **none** (not approved, removed) | — |
 
@@ -163,6 +164,18 @@ Accountant:
 4. Whether any menu item needs another category (drinks, packaged goods), and its rate.
 5. Whether a TVA breakdown must appear on the customer's receipt or invoice (not built).
 
+Owner — checkout experience (§8):
+- WhatsApp Business Platform account, verified business, sending number and an approved French authentication template;
+  secrets `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_OTP_TEMPLATE`. Until then no customer can order
+  (a verified phone is required): confirm that the phone must be verified.
+- "Qualifying order": the existing rule (any order not cancelled or rejected uses the benefit, including a delivered order
+  whose cash payment failed, and a pending first order). Confirm.
+- Promo codes: once per customer, products only (not fees), stacking per code; TVA of a discount reduces the lines'
+  taxable amount (accountant). No code is defined.
+- Choices and descriptions must be entered per meal (no admin screen yet; admins may write them through the API).
+- Popularity shown from 10 customers; counter orders without an account are not counted.
+- Code parameters: 6 digits, 10 minutes, 5 attempts, 1 per minute, 5 per hour.
+
 Owner:
 6. Kitchen A's dispatch coordinates (origin of every distance).
 7. Routing provider and key (Google Routes + Geocoding proposed; billing account), and travel mode (`DRIVE` used; a
@@ -176,7 +189,46 @@ Owner:
 12. First-order free delivery now waives a distance-based fee (up to 25 MAD): confirm (DECISIONS #2).
 13. Driver commission (today 15 % of the delivery fee in the driver screens) is not changed by this work (DECISIONS #11).
 
-## 8. Tests
+## 8. Checkout experience (20261109120000_v1_checkout_experience.sql, not applied)
+
+Owner brief of 2026-11-07 (product page, customization, checkout). Harness `run_v1_checkout_experience.sh`.
+
+**One computation.** `checkout_price()` prices a cart for both `checkout_preview()` (what the customer sees) and
+`create_order()` (what is charged). The app sends the total it displayed; `create_order()` refuses with 40001 if its own
+total differs (e.g. the first-order benefit was just used by another order), so the customer always confirms the amount
+they pay.
+
+**Choices.** `meal_option_groups` (name, minimum and maximum choices, active) and `meal_options` (name, TTC extra ≥ 0,
+available) per meal. The server checks that every choice belongs to an active group of that meal, that each group's
+minimum/maximum is met, and that the same meal with the same choices is not listed twice (other choices = another line).
+Line TTC = (meal price + extras) × quantity. Removals are free choices. No choice exists until the kitchen enters them.
+
+**First qualifying order.** Exactly the existing first-order offer rule (`first_order_offer_status_for`): the account has
+no order outside the release statuses (cancelled, rejected) and the offer is active. Then service fee 0 and delivery fee
+0, recorded as `service_fee_before_discount/service_fee_discount` and `delivery_fee_before_discount/delivery_discount`.
+Cancelling that order releases the benefit. Two first orders placed at the same time: one gets it, the other is refused
+(total changed). Owner example: 65 + 35 at 5 km → first order **100**, second order 100 + 3 + 16 = **119** (SQL P10, O22,
+O23).
+
+**Promo codes.** A code is a `promotions` row (`audience = 'code'`, upper-case code) carrying its own rules: active,
+start/end, minimum products subtotal, global limit (`max_redemptions`), applicable meals, `percent_off` or `amount_off`,
+cap (`max_discount`), and whether it combines with the first-order benefit. Once per customer; cancelling the order
+releases it. The discount applies to products only (never fees), is shared over the applicable lines in proportion (last
+line takes the remainder), and TVA is computed on the net line amounts. Codes are checked by `checkout_preview()` (every
+refused code is counted; 10 in 15 minutes stop checks for 15 minutes); `create_order()` accepts only a code that passed a
+check in the last 30 minutes. No code exists; owners create them as role postgres (audited).
+
+**Phone.** A Moroccan mobile (06/07, normalised to +2126/7XXXXXXXX) verified by a 6-digit WhatsApp code: issued by the
+database (one per minute, 5 per hour per customer and per number, 10-minute validity, 5 attempts, only the hash stored),
+sent by the `phone-otp` Edge Function (WhatsApp Business Cloud API, approved authentication template), checked by
+`phone_otp_verify()`. Without WhatsApp credentials no code is sent and no number can be verified. `create_order()` requires
+a verified number and copies it to `orders.delivery_phone` (read by the assigned driver; kitchen and cashier also read the
+order row, DECISIONS #31).
+
+**Popularity.** `meal_popularity()` = distinct customers who received the meal (orders delivered, or served at the
+counter). The app shows it from 10 customers ("Déjà commandé par 37 clients", "plus de 120") and hides it otherwise.
+
+## 9. Tests
 
 `bash supabase/tests/run_v1_pricing_engine.sh` (Docker): generated blocks; refusals (no zones migration, wrong role,
 weakened monitor, existing pricing rows, a tax category approved inside the migration); migration (monitor unchanged,

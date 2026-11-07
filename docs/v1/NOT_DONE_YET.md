@@ -40,6 +40,7 @@ Kitchen A), pricing engine (3 MAD service fee, road-distance delivery fee, TVA b
 | 16 | App Store Connect API key | `eas submit` iOS | App Store Connect › Integrations | EAS / password manager | Automated iOS submission |
 | 17 | Google Play service-account JSON | `eas submit` Android | Play Console › API access | EAS / password manager | Automated Play submission |
 | **18** | **`ROUTING_API_KEY` (new)** | Delivery distance: Google Geocoding + Routes, server side | Google Cloud (billing on; key restricted to those two APIs) | **Supabase Edge Function secret only** | Delivery quotes, so every order (#42) |
+| **19** | **`WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_OTP_TEMPLATE` (new)** | Phone verification by WhatsApp code (`phone-otp`) | Meta Business Manager › WhatsApp Business Platform (verified business, number, approved French authentication template) | **Supabase Edge Function secrets only** | Phone verification, so every order (#47) |
 
 Not keys but required declarations: HealthKit capability (if Apple Health stays), Play Health Connect declaration (if
 kept), Play foreground-service (location) declaration with demo video, App Store background-location justification
@@ -54,6 +55,8 @@ kept), Play foreground-service (location) declaration with demo video, App Store
 - Other product categories (drinks, packaged goods) and their rates (#38).
 
 ### Owner — pricing, delivery and orders
+- Checkout experience: WhatsApp provider (#47), first-order "qualifying" rule (#48), promo code rules (#49), meal
+  choices and descriptions to enter (#50), popularity threshold (#51), phone code parameters (#52).
 - Kitchen A's dispatch coordinates, needed for its pricing row (#41).
 - Routing provider, billing and key; travel mode (#42).
 - Delivery destination: typed address geocoded by the server (built) or the map pin (#43).
@@ -89,6 +92,8 @@ Every item needs written owner approval and a backup first.
 | `20261105120000_v1_order_workflow.sql` | Local only (#34) |
 | `20261106120000_v1_create_order.sql`, `20261107120000_v1_delivery_zones.sql` | Local only (#36) |
 | `20261108120000_v1_pricing_engine.sql` | Local only (#37) |
+| `20261109120000_v1_checkout_experience.sql` | Local only (#37) |
+| Edge Function `phone-otp` | Not deployed (needs WhatsApp secrets, key #19) |
 | Tax approvals, Kitchen A pricing row | Not created (needs #38–#41) |
 | Edge Function `quote-delivery` | Not deployed (needs key #18) |
 | Edge Function `dispatch-notifications` + scheduler | Not deployed (needs #8, push keys) |
@@ -97,7 +102,8 @@ Every item needs written owner approval and a backup first.
 ## 4. Development work remaining
 
 - **Kitchen and cashier screens** — only customer, driver, admin and partner apps exist; the admin orders screen acts as
-  cashier.
+  cashier. Without a kitchen screen an order cannot move past « confirmed ».
+- **Admin screen for meal choices and descriptions** (#50).
 - **Order notifications** — cashier on new order, kitchen on confirmation, driver on ready, customer on pickup and
   delivery (#32).
 - **Open checkout** — switch `CHECKOUT_OPEN` only after the staging lifecycle walkthrough (H10, G8).
