@@ -39,6 +39,7 @@ Update this file incrementally when the state changes. Last verified: 2026-11-03
   branches, so each follow-up is pushed as a new branch.
 - `main` is still `0cb0fe0` (initial commit). Nothing is merged.
 - Results are in the evidence log of `REMAINING_SETUP_AND_RELEASE_TASKS.md` (latest: E-27 to E-35).
+- Everything still open (keys, decisions, hosted, tests, legal) in one place: `NOT_DONE_YET.md` (2026-11-07).
 - **Hosted project `loption-mobile` (`teppcfnpkoxkudajnvad`) has all five V1 migrations since 2026-11-02** (owner-approved;
   initial admin `e898d986-…`; evidence E-22). Branch `claude/v1-rollout-loption-mobile` holds the admin-id commit.
 
