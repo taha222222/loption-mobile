@@ -3,7 +3,14 @@
 Update this file incrementally when the state changes. Last verified: 2026-11-03 (production hardening: Android release build, all harnesses, hosted read-only checks).
 
 ## Current branch
-- **Latest: `claude/v1-order-lifecycle-foundation`** = `claude/v1-claude-skills` + Milestone 1 (shared order lifecycle
+- **Latest: `claude/v1-cashier-orders`** = `claude/v1-order-lifecycle-foundation` + Milestone 2, the cashier order
+  workflow (local, **no migration**): `app/cashier/` (queue « À confirmer / En cours / Terminées », order with lines,
+  choices, note, verified phone, address, server amounts and COD state, history; confirm and cancel with a mandatory
+  reason through `order_confirm` / `order_cancel`), cashier routing from `staff_roles` (`user_profiles.role` not
+  trusted), admin access via « CASHIER QUEUE ». No payment, driver or kitchen action; confirmation never marks paid.
+  New harness `run_v1_cashier_orders.sh`. Open: #59 migration numbering, #60 admin edit of line notes, #61 customer
+  name, #62 kitchen read scope. Evidence E-39.
+- Previous: `claude/v1-order-lifecycle-foundation` = `claude/v1-claude-skills` + Milestone 1 (shared order lifecycle
   foundation): `20261110120000_v1_order_lifecycle_hardening.sql` (**not applied**) — a workflow order is never deleted
   (admin, service_role), its timeline is never rewritten or deleted, only account deletion (as `postgres`) detaches the
   customer, the staff cancellation reason is in the audit row. Lifecycle, statuses and transitions unchanged; new

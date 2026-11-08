@@ -47,6 +47,22 @@ and never changed or deleted (`order_status_updates_guard`); only account deleti
 the customer; the audit row of a cancellation carries the reason. Harness: `supabase/tests/run_v1_order_lifecycle.sh`
 (21 SQL tests incl. all 64 status × action combinations, concurrency, regressions, rollback).
 
+## Cashier screens (`app/cashier/`, Milestone 2; no migration)
+- Who: an active `staff_roles` row `cashier` (routing in `src/stores/authStore.ts`; `user_profiles.role` is not
+  trusted) and admins (button « CASHIER QUEUE » on the admin orders screen). Customers and other roles are sent back
+  to their own screens; the database decides what each account reads and does.
+- Reads (`src/services/cashierApi.ts`): workflow orders of the tab with explicit columns (no `user_id`,
+  `client_request_id` or tax breakdown), the lines (meal, quantity, choices, note, line total), the timeline. Rows come
+  from the existing policies (`orders_cashier_read`: own kitchen; `staff_admin_all_orders`).
+- Actions: `order_confirm` and `order_cancel` (reason 3–300 characters, confirmed in a dialog) through
+  `orderWorkflowApi`; buttons from the shared transition table. No payment, driver or kitchen action; confirmation
+  never marks the order paid. Double taps send one request; `unchanged`, refusals and state changes are explained and
+  the order is reloaded.
+- Updates: Realtime on `orders` and `order_status_updates` (best effort), refetch after each action, on focus and on
+  pull-to-refresh / « Actualiser ».
+- Tests: `supabase/tests/run_v1_cashier_orders.sh` (19 SQL tests with the app's own column lists, 4 races),
+  `__tests__/cashierOrders.test.ts`, `__tests__/cashierScreens.test.tsx`, the cashier part of the e2e journey.
+
 ## What the database refuses whatever the client does
 
 - A direct `UPDATE`/`INSERT` of a workflow order's state, driver, kitchen, payment or content — by a customer, staff,
@@ -120,8 +136,8 @@ select '<city_key>', '<City name>', id from public.kitchens where code = '<kitch
 - Approved taxes (DECISIONS #38–#40), Kitchen A's pricing row and routing key (#41, #42), and the migrations applied to
   `loption-mobile` (#34, #36, #37); then `CHECKOUT_OPEN`.
 - Limits inside Casablanca (districts or distance from Kitchen A) are not decided (DECISIONS #7); the zone is the city.
-- Kitchen and cashier screens: this repository has customer, driver, admin and partner apps only; the admin orders
-  screen acts as cashier meanwhile.
+- Kitchen screens: none yet (cashier screens exist since Milestone 2; driver assignment and payment records are still
+  on the admin orders screen).
 - Order notifications (cashier on new order, kitchen on confirmation, driver on ready, customer on pickup/delivery)
   (DECISIONS #32).
 - Applying the migration to `loption-mobile` (owner authorization; DECISIONS #34).

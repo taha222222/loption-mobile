@@ -29,5 +29,7 @@ Per `PROJECT_STATE.md`: the hosted project `loption-mobile` has Phase 1C, the on
 standalone-tracking migrations. **Not applied to hosted:** account deletion (`20261104…`), order workflow (`20261105…`),
 create_order (`20261106…`), delivery zones (`20261107…`), pricing engine (`20261108…`), checkout experience (`20261109…`),
 order lifecycle hardening (`20261110…`).
+Version numbers `20261109…` and `20261110…` are dated after the day they were written (2026-11-08): any new migration
+must sort after `20261110120000`, and renumbering before the first hosted application is an owner decision (#59).
 Everything about the delivery order workflow below is therefore **local only** until the owner approves applying it
 (DECISIONS #23, #34, #36, #37). Checkout in the app is closed (`src/checkout/checkoutAvailability.ts`, `CHECKOUT_OPEN = false`).

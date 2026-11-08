@@ -7,7 +7,9 @@ description: L'OPTION cashier and money side — order confirmation, cancellatio
 
 ## Current state (verified 2026-11-08)
 - Cashier role: `staff_roles.role = 'cashier'`, scoped to one kitchen; admins act as cashier everywhere
-  (`order_staff_can`). **No cashier screen**: `app/(admin)/orders.tsx` performs confirm, assign, cancel, payment.
+  (`order_staff_can`). Cashier screens `app/cashier/` (Milestone 2, local): pending queue, order detail, confirm,
+  cancel with reason; reads in `src/services/cashierApi.ts`, rules in `src/cashier/cashierOrders.ts`. Driver
+  assignment and payment records are still only on `app/(admin)/orders.tsx`.
 - Implemented (**local only**, `20261105120000_v1_order_workflow.sql`):
   - `order_confirm` — pending → confirmed; payment stays `pending`.
   - `order_cancel` — until `ready`, reason ≥ 3 characters.
@@ -39,6 +41,7 @@ Cashier screens, payment records, refunds, cash counts, daily closing, financial
    exact amount due shown.
 
 ## Required tests
+`supabase/tests/run_v1_cashier_orders.sh`, `__tests__/cashierOrders.test.ts`, `__tests__/cashierScreens.test.tsx`.
 SQL: confirmation leaves payment pending; payment only after delivery; allowed payment transitions only; other kitchen
 refused; audit rows (in `run_v1_order_workflow.sh`). For reconciliation (when decided): totals per driver/day equal
 the sum of delivered paid orders; discrepancies recorded, never overwritten; concurrency of two cashiers.

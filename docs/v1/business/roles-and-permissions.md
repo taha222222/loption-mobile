@@ -28,6 +28,10 @@ claims, `user_profiles.role/is_admin` or client state. Roles are granted/revoked
 | Delete a workflow order, edit/delete its timeline | ✘ | ✘ | ✘ | ✘ | ✘ (guard, `20261110…`) | ✘ |
 | Detach the customer from an order | via account deletion only | ✘ | ✘ | ✘ | ✘ (`20261110…`) | ✘ |
 
+Screens (local): cashier → `app/cashier/` (queue, confirm, cancel with reason; Milestone 2); admin → `app/(admin)` and
+the cashier queue; driver → `app/(driver)`; kitchen staff and support → no screens (customer app). The cashier sees the
+order's verified phone and delivery address, not the customer's name or account (#61).
+
 Confirmed by owner (2026-11-05): cashier confirms; cashier/admin assigns drivers; customer cancels while pending;
 staff cancel until ready with a reason; one active staff role per user; kitchen scoping kept.
 
