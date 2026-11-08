@@ -117,6 +117,8 @@ else
     && pass "V1 pricing engine migration applied" || { fail "pricing engine migration: $(tail -3 "$OUT/pricing.log")"; exit 1; }
   q postgres -f "$ROOT/supabase/migrations/20261109120000_v1_checkout_experience.sql" >"$OUT/checkout.log" 2>&1 \
     && pass "V1 checkout experience migration applied" || { fail "checkout experience migration: $(tail -3 "$OUT/checkout.log")"; exit 1; }
+  q postgres -f "$ROOT/supabase/migrations/20261110120000_v1_order_lifecycle_hardening.sql" >"$OUT/lifecycle.log" 2>&1 \
+    && pass "V1 order lifecycle hardening applied" || { fail "order lifecycle hardening: $(tail -3 "$OUT/lifecycle.log")"; exit 1; }
   [ "$(qa "select count(*) from public.containment_violations() where category in ('drift','containment')")" = "0" ] \
     && pass "containment_violations() = 0" || fail "containment violations present"
 fi

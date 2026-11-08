@@ -49,6 +49,7 @@ PRICING_MIGRATION = ROOT / "supabase/migrations/20261108120000_v1_pricing_engine
 PRICING_ROLLBACK = ROOT / "supabase/rollback/v1_pricing_engine_rollback.sql"
 CHECKOUT_MIGRATION = ROOT / "supabase/migrations/20261109120000_v1_checkout_experience.sql"
 CHECKOUT_ROLLBACK = ROOT / "supabase/rollback/v1_checkout_experience_rollback.sql"
+LIFECYCLE_ROLLBACK = ROOT / "supabase/rollback/v1_order_lifecycle_hardening_rollback.sql"
 BEGIN, END = "-- BEGIN GENERATED MONITOR\n", "-- END GENERATED MONITOR\n"
 
 # Reviewed definitions added by the nutrition migration, as PostgreSQL 17
@@ -298,6 +299,12 @@ def main() -> int:
     rendered[CHECKOUT_ROLLBACK] = render_string(
         checkout_rb,
         function_from(PRICING_MIGRATION, "order_items_tax_snapshot_guard") + function_from(PRICING_MIGRATION, "create_order"),
+        FN_BEGIN, FN_END)
+    # The order lifecycle hardening changes no monitor; its rollback restores the
+    # order workflow migration's guard and transition function.
+    rendered[LIFECYCLE_ROLLBACK] = render_string(
+        LIFECYCLE_ROLLBACK.read_text(),
+        function_from(ORDER_MIGRATION, "orders_workflow_guard") + function_from(ORDER_MIGRATION, "order_apply_transition"),
         FN_BEGIN, FN_END)
     check = "--check" in sys.argv
     stale = []
