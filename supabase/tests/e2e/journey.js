@@ -494,6 +494,102 @@ let sink = null; // SMTP sink process, always stopped on exit
     await shot(page2, name);
   }
 
+  // ------------------------------------------------ cashier order management
+  // A cashier account (staff role granted by the owner, as postgres here),
+  // pending workflow orders as create_order leaves them (checkout stays
+  // closed), then confirm / cancel through the cashier screens.
+  const kitchenA = sql(`select id from public.kitchens where code = 'A'`);
+  const cashierEmail = `caisse+${stamp}@loption.test`;
+  const created = await fetch(REST.replace('/rest/v1', '/auth/v1') + '/admin/users', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${SERVICE_JWT}`, apikey: SERVICE_JWT, 'content-type': 'application/json' },
+    body: JSON.stringify({ email: cashierEmail, password, email_confirm: true }),
+  });
+  const cashierId = (await created.json()).id;
+  check(created.status < 300 && !!cashierId, `cashier account created in Auth (${created.status})`);
+  sql(`insert into public.staff_roles (user_id, role, kitchen_id) values ('${cashierId}', 'cashier', '${kitchenA}')`);
+  const newOrder = (num) =>
+    sql(`select set_config('loption.order_service', 'on', false);
+         with o as (insert into public.orders (order_number, status, workflow_version, kitchen_id, payment_status, payment_method, user_id,
+                      subtotal, delivery_fee, platform_service_fee, total, delivery_address, delivery_phone)
+                    values ('${num}', 'pending', 1, '${kitchenA}', 'pending', 'cash', '${userId}', 65, 6, 3, 74, '12 Rue Test, Casablanca', '+212612345678')
+                    returning id),
+              i as (insert into public.order_items (order_id, meal_id, meal_name, quantity, price, notes, options, line_total_ttc)
+                    select id, '00000000-0000-0000-0000-00000000aa01', 'Test bowl', 2, 30, 'sans oignon',
+                           '[{"group": "Sauce", "name": "Harissa", "price": 0}]'::jsonb, 65 from o)
+         select id from o`).split('\n').pop();
+  const orderC1 = newOrder('E2E-C1');
+  const orderC2 = newOrder('E2E-C2');
+
+  // A customer never reaches the cashier screens.
+  await page2.goto(WEB + '/cashier');
+  await page2.waitForTimeout(2500);
+  check(!new URL(page2.url()).pathname.startsWith('/cashier') && (await page2.getByText('E2E-C1').count()) === 0,
+    `customer opening /cashier is sent back to the customer app (${new URL(page2.url()).pathname})`);
+
+  const ctx3 = await browser.newContext({ viewport: { width: 390, height: 844 }, timezoneId: 'Africa/Casablanca' });
+  const page3 = await newPage(ctx3);
+  current = page3;
+  await page3.goto(WEB + '/login');
+  await page3.getByLabel('E-mail', { exact: true }).fill(cashierEmail);
+  await page3.getByLabel('Mot de passe', { exact: true }).fill(password);
+  await page3.getByText('Se connecter', { exact: true }).click();
+  await waitForText(page3, 'E2E-C1', 20000);
+  check(new URL(page3.url()).pathname === '/cashier' && (await page3.getByText('E2E-C2').count()) === 1,
+    `cashier signs in and lands on the pending queue (${new URL(page3.url()).pathname})`);
+  check((await page3.getByText(/^74\s?MAD$/).count()) >= 2 && (await page3.getByText(/Paiement à la livraison \(espèces\) · à encaisser/).count()) >= 2,
+    'queue: server totals and cash on delivery, nothing marked paid');
+  await shot(page3, '22-cashier-queue');
+
+  await page3.getByLabel(/^Commande E2E-C1,/).click();
+  await waitForText(page3, '2 × Test bowl', 20000);
+  // The web stack keeps the queue in the page: count what is visible.
+  const visible = (text) => page3.getByText(text, { exact: true }).filter({ visible: true }).count();
+  check((await visible('Sauce : Harissa')) === 1 && (await visible('Note du client : sans oignon')) === 1
+    && (await visible('+212612345678')) === 1 && (await visible('12 Rue Test, Casablanca')) === 1
+    && (await visible('Total à encaisser')) === 1,
+    'order: lines with choices and note, verified phone, address and server total shown');
+  await shot(page3, '23-cashier-order');
+  await page3.getByRole('button', { name: 'Confirmer la commande' }).filter({ visible: true }).click();
+  await waitForText(page3, 'Commande confirmée. Le paiement reste à encaisser à la livraison.', 15000);
+  check(sql(`select o.status || ':' || o.payment_status || ':' || (o.confirmed_at is not null) || ':' ||
+               (select count(*) from public.security_audit_log a where a.details ->> 'order_id' = o.id::text and a.action = 'order_confirmed' and a.actor_id = '${cashierId}')
+             from public.orders o where o.id = '${orderC1}'`) === 'confirmed:pending:true:1',
+    'confirmed by the cashier through order_confirm: payment still pending, server timestamp, audit row with the cashier');
+  check((await page3.getByRole('button', { name: 'Confirmer la commande' }).filter({ visible: true }).count()) === 0, 'after confirmation the confirm button is gone (no second request)');
+  await shot(page3, '24-cashier-confirmed');
+
+  await page3.getByLabel('Retour à la liste').filter({ visible: true }).click();
+  await waitForText(page3, 'E2E-C2', 15000);
+  await page3.waitForTimeout(1000);
+  check((await page3.getByText('E2E-C1').filter({ visible: true }).count()) === 0, 'the confirmed order left the pending queue');
+  await page3.getByLabel(/^Commande E2E-C2,/).filter({ visible: true }).click();
+  await waitForText(page3, '2 × Test bowl', 20000);
+  const cancelButton = page3.getByRole('button', { name: 'Annuler la commande' }).filter({ visible: true });
+  check(await cancelButton.isDisabled(), 'cancel is disabled until a reason is written');
+  const reasonField = page3.getByLabel('Motif de l’annulation').filter({ visible: true });
+  await reasonField.fill('ab');
+  check(await cancelButton.isDisabled(), 'a 2-character reason is not enough');
+  await reasonField.fill('Rupture de stock');
+  page3.once('dialog', (d) => d.accept());
+  await cancelButton.click();
+  await waitForText(page3, 'Commande annulée. Le motif est visible par le client.', 15000);
+  check(sql(`select status || ':' || cancel_reason || ':' || payment_status from public.orders where id = '${orderC2}'`) === 'cancelled:Rupture de stock:pending'
+    && sql(`select count(*) from public.order_status_updates where order_id = '${orderC2}' and status = 'cancelled' and message = 'Rupture de stock'`) === '1',
+    'cancelled with the reason through order_cancel: reason on the order and on the customer timeline');
+  await shot(page3, '25-cashier-cancelled');
+
+  // A new order while the queue is open (no Realtime service in this harness: the refresh button).
+  await page3.getByLabel('Retour à la liste').filter({ visible: true }).click();
+  await waitForText(page3, 'Aucune commande à confirmer', 15000);
+  newOrder('E2E-C3');
+  await page3.getByLabel('Actualiser').filter({ visible: true }).click();
+  await waitForText(page3, 'E2E-C3', 15000);
+  pass('a new pending order appears after a refresh (Realtime unavailable here: no error shown)');
+  await page3.getByText('Terminées', { exact: true }).filter({ visible: true }).click();
+  await waitForText(page3, 'E2E-C2', 15000);
+  pass('the cancelled order is listed under « Terminées »');
+
   check(pageErrors.length === 0, `no uncaught page errors${pageErrors.length ? ': ' + pageErrors.slice(0, 3).join(' | ') : ''}`);
   sink.kill();
   await browser.close();

@@ -24,6 +24,8 @@ export const BrandButton: React.FC<BrandButtonProps> = ({
     activeOpacity={0.85}
     onPress={onPress}
     disabled={disabled || loading}
+    accessibilityRole="button"
+    accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading }}
     style={[styles.base, variant === 'soft' ? styles.soft : styles.solid, disabled && styles.disabled, style]}
   >
     {loading ? (

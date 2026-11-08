@@ -42,6 +42,13 @@ const ROLE_HOME: Record<Exclude<UserRole, 'customer'>, { group: string; href: st
   admin: { group: '(admin)', href: '/(admin)' },
   driver: { group: '(driver)', href: '/(driver)' },
   collaborator: { group: '(collaborator)', href: '/(collaborator)' },
+  cashier: { group: 'cashier', href: '/cashier' },
+};
+
+// Groups a role may open besides its home: an admin also acts as cashier
+// (order_staff_can on the server), so the cashier queue is open to admins.
+const EXTRA_GROUPS: Partial<Record<UserRole, readonly string[]>> = {
+  admin: ['cashier'],
 };
 
 export function decideRoute(input: RouteInput): RouteDecision {
@@ -66,7 +73,8 @@ export function decideRoute(input: RouteInput): RouteDecision {
 
   if (input.role !== 'customer') {
     const home = ROLE_HOME[input.role];
-    return group === home.group ? { kind: 'allow' } : { kind: 'redirect', href: home.href };
+    if (group === home.group || (group !== undefined && EXTRA_GROUPS[input.role]?.includes(group))) return { kind: 'allow' };
+    return { kind: 'redirect', href: home.href };
   }
 
   if (input.profileStatus === 'error') return { kind: 'error', reason: 'profile' };

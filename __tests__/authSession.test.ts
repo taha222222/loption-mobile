@@ -108,6 +108,40 @@ describe('sign-in and role resolution', () => {
   });
 });
 
+describe('cashier role (public.staff_roles)', () => {
+  it('gives the cashier role from an active staff_roles row', async () => {
+    mockState.rows.staff_roles = () => ({ data: { role: 'cashier' }, error: null });
+    await useAuthStore.getState().signIn('c@x.ma', 'pw');
+    expect(useAuthStore.getState()).toMatchObject({ role: 'cashier', roleStatus: 'resolved' });
+    const call = mockSupabase.from.mock.calls.find(([t]) => t === 'staff_roles');
+    expect(call).toBeDefined();
+  });
+
+  it('never trusts user_profiles.role = cashier without a staff role (customer screens)', async () => {
+    mockState.rows.user_profiles = () => ({ data: { role: 'cashier', is_admin: false }, error: null });
+    await useAuthStore.getState().signIn('c@x.ma', 'pw');
+    expect(useAuthStore.getState().role).toBe('customer');
+  });
+
+  it('keeps other staff roles on their previous screens (no kitchen screens yet)', async () => {
+    mockState.rows.staff_roles = () => ({ data: { role: 'kitchen_staff' }, error: null });
+    await useAuthStore.getState().signIn('k@x.ma', 'pw');
+    expect(useAuthStore.getState().role).toBe('customer');
+  });
+
+  it('reports an error (not the customer app) when the staff role cannot be read', async () => {
+    mockState.rows.staff_roles = () => ({ data: null, error: { message: 'network down' } });
+    await useAuthStore.getState().signIn('c@x.ma', 'pw');
+    expect(useAuthStore.getState()).toMatchObject({ role: null, roleStatus: 'error' });
+  });
+
+  it('works on a server without staff_roles (older schema): previous rules', async () => {
+    mockState.rows.staff_roles = () => ({ data: null, error: { code: 'PGRST205', message: 'Could not find the table' } });
+    await useAuthStore.getState().signIn('c@x.ma', 'pw');
+    expect(useAuthStore.getState()).toMatchObject({ role: 'customer', roleStatus: 'resolved' });
+  });
+});
+
 describe('sign-out', () => {
   it('clears user-scoped state, realtime channels and location tracking', async () => {
     await useAuthStore.getState().signIn('a@x.ma', 'pw');

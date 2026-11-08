@@ -59,6 +59,7 @@ describe('decideRoute', () => {
     ['admin', '(admin)', '/(admin)'],
     ['driver', '(driver)', '/(driver)'],
     ['collaborator', '(collaborator)', '/(collaborator)'],
+    ['cashier', 'cashier', '/cashier'],
   ] as const)('keeps %s inside its own group', (role, group, href) => {
     expect(decideRoute({ ...base, role, group })).toEqual({ kind: 'allow' });
     expect(decideRoute({ ...base, role, group: '(app)' })).toEqual({ kind: 'redirect', href });
@@ -66,8 +67,18 @@ describe('decideRoute', () => {
     expect(decideRoute({ ...base, role, group: '(auth)' })).toEqual({ kind: 'redirect', href });
   });
 
+  it('opens the cashier queue to cashiers and admins only', () => {
+    expect(decideRoute({ ...base, role: 'cashier', group: 'cashier' })).toEqual({ kind: 'allow' });
+    expect(decideRoute({ ...base, role: 'admin', group: 'cashier' })).toEqual({ kind: 'allow' });
+    expect(decideRoute({ ...base, role: 'cashier', group: '(admin)' })).toEqual({ kind: 'redirect', href: '/cashier' });
+    expect(decideRoute({ ...base, role: 'cashier', group: '(driver)' })).toEqual({ kind: 'redirect', href: '/cashier' });
+    expect(decideRoute({ ...base, role: 'driver', group: 'cashier' })).toEqual({ kind: 'redirect', href: '/(driver)' });
+    expect(decideRoute({ ...base, role: 'collaborator', group: 'cashier' })).toEqual({ kind: 'redirect', href: '/(collaborator)' });
+    expect(decideRoute({ ...base, role: 'admin', group: undefined })).toEqual({ kind: 'redirect', href: '/(admin)' });
+  });
+
   it('keeps customers out of staff groups', () => {
-    for (const group of ['(admin)', '(driver)', '(collaborator)']) {
+    for (const group of ['(admin)', '(driver)', '(collaborator)', 'cashier']) {
       expect(decideRoute({ ...base, group })).toEqual({ kind: 'redirect', href: '/(app)' });
     }
   });

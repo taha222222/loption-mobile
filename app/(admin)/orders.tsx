@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { supabase } from '../../src/lib/supabase';
 import { Button } from '../../src/components/ui/Button';
 import { ASSIGNABLE_STATUSES, isWorkflowOrder, nextPayments, nextStatuses } from '../../src/orders/orderWorkflow';
@@ -163,8 +164,13 @@ export default function AdminOrders() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, styles.headerRow]}>
         <Text style={styles.title}>Orders</Text>
+        {/* The cashier queue (pending orders: confirm or cancel); an admin acts as cashier. */}
+        <TouchableOpacity style={styles.statusButton} onPress={() => router.push('/cashier')}
+          accessibilityRole="button" accessibilityLabel="Ouvrir la caisse">
+          <Text style={styles.statusButtonText}>CASHIER QUEUE</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Filter Chips */}
@@ -344,6 +350,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 8,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   title: {
     fontSize: 28,

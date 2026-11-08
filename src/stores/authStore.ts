@@ -7,8 +7,9 @@ import { clearOnboardingDraft } from './onboardingDraft';
 import { resetUserScopedState } from './sessionReset';
 import { useActivityStore } from './activityStore';
 import { useWorkoutStore } from './workoutStore';
+import { isMissingServerFeature } from '../lib/serverFeatures';
 
-export type UserRole = 'customer' | 'driver' | 'collaborator' | 'admin';
+export type UserRole = 'customer' | 'driver' | 'collaborator' | 'admin' | 'cashier';
 export type RoleStatus = 'idle' | 'loading' | 'resolved' | 'error';
 
 const KNOWN_ROLES: readonly UserRole[] = ['customer', 'driver', 'collaborator', 'admin'];
@@ -47,10 +48,21 @@ async function lookupRole(userId: string): Promise<UserRole> {
     throw profileError;
   }
 
-  if (profile) {
-    if (profile.role === 'admin' || profile.is_admin === true) return 'admin';
-    if (KNOWN_ROLES.includes(profile.role)) return profile.role as UserRole;
-  }
+  if (profile && (profile.role === 'admin' || profile.is_admin === true)) return 'admin';
+
+  // Cashier: an active row in public.staff_roles (staff_roles_self_read lets
+  // a user read their own row). Kitchen scope and every action are checked
+  // again by the server; this only picks the cashier screens.
+  const { data: staffRole, error: staffError } = await supabase
+    .from('staff_roles')
+    .select('role')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (staffError && !isMissingServerFeature(staffError)) throw staffError;
+  if (staffRole?.role === 'cashier') return 'cashier';
+
+  if (profile && KNOWN_ROLES.includes(profile.role)) return profile.role as UserRole;
 
   const { data: collaboratorData, error: collaboratorError } = await supabase
     .from('collaborators')
