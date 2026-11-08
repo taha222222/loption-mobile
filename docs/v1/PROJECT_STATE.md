@@ -3,7 +3,10 @@
 Update this file incrementally when the state changes. Last verified: 2026-11-03 (production hardening: Android release build, all harnesses, hosted read-only checks).
 
 ## Current branch
-- **Latest: `claude/v1-cart-checkout-redesign`** = `claude/v1-checkout-meal-fix` + redesigned « Mon panier » and
+- **Latest: `claude/v1-claude-skills`** = `claude/v1-cart-checkout-redesign` + project skills in `.claude/skills/`
+  (business logic, backend, order operations, kitchen, driver, cashier/finance, Expo app, QA; `loption-engineer` is now a
+  router), business source of truth `docs/v1/business/`, concise `CLAUDE.md`. Documentation only; no app or schema change.
+- Previous: `claude/v1-cart-checkout-redesign` = `claude/v1-checkout-meal-fix` + redesigned « Mon panier » and
   « Livraison et confirmation » screens (aligned prices, fees announced as calculated, « Continuer » / « Confirmer ma
   commande », COD block with the amount, focused layout without the tab bar, checkout draft kept when returning to the
   cart). No backend change; checkout still closed. Evidence E-37.

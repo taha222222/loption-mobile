@@ -28,7 +28,7 @@ with date and source. Details live in the linked docs; do not copy them here.
 | Delivery at launch: Casablanca only; a customer in another city keeps their address and is told delivery is not available in their city yet; other cities open later | Owner answer, 2026-11-06 |
 | One kitchen at launch: Kitchen A (serves the Casablanca zone) | Owner answer, 2026-11-06 |
 | Order notifications come in a later phase | Owner answer, 2026-11-06 |
-| V1 pricing: service fee 3 MAD per order; delivery fee `round_half_up(min(25, max(10, 8 + 1.5 × road km)))` from the order's kitchen (server-side road distance, no straight-line fallback); menu prices TTC; TVA never added at checkout; total = products + service + delivery = cash due. Applied as data (pricing row), not code | Owner proposal, 2026-11-07 ([V1_PRICING_SPECIFICATION.md](V1_PRICING_SPECIFICATION.md)) |
+| V1 pricing: service fee 3 MAD per order (0 on the first qualifying order: added by the owner brief later the same day, row below); delivery fee `round_half_up(min(25, max(10, 8 + 1.5 × road km)))` from the order's kitchen (server-side road distance, no straight-line fallback); menu prices TTC; TVA never added at checkout; total = products + service + delivery = cash due. Applied as data (pricing row), not code | Owner proposal, 2026-11-07 ([V1_PRICING_SPECIFICATION.md](V1_PRICING_SPECIFICATION.md)) |
 | No minimum order in V1 (not approved; removed from the pricing model) | Owner proposal, 2026-11-07 |
 | Restaurant TVA 10 % is a **proposal pending the accountant**; the service- and delivery-fee tax classifications are pending and have no rate; checkout stays blocked until they are approved | Owner proposal, 2026-11-07 |
 | First qualifying order: service fee 0 and delivery fee 0; later orders: 3 MAD service fee + road-distance delivery fee. Qualifying = the server's first-order rule (cancelled orders do not use it), never a client flag | Owner brief "Product detail, customization & checkout", 2026-11-07 ([spec §8](V1_PRICING_SPECIFICATION.md)) |
@@ -119,3 +119,8 @@ with date and source. Details live in the linked docs; do not copy them here.
 | 51 | Popularity shown from 10 customers who received the meal (counter orders without an account are not counted); wording « Déjà commandé par N clients » | I |
 | 52 | Phone code parameters: 6 digits, 10 minutes, 5 attempts, 1 code per minute, 5 per hour per customer and per number; Moroccan mobiles (06/07) only, landlines refused | H4 |
 | 53 | Several saved delivery addresses (home, work): today a customer has one address (`user_profiles.delivery_address`), which checkout shows and lets them correct. A list of addresses needs a new table and RLS; not built | F4 |
+| 54 | Kitchen acceptance/rejection: the lifecycle has none (cashier confirms or cancels). Should kitchen staff reject or flag "cannot prepare", and what happens then? (gap G2) | `business/order-lifecycle.md` |
+| 55 | Failed delivery (absent, refused, wrong address, unreachable): status, who records it, food, payment, first-order benefit (gap G3) | `business/exceptions.md` |
+| 56 | Drivers: one active delivery at a time? Must a driver be online to be assigned? (gap G5) | `business/delivery-and-cash.md` |
+| 57 | Kitchen capacity, opening hours, pausing a kitchen (gap G7) | `business/kitchen-assignment.md` |
+| 58 | Cash reconciliation: expected vs collected per driver, cash handover, daily closing, discrepancy approval, refund policy (only a `refunded` record exists) | `business/delivery-and-cash.md` |
