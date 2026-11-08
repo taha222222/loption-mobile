@@ -118,3 +118,4 @@ with date and source. Details live in the linked docs; do not copy them here.
 | 50 | Meal descriptions and choices must be entered per meal (no admin screen yet; admins may write them through the API); choice prices are extras ≥ 0 (a removal never lowers the price) | I |
 | 51 | Popularity shown from 10 customers who received the meal (counter orders without an account are not counted); wording « Déjà commandé par N clients » | I |
 | 52 | Phone code parameters: 6 digits, 10 minutes, 5 attempts, 1 code per minute, 5 per hour per customer and per number; Moroccan mobiles (06/07) only, landlines refused | H4 |
+| 53 | Several saved delivery addresses (home, work): today a customer has one address (`user_profiles.delivery_address`), which checkout shows and lets them correct. A list of addresses needs a new table and RLS; not built | F4 |
