@@ -1,340 +1,201 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Alert,
-} from 'react-native';
+// Mon panier: what is in the basket (one line per meal and set of choices),
+// the products subtotal (menu prices, TVA included) and the fees that are
+// calculated at checkout. The subtotal is never presented as the amount to
+// pay: service and delivery fees are computed by the server once the
+// delivery details are known.
+import React from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { theme } from '../../src/theme';
-import { QuantitySelector } from '../../src/components/ui/QuantitySelector';
-import { BrandButton, EmptyState, Screen, SurfaceCard, formatNumber } from '../../src/components/v2';
-import { useCartStore } from '../../src/stores/cartStore';
+import { BrandButton, EmptyState, IconButton, confirmAction, formatNumber } from '../../src/components/v2';
+import { Divider, PriceRow, SectionTitle, Thumbnail } from '../../src/components/checkout/OrderPieces';
+import { useCartStore, type CartItem } from '../../src/stores/cartStore';
 import { describeOptions, formatMad } from '../../src/menu/customization';
+import { cartTotals, FEE_PENDING_DELIVERY, FEE_PENDING_SERVICE, TVA_INCLUDED_NOTE } from '../../src/checkout/checkoutSummary';
 
 export default function CartScreen() {
-  const {
-    items,
-    updateQuantity,
-    removeItem,
-    updateNotes,
-    getTotalPrice,
-    getTotalCalories,
-    getTotalProtein,
-    getItemCount,
-  } = useCartStore();
-  const [notes, setNotes] = useState<Record<string, string>>({});
+  const items = useCartStore((s) => s.items);
+  const count = useCartStore((s) => s.getItemCount());
+  const totals = cartTotals(items);
 
-  const handleUpdateNotes = (id: string, text: string) => {
-    setNotes((prev) => ({ ...prev, [id]: text }));
-    updateNotes(id, text);
-  };
+  const clear = () =>
+    confirmAction('Vider le panier', 'Retirer tous les plats de votre panier ?', 'Vider', () => useCartStore.getState().clearCart());
 
-  const handleCheckout = () => {
-    if (items.length === 0) {
-      Alert.alert('Panier vide', 'Ajoutez des repas à votre panier');
-      return;
-    }
-    router.push('/(app)/checkout');
-  };
+  return (
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <View style={styles.header}>
+        <IconButton icon="arrow-back" label="Retour" onPress={() => router.back()} />
+        <Text style={styles.headerTitle} accessibilityRole="header">
+          {items.length ? `Mon panier (${count})` : 'Mon panier'}
+        </Text>
+        {items.length ? (
+          <TouchableOpacity onPress={clear} style={styles.clear} accessibilityRole="button" accessibilityLabel="Vider le panier">
+            <Text style={styles.clearText}>Vider</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.clear} />
+        )}
+      </View>
 
-  const header = (
-    <View style={styles.header}>
-      <TouchableOpacity onPress={() => router.back()} style={styles.iconButton} accessibilityLabel="Retour">
-        <Ionicons name="arrow-back" size={22} color={theme.colors.ink} />
-      </TouchableOpacity>
-      <Text style={styles.headerTitle} numberOfLines={1}>
-        {items.length === 0 ? 'Panier' : `Panier (${getItemCount()})`}
-      </Text>
       {items.length === 0 ? (
-        <View style={styles.iconButtonSpacer} />
-      ) : (
-        <TouchableOpacity
-          style={styles.clearButton}
-          onPress={() => Alert.alert(
-            'Vider le panier',
-            'Voulez-vous vraiment vider votre panier ?',
-            [
-              { text: 'Annuler', style: 'cancel' },
-              { text: 'Vider', style: 'destructive', onPress: () => useCartStore.getState().clearCart() },
-            ]
-          )}
-        >
-          <Text style={styles.clearText}>Vider</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-
-  if (items.length === 0) {
-    return (
-      <Screen>
-        {header}
         <EmptyState
-          icon="cart-outline"
+          icon="bag-handle-outline"
           title="Votre panier est vide"
-          message="Ajoutez des repas sains pour commencer"
+          message="Choisissez vos repas dans le menu."
           actionLabel="Voir le menu"
           onAction={() => router.push('/(app)/menu')}
         />
-      </Screen>
-    );
-  }
+      ) : (
+        <>
+          <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+            <View style={styles.card}>
+              {items.map((item, i) => (
+                <React.Fragment key={item.id}>
+                  {i > 0 ? <Divider /> : null}
+                  <CartLine item={item} />
+                </React.Fragment>
+              ))}
+              <TouchableOpacity onPress={() => router.push('/(app)/menu')} style={styles.addMore} accessibilityRole="button">
+                <Ionicons name="add" size={18} color={theme.colors.brand} />
+                <Text style={styles.addMoreText}>Ajouter d’autres plats</Text>
+              </TouchableOpacity>
+            </View>
 
-  return (
-    <Screen>
-      {header}
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        style={styles.content}
-        contentContainerStyle={styles.contentInner}
-      >
-        {items.map((item) => (
-          <SurfaceCard key={item.id} style={styles.cartItem}>
-            <View style={styles.itemTop}>
-              <View style={styles.itemInfo}>
-                <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
-                {item.options.length ? (
-                  <Text style={styles.itemOptions} testID={`cart-options-${item.id}`}>
-                    {describeOptions(item.options)}
-                  </Text>
-                ) : null}
-                <Text style={styles.itemMacros}>
-                  {`${formatNumber(item.calories)}\u00A0kcal · ${item.protein}\u00A0g protéines`}
+            <View style={styles.card}>
+              <SectionTitle>Récapitulatif</SectionTitle>
+              <PriceRow label="Sous-total produits" value={formatMad(totals.productsSubtotal)} testID="cart-subtotal" />
+              {totals.optionsTotal > 0 ? <PriceRow label="dont options" value={formatMad(totals.optionsTotal)} /> : null}
+              <PriceRow label="Frais de service" value={FEE_PENDING_SERVICE} pending />
+              <PriceRow label="Frais de livraison" value={FEE_PENDING_DELIVERY} pending />
+              <Text style={styles.note}>{TVA_INCLUDED_NOTE}</Text>
+              {totals.calories > 0 ? (
+                <Text style={styles.nutrition} testID="cart-nutrition">
+                  {`Apport estimé : ${formatNumber(totals.calories)} kcal · ${formatNumber(totals.protein)} g de protéines`}
                 </Text>
-              </View>
-              <Text style={styles.itemPrice}>{formatMad(Math.round(item.price * 100 * item.quantity) / 100)}</Text>
+              ) : null}
             </View>
+          </ScrollView>
 
-            <View style={styles.itemActions}>
-              <QuantitySelector
-                quantity={item.quantity}
-                onIncrease={() => updateQuantity(item.id, item.quantity + 1)}
-                onDecrease={() => updateQuantity(item.id, item.quantity - 1)}
-              />
-              <TouchableOpacity
-                onPress={() => router.push({ pathname: '/(app)/meal/[id]', params: { id: item.mealId, line: item.id } })}
-                style={styles.editButton}
-                accessibilityRole="button"
-                accessibilityLabel={`Modifier ${item.name}`}
-              >
-                <Text style={styles.editText}>Modifier</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => removeItem(item.id)}
-                style={styles.removeButton}
-                accessibilityLabel="Retirer"
-              >
-                <Ionicons name="trash-outline" size={18} color={theme.colors.error} />
-              </TouchableOpacity>
+          <View style={styles.footer}>
+            <View style={styles.footerTotal}>
+              <Text style={styles.footerLabel}>Sous-total</Text>
+              <Text style={styles.footerAmount}>{formatMad(totals.productsSubtotal)}</Text>
             </View>
+            <BrandButton title="Continuer" onPress={() => router.push('/(app)/checkout')} style={styles.cta} />
+          </View>
+        </>
+      )}
+    </SafeAreaView>
+  );
+}
 
-            <TextInput
-              style={styles.notesInput}
-              placeholder="Instructions spéciales..."
-              placeholderTextColor={theme.colors.inkFaint}
-              value={notes[item.id] ?? item.notes ?? ''}
-              onChangeText={(text) => handleUpdateNotes(item.id, text)}
-            />
-          </SurfaceCard>
-        ))}
-
-        <SurfaceCard style={styles.summary}>
-          <Text style={styles.summaryTitle}>Récapitulatif</Text>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Sous-total</Text>
-            <Text style={styles.summaryValue}>{formatMad(getTotalPrice())}</Text>
-          </View>
-          {/* Service and delivery fees come from the server at checkout (road
-              distance quote); the cart shows no fee of its own. */}
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Frais de service et livraison</Text>
-            <Text style={styles.summaryValue}>Calculés au paiement</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Calories totales</Text>
-            <Text style={styles.summaryValue}>{`${formatNumber(getTotalCalories())}\u00A0kcal`}</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Protéines totales</Text>
-            <Text style={styles.summaryValue}>{`${getTotalProtein()}\u00A0g`}</Text>
-          </View>
-          <View style={[styles.summaryRow, styles.totalRow]}>
-            <Text style={styles.totalLabel}>Total produits</Text>
-            <Text style={styles.totalValue}>{formatMad(getTotalPrice())}</Text>
-          </View>
-        </SurfaceCard>
-      </ScrollView>
-
-      <View style={styles.footer}>
-        <BrandButton
-          title="Continuer vers le paiement"
-          onPress={handleCheckout}
-        />
+function CartLine({ item }: { item: CartItem }) {
+  const updateQuantity = useCartStore((s) => s.updateQuantity);
+  const removeItem = useCartStore((s) => s.removeItem);
+  const options = describeOptions(item.options);
+  const lineTotal = Math.round(item.price * 100 * item.quantity) / 100;
+  return (
+    <View style={styles.line} testID={`cart-line-${item.id}`}>
+      <View style={styles.lineTop}>
+        <Thumbnail uri={item.image} />
+        <View style={styles.lineText}>
+          <Text style={styles.lineName} numberOfLines={2}>
+            {item.name}
+          </Text>
+          {options ? <Text style={styles.lineMeta}>{options}</Text> : null}
+          {item.notes ? <Text style={styles.lineMeta}>{`Note : ${item.notes}`}</Text> : null}
+          {item.calories ? (
+            <Text style={styles.lineNutrition}>{`${formatNumber(item.calories)} kcal · ${item.protein} g protéines`}</Text>
+          ) : null}
+        </View>
+        <Text style={styles.lineTotal} testID={`cart-line-total-${item.id}`}>
+          {formatMad(lineTotal)}
+        </Text>
       </View>
-    </Screen>
+      <View style={styles.lineActions}>
+        <View style={styles.qty}>
+          <TouchableOpacity
+            onPress={() => updateQuantity(item.id, item.quantity - 1)}
+            disabled={item.quantity <= 1}
+            style={styles.qtyButton}
+            accessibilityRole="button"
+            accessibilityLabel={`Diminuer la quantité de ${item.name}`}
+          >
+            <Ionicons name="remove" size={18} color={item.quantity <= 1 ? theme.colors.inkFaint : theme.colors.ink} />
+          </TouchableOpacity>
+          <Text style={styles.qtyValue}>{item.quantity}</Text>
+          <TouchableOpacity
+            onPress={() => updateQuantity(item.id, item.quantity + 1)}
+            disabled={item.quantity >= 20}
+            style={styles.qtyButton}
+            accessibilityRole="button"
+            accessibilityLabel={`Augmenter la quantité de ${item.name}`}
+          >
+            <Ionicons name="add" size={18} color={item.quantity >= 20 ? theme.colors.inkFaint : theme.colors.ink} />
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity
+          onPress={() => router.push({ pathname: '/(app)/meal/[id]', params: { id: item.mealId, line: item.id } })}
+          style={styles.action}
+          accessibilityRole="button"
+          accessibilityLabel={`Modifier ${item.name}`}
+        >
+          <Text style={styles.actionText}>Modifier</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => removeItem(item.id)}
+          style={styles.remove}
+          accessibilityRole="button"
+          accessibilityLabel={`Retirer ${item.name}`}
+        >
+          <Ionicons name="trash-outline" size={18} color={theme.colors.inkMuted} />
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.xl,
-    paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.lg,
-    gap: theme.spacing.md,
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.hairline,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconButtonSpacer: {
-    width: 44,
-  },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: theme.typography.sizes.xl,
-    fontWeight: theme.typography.weights.extrabold,
-    color: theme.colors.ink,
-  },
-  clearButton: {
-    height: 44,
-    justifyContent: 'center',
-    paddingHorizontal: theme.spacing.sm,
-  },
-  clearText: {
-    fontSize: theme.typography.sizes.sm,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.error,
-  },
-  content: {
-    flex: 1,
-  },
-  contentInner: {
-    paddingHorizontal: theme.spacing.xl,
-    paddingBottom: theme.spacing.lg,
-    gap: theme.spacing.md,
-  },
-  cartItem: {
-    gap: theme.spacing.md,
-  },
-  itemTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: theme.spacing.md,
-  },
-  itemInfo: {
-    flex: 1,
-  },
-  itemName: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.extrabold,
-    color: theme.colors.ink,
-  },
-  itemMacros: {
-    fontSize: theme.typography.sizes.xs,
-    color: theme.colors.inkMuted,
-    marginTop: 4,
-  },
-  itemOptions: {
-    fontSize: theme.typography.sizes.sm,
-    lineHeight: theme.typography.lineHeights.sm,
-    color: theme.colors.ink,
-    marginTop: 2,
-  },
-  editButton: {
-    marginLeft: 'auto',
-    minHeight: 44,
-    paddingHorizontal: theme.spacing.md,
-    justifyContent: 'center',
-  },
-  editText: {
-    fontSize: theme.typography.sizes.sm,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.brand,
-  },
-  itemPrice: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.extrabold,
-    color: theme.colors.brand,
-  },
-  itemActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  removeButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FDECEC',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  notesInput: {
-    backgroundColor: theme.colors.canvas,
-    borderRadius: theme.radii.md,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm + 2,
-    fontSize: theme.typography.sizes.sm,
-    color: theme.colors.ink,
-  },
-  summary: {
-    marginTop: theme.spacing.xs,
-  },
-  summaryTitle: {
-    fontSize: theme.typography.sizes.lg,
-    fontWeight: theme.typography.weights.extrabold,
-    color: theme.colors.ink,
-    marginBottom: theme.spacing.sm,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: theme.spacing.sm,
-  },
-  summaryLabel: {
-    fontSize: theme.typography.sizes.sm,
-    color: theme.colors.inkMuted,
-  },
-  summaryValue: {
-    fontSize: theme.typography.sizes.sm,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.ink,
-  },
-  totalRow: {
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.hairline,
-    marginTop: theme.spacing.sm,
-    paddingTop: theme.spacing.md,
-  },
-  totalLabel: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.extrabold,
-    color: theme.colors.ink,
-  },
-  totalValue: {
-    fontSize: theme.typography.sizes.lg,
-    fontWeight: theme.typography.weights.extrabold,
-    color: theme.colors.brand,
-  },
+  safe: { flex: 1, backgroundColor: theme.colors.canvas },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: theme.spacing.xl, paddingVertical: theme.spacing.md },
+  headerTitle: { flex: 1, textAlign: 'center', fontSize: theme.typography.sizes.lg, fontWeight: theme.typography.weights.bold, color: theme.colors.ink },
+  clear: { minWidth: 44, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' },
+  clearText: { fontSize: theme.typography.sizes.md, fontWeight: theme.typography.weights.semibold, color: theme.colors.error },
+  scroll: { paddingHorizontal: theme.spacing.xl, paddingBottom: theme.spacing.xl, gap: theme.spacing.lg },
+  card: { backgroundColor: theme.colors.surface, borderRadius: theme.radii.lg, padding: theme.spacing.lg },
+  line: { gap: theme.spacing.sm, paddingVertical: theme.spacing.xs },
+  lineTop: { flexDirection: 'row', gap: theme.spacing.md, alignItems: 'flex-start' },
+  lineText: { flex: 1, gap: 2 },
+  lineName: { fontSize: theme.typography.sizes.md, fontWeight: theme.typography.weights.bold, color: theme.colors.ink },
+  lineMeta: { fontSize: theme.typography.sizes.sm, lineHeight: theme.typography.lineHeights.sm, color: theme.colors.ink },
+  lineNutrition: { fontSize: theme.typography.sizes.xs, color: theme.colors.inkMuted, marginTop: 2 },
+  lineTotal: { fontSize: theme.typography.sizes.md, fontWeight: theme.typography.weights.bold, color: theme.colors.ink },
+  lineActions: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, paddingLeft: 64 + theme.spacing.md },
+  qty: { flexDirection: 'row', alignItems: 'center', borderRadius: theme.radii.pill, borderWidth: 1, borderColor: theme.colors.hairline },
+  qtyButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  qtyValue: { minWidth: 20, textAlign: 'center', fontSize: theme.typography.sizes.md, fontWeight: theme.typography.weights.bold, color: theme.colors.ink },
+  action: { minHeight: 44, paddingHorizontal: theme.spacing.sm, justifyContent: 'center', marginLeft: 'auto' },
+  actionText: { fontSize: theme.typography.sizes.sm, fontWeight: theme.typography.weights.bold, color: theme.colors.brand },
+  remove: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  addMore: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs, marginTop: theme.spacing.sm, minHeight: 44 },
+  addMoreText: { fontSize: theme.typography.sizes.sm, fontWeight: theme.typography.weights.bold, color: theme.colors.brand },
+  note: { fontSize: theme.typography.sizes.sm, color: theme.colors.inkMuted, marginTop: theme.spacing.sm },
+  nutrition: { fontSize: theme.typography.sizes.xs, color: theme.colors.inkMuted, marginTop: theme.spacing.xs },
   footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.lg,
     paddingHorizontal: theme.spacing.xl,
-    paddingTop: theme.spacing.sm,
-    paddingBottom: theme.spacing.xs,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colors.hairline,
+    backgroundColor: theme.colors.surface,
   },
+  footerTotal: { gap: 2 },
+  footerLabel: { fontSize: theme.typography.sizes.xs, color: theme.colors.inkMuted },
+  footerAmount: { fontSize: theme.typography.sizes.lg, fontWeight: theme.typography.weights.extrabold, color: theme.colors.ink },
+  cta: { flex: 1 },
 });

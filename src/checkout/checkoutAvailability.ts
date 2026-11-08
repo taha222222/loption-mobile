@@ -9,6 +9,6 @@
 // too); opening checkout is a reviewed change of this constant.
 export const CHECKOUT_OPEN = false;
 
-export const CHECKOUT_CLOSED_TITLE = 'Commandes bientôt disponibles';
-export const CHECKOUT_CLOSED_MESSAGE =
-  'La commande en ligne ouvrira dès que les tarifs de livraison seront validés. Votre panier est conservé ; rien n’est commandé ni facturé.';
+// Shown next to the disabled confirm button, to say why it is disabled.
+export const CHECKOUT_CLOSED_TITLE = 'La commande en ligne ouvre bientôt';
+export const CHECKOUT_CLOSED_MESSAGE = 'Votre panier est conservé. Rien n’est commandé ni facturé pour l’instant.';

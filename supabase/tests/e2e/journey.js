@@ -364,9 +364,15 @@ let sink = null; // SMTP sink process, always stopped on exit
   check((await page2.getByLabel('Panier, 2 articles').count()) === 1, 'menu basket shows the live item count (2)');
   await page2.getByLabel('Panier, 2 articles').click();
   await page2.waitForURL((u) => u.pathname === '/cart', { timeout: 15000 });
-  await waitForText(page2, 'Panier (2)');
+  await waitForText(page2, 'Mon panier (2)');
   pass('basket opens the cart with its items preserved');
+  check((await page2.getByText('Calculés après confirmation de l’adresse').count()) === 1
+    && (await page2.getByText('Continuer', { exact: true }).count()) === 1
+    && (await page2.getByText(/Continuer vers le paiement|Total produits/).count()) === 0,
+    'cart: subtotal only, fees announced as calculated after the address, "Continuer" (no payment wording)');
+  check((await page2.getByRole('tab', { name: 'Suivi', exact: true }).count()) === 0, 'cart: focused layout without the tab bar');
   await shot(page2, '12-cart-from-basket');
+  await page2.getByLabel('Retour').first().click();
 
   await page2.getByRole('tab', { name: 'Suivi', exact: true }).click();
   await page2.waitForURL((u) => u.pathname === '/tracking', { timeout: 15000 });

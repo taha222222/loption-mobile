@@ -34,3 +34,23 @@ export function checkoutSummary(
 export { formatMad as mad } from '../menu/customization';
 
 export const TVA_INCLUDED_NOTE = 'TVA incluse dans les prix affichés.';
+// Fees before the server has priced the order (cart, closed checkout).
+export const FEE_PENDING_SERVICE = 'Calculés à l’étape suivante';
+export const FEE_PENDING_DELIVERY = 'Calculés après confirmation de l’adresse';
+
+// Cart totals shown before checkout (menu prices; display only): products
+// subtotal TTC, the part of it that comes from paid choices, and the
+// estimated nutrition of the basket.
+export function cartTotals(lines: readonly { price: number; basePrice?: number; quantity: number; options?: readonly { price: number }[]; calories?: number; protein?: number }[]) {
+  let sub = 0;
+  let extras = 0;
+  let calories = 0;
+  let protein = 0;
+  for (const l of lines) {
+    sub += cents(l.price) * l.quantity;
+    extras += (l.options ?? []).reduce((s, o) => s + cents(o.price), 0) * l.quantity;
+    calories += (l.calories ?? 0) * l.quantity;
+    protein += (l.protein ?? 0) * l.quantity;
+  }
+  return { productsSubtotal: sub / 100, optionsTotal: extras / 100, calories, protein };
+}

@@ -1,14 +1,15 @@
-// Checkout: 1. delivery address, 2. phone verified by WhatsApp code,
-// 3. summary priced by the server (checkout_preview: products and choices,
-// first-order rule, service fee, road-distance delivery fee, promo code),
-// then "Confirmer la commande" (cash on delivery). The app computes no
-// charged amount: it shows the server's numbers and sends the total the
-// customer saw, which create_order() checks.
+// Livraison et confirmation: 1. delivery address (confirmed by the customer),
+// 2. phone verified by a WhatsApp code, 3. promo code and the order summary
+// priced by the server (checkout_preview), then "Confirmer ma commande"
+// (cash on delivery). The app computes no charged amount: it shows the
+// server's numbers and sends the total the customer saw, which
+// create_order() checks.
 //
 // Checkout is locked (owner decision 2026-11-05) until the trusted order flow
-// and pricing are approved and applied; then CHECKOUT_OPEN is switched in a
-// reviewed change. While locked, the screen shows the basket and why
-// ordering is closed, and calls nothing.
+// and pricing are approved and applied on the server; then CHECKOUT_OPEN is
+// switched in a reviewed change. While locked, the screen shows the order,
+// the fees that will be calculated, and why confirming is not possible yet;
+// it calls nothing.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,13 +17,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { randomUUID } from 'expo-crypto';
 import { theme } from '../../src/theme';
-import { BrandButton, IconButton, StepProgress, TextField } from '../../src/components/v2';
+import { BrandButton, IconButton } from '../../src/components/v2';
+import { CashOnDelivery, Divider, PriceRow, SectionTitle, SummaryLine } from '../../src/components/checkout/OrderPieces';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useCartStore, type CartItem } from '../../src/stores/cartStore';
+import { useCheckoutDraftStore, type CheckoutStep } from '../../src/stores/checkoutDraftStore';
 import { useUserStore } from '../../src/stores/userStore';
 import { CHECKOUT_CLOSED_MESSAGE, CHECKOUT_CLOSED_TITLE, CHECKOUT_OPEN } from '../../src/checkout/checkoutAvailability';
-import { checkoutSummary, mad, TVA_INCLUDED_NOTE } from '../../src/checkout/checkoutSummary';
-import { describeOptions } from '../../src/menu/customization';
+import { cartTotals, FEE_PENDING_DELIVERY, FEE_PENDING_SERVICE, TVA_INCLUDED_NOTE } from '../../src/checkout/checkoutSummary';
+import { describeOptions, formatMad } from '../../src/menu/customization';
 import {
   createOrder,
   PROMO_MESSAGES,
@@ -35,9 +38,8 @@ import { requestPhoneCode, verifyPhoneCode } from '../../src/services/phoneApi';
 import { cityName, fetchServedCities, notServedMessage } from '../../src/delivery/cities';
 import { formatMoroccanMobile, normalizeMoroccanMobile } from '../../src/phone/moroccanPhone';
 
-type Step = 'address' | 'phone' | 'summary';
-const STEPS: Step[] = ['address', 'phone', 'summary'];
-const STEP_TITLES: Record<Step, string> = { address: 'Livraison', phone: 'Téléphone', summary: 'Récapitulatif' };
+const STEPS: CheckoutStep[] = ['address', 'phone', 'summary'];
+const STEP_LABELS: Record<CheckoutStep, string> = { address: 'Adresse', phone: 'Téléphone', summary: 'Confirmation' };
 
 const toLines = (items: CartItem[]): OrderLineRequest[] =>
   items.map((i) => ({ mealId: i.mealId, quantity: i.quantity, notes: i.notes ?? null, optionIds: i.options.map((o) => o.id) }));
@@ -48,7 +50,8 @@ export default function CheckoutScreen() {
   const address = profile?.delivery_address?.trim() ?? '';
   const city = profile?.delivery_city ?? null;
   const verifiedPhone = profile?.phone_e164 && profile?.phone_verified_at ? profile.phone_e164 : null;
-  const [step, setStep] = useState<Step>('address');
+  const step = useCheckoutDraftStore((s) => s.step);
+  const setStep = useCheckoutDraftStore((s) => s.setStep);
   const [served, setServed] = useState<string[] | null>(null);
 
   useEffect(() => {
@@ -70,16 +73,19 @@ export default function CheckoutScreen() {
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <IconButton icon="arrow-back" label="Retour" onPress={back} />
-        <Text style={styles.headerTitle}>{CHECKOUT_OPEN ? STEP_TITLES[step] : 'Commande'}</Text>
+        <Text style={styles.headerTitle} accessibilityRole="header">
+          Livraison et confirmation
+        </Text>
         <View style={{ width: 44 }} />
       </View>
-      {CHECKOUT_OPEN ? (
-        <View style={styles.progress}>
-          <StepProgress step={STEPS.indexOf(step) + 1} total={STEPS.length} />
-        </View>
-      ) : null}
+      {CHECKOUT_OPEN ? <Steps current={step} /> : null}
 
-      {!CHECKOUT_OPEN ? (
+      {items.length === 0 ? (
+        <View style={styles.center}>
+          <Text style={styles.stepIntro}>Votre panier est vide.</Text>
+          <BrandButton title="Voir le menu" variant="soft" onPress={() => router.replace('/(app)/menu')} />
+        </View>
+      ) : !CHECKOUT_OPEN ? (
         <ClosedCheckout items={items} outOfZone={outOfZone} city={city} />
       ) : step === 'address' ? (
         <AddressStep address={address} city={city} outOfZone={outOfZone} onNext={() => setStep(verifiedPhone ? 'summary' : 'phone')} />
@@ -92,34 +98,64 @@ export default function CheckoutScreen() {
   );
 }
 
+function Steps({ current }: { current: CheckoutStep }) {
+  const at = STEPS.indexOf(current);
+  return (
+    <View style={styles.steps} accessibilityLabel={`Étape ${at + 1} sur ${STEPS.length} : ${STEP_LABELS[current]}`}>
+      {STEPS.map((s, i) => (
+        <View key={s} style={styles.stepItem}>
+          <View style={[styles.stepBar, i <= at && styles.stepBarOn]} />
+          <Text style={[styles.stepLabel, i === at && styles.stepLabelOn]}>{STEP_LABELS[s]}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 // ---------------------------------------------------------------- closed (today)
 function ClosedCheckout({ items, outOfZone, city }: { items: CartItem[]; outOfZone: boolean; city: string | null }) {
-  const summary = checkoutSummary(items, null, null);
+  const totals = cartTotals(items);
   return (
     <>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Section title="Votre commande">
+        <View style={styles.card}>
+          <SectionTitle>Récapitulatif de votre commande</SectionTitle>
           {items.map((i) => (
-            <LineRow key={i.id} name={i.name} quantity={i.quantity} options={describeOptions(i.options)} total={Math.round(i.price * 100 * i.quantity) / 100} />
+            <SummaryLine
+              key={i.id}
+              name={i.name}
+              quantity={i.quantity}
+              options={describeOptions(i.options)}
+              note={i.notes}
+              amount={Math.round(i.price * 100 * i.quantity) / 100}
+              image={i.image ?? null}
+            />
           ))}
-          <Row label="Sous-total produits" value={mad(summary.productsSubtotal)} />
-          <Row label="Frais de livraison" value="À confirmer" testID="checkout-delivery-fee" />
+          <Divider />
+          <PriceRow label="Sous-total produits" value={formatMad(totals.productsSubtotal)} />
+          <PriceRow label="Frais de service" value={FEE_PENDING_SERVICE} pending />
+          <PriceRow label="Frais de livraison" value={FEE_PENDING_DELIVERY} pending testID="checkout-delivery-fee" />
           <Text style={styles.note}>{TVA_INCLUDED_NOTE}</Text>
-        </Section>
-        <PaymentSection />
-      </ScrollView>
-      <View style={styles.footer}>
+        </View>
+        <View style={styles.card}>
+          <CashOnDelivery />
+        </View>
         {outOfZone ? (
           <View style={styles.notice} testID="checkout-out-of-zone">
             <Text style={styles.noticeTitle}>Pas encore dans votre ville</Text>
             <Text style={styles.noticeText}>{notServedMessage(city)}</Text>
           </View>
         ) : null}
-        <View style={styles.notice} testID="checkout-closed" accessibilityLiveRegion="polite">
-          <Text style={styles.noticeTitle}>{CHECKOUT_CLOSED_TITLE}</Text>
-          <Text style={styles.noticeText}>{CHECKOUT_CLOSED_MESSAGE}</Text>
+      </ScrollView>
+      <View style={styles.footer}>
+        <View style={styles.reason} testID="checkout-closed" accessibilityLiveRegion="polite">
+          <Ionicons name="time-outline" size={18} color={theme.colors.inkMuted} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.reasonTitle}>{CHECKOUT_CLOSED_TITLE}</Text>
+            <Text style={styles.reasonText}>{CHECKOUT_CLOSED_MESSAGE}</Text>
+          </View>
         </View>
-        <BrandButton title="Confirmer la commande" onPress={() => undefined} disabled />
+        <BrandButton title="Confirmer ma commande" onPress={() => undefined} disabled />
       </View>
     </>
   );
@@ -128,38 +164,43 @@ function ClosedCheckout({ items, outOfZone, city }: { items: CartItem[]; outOfZo
 // ---------------------------------------------------------------- 1. address
 function AddressStep({ address, city, outOfZone, onNext }: { address: string; city: string | null; outOfZone: boolean; onNext: () => void }) {
   const ready = address.length >= 5 && !!city && !outOfZone;
+  const reason = !address
+    ? 'Ajoutez votre adresse de livraison pour continuer.'
+    : !city
+      ? 'Indiquez la ville de cette adresse (Modifier).'
+      : null;
   return (
     <>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.stepIntro}>Où devons-nous livrer votre commande ?</Text>
         {address ? (
-          <TouchableOpacity
-            style={styles.addressCard}
-            onPress={() => router.push('/(app)/delivery-address')}
-            accessibilityRole="button"
-            accessibilityLabel="Modifier l’adresse de livraison"
-            testID="checkout-address"
-          >
-            <Ionicons name="location" size={22} color={theme.colors.brand} />
+          <View style={[styles.card, styles.addressCard]} testID="checkout-address">
+            <Ionicons name="radio-button-on" size={22} color={theme.colors.brand} />
             <View style={{ flex: 1 }}>
               <Text style={styles.addressText}>{address}</Text>
-              <Text style={styles.addressCity}>{cityName(city) ?? 'Ville à choisir'}</Text>
+              <Text style={styles.addressMeta}>{cityName(city) ?? 'Ville à indiquer'}</Text>
             </View>
-            <Text style={styles.link}>Modifier</Text>
-          </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/(app)/delivery-address')} style={styles.inlineAction} accessibilityRole="button" accessibilityLabel="Modifier l’adresse de livraison">
+              <Text style={styles.link}>Modifier</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
-          <BrandButton title="Ajouter une adresse de livraison" variant="soft" onPress={() => router.push('/(app)/delivery-address')} />
+          <TouchableOpacity style={[styles.card, styles.addressCard]} onPress={() => router.push('/(app)/delivery-address')} accessibilityRole="button">
+            <Ionicons name="add-circle-outline" size={22} color={theme.colors.brand} />
+            <Text style={[styles.link, { flex: 1 }]}>Ajouter une adresse de livraison</Text>
+          </TouchableOpacity>
         )}
+        <Text style={styles.note}>Vous pouvez utiliser votre position pour la proposer, puis la vérifier.</Text>
         {outOfZone ? (
           <View style={styles.notice} testID="checkout-out-of-zone">
             <Text style={styles.noticeTitle}>Pas encore dans votre ville</Text>
             <Text style={styles.noticeText}>{notServedMessage(city)}</Text>
           </View>
         ) : null}
-        {address && !city ? <Text style={styles.error}>Choisissez la ville de votre adresse (Modifier).</Text> : null}
       </ScrollView>
       <View style={styles.footer}>
-        <BrandButton title="Continuer" onPress={onNext} disabled={!ready} />
+        {reason ? <Text style={styles.reasonText}>{reason}</Text> : null}
+        <BrandButton title="Livrer à cette adresse" onPress={onNext} disabled={!ready} />
       </View>
     </>
   );
@@ -171,7 +212,8 @@ function PhoneStep({ verifiedPhone, onDone }: { verifiedPhone: string | null; on
   const loadProfile = useUserStore((s) => s.loadProfile);
   const typedBefore = useUserStore((s) => s.profile?.phone ?? '');
   const [changing, setChanging] = useState(!verifiedPhone);
-  const [phone, setPhone] = useState(verifiedPhone ? formatMoroccanMobile(verifiedPhone) : typedBefore);
+  // The local part after +212 (e.g. "6 12 34 56 78"); "06…" is accepted too.
+  const [phone, setPhone] = useState(() => localPart(verifiedPhone ?? normalizeMoroccanMobile(typedBefore)));
   const [sent, setSent] = useState<{ id: string; to: string } | null>(null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -184,8 +226,9 @@ function PhoneStep({ verifiedPhone, onDone }: { verifiedPhone: string | null; on
     return () => clearTimeout(t);
   }, [wait]);
 
+  const normalized = normalizeMoroccanMobile(phone) ?? normalizeMoroccanMobile(`0${phone.replace(/^\s*0?/, '')}`);
+
   const send = async () => {
-    const normalized = normalizeMoroccanMobile(phone);
     if (!normalized) {
       setMessage('Saisissez un numéro de mobile marocain (06 ou 07).');
       return;
@@ -225,14 +268,17 @@ function PhoneStep({ verifiedPhone, onDone }: { verifiedPhone: string | null; on
     return (
       <>
         <ScrollView contentContainerStyle={styles.scroll}>
-          <Text style={styles.stepIntro}>Le livreur vous appelle à ce numéro si besoin.</Text>
-          <View style={styles.addressCard} testID="checkout-phone-verified">
+          <Text style={styles.stepIntro}>Le livreur vous appellera à ce numéro si besoin.</Text>
+          <View style={[styles.card, styles.addressCard]} testID="checkout-phone-verified">
             <Ionicons name="logo-whatsapp" size={22} color={theme.colors.success} />
             <View style={{ flex: 1 }}>
               <Text style={styles.addressText}>{formatMoroccanMobile(verifiedPhone)}</Text>
-              <Text style={styles.addressCity}>Numéro vérifié</Text>
+              <View style={styles.verified}>
+                <Ionicons name="checkmark-circle" size={14} color={theme.colors.success} />
+                <Text style={styles.verifiedText}>Numéro vérifié</Text>
+              </View>
             </View>
-            <TouchableOpacity onPress={() => setChanging(true)} accessibilityRole="button">
+            <TouchableOpacity onPress={() => setChanging(true)} style={styles.inlineAction} accessibilityRole="button">
               <Text style={styles.link}>Changer</Text>
             </TouchableOpacity>
           </View>
@@ -248,38 +294,53 @@ function PhoneStep({ verifiedPhone, onDone }: { verifiedPhone: string | null; on
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <Text style={styles.stepIntro}>Votre numéro de mobile, pour que le livreur puisse vous joindre. Nous le vérifions par un code WhatsApp.</Text>
-        <TextField
-          label="Numéro de mobile"
-          value={phone}
-          onChangeText={(t) => {
-            setPhone(t);
-            setMessage(null);
-            setSent(null);
-          }}
-          placeholder="06 12 34 56 78"
-          keyboardType="phone-pad"
-          textContentType="telephoneNumber"
-          autoComplete="tel"
-          editable={!busy}
-        />
-        {sent ? (
-          <>
-            <Text style={styles.note}>{`Code envoyé sur WhatsApp au ${formatMoroccanMobile(sent.to)}. Il est valable 10 minutes.`}</Text>
-            <TextField
-              label="Code à 6 chiffres"
-              value={code}
+        <View style={styles.card}>
+          <Text style={styles.fieldLabel}>Numéro de mobile</Text>
+          <View style={styles.phoneRow}>
+            <View style={styles.prefix}>
+              <Text style={styles.prefixText}>+212</Text>
+            </View>
+            <TextInput
+              style={styles.phoneInput}
+              value={phone}
               onChangeText={(t) => {
-                setCode(t.replace(/\D/g, '').slice(0, 6));
+                setPhone(t);
                 setMessage(null);
+                setSent(null);
               }}
-              placeholder="123456"
-              keyboardType="number-pad"
-              textContentType="oneTimeCode"
-              autoComplete="sms-otp"
-              maxLength={6}
+              placeholder="6 12 34 56 78"
+              placeholderTextColor={theme.colors.inkFaint}
+              keyboardType="phone-pad"
+              textContentType="telephoneNumber"
+              autoComplete="tel"
+              editable={!busy}
+              accessibilityLabel="Numéro de mobile"
             />
-          </>
-        ) : null}
+          </View>
+          {sent ? (
+            <>
+              <Text style={[styles.note, { marginTop: theme.spacing.lg }]}>
+                {`Code envoyé sur WhatsApp au ${formatMoroccanMobile(sent.to)}. Il est valable 10 minutes.`}
+              </Text>
+              <Text style={[styles.fieldLabel, { marginTop: theme.spacing.md }]}>Code à 6 chiffres</Text>
+              <TextInput
+                style={[styles.phoneInput, styles.codeInput]}
+                value={code}
+                onChangeText={(t) => {
+                  setCode(t.replace(/\D/g, '').slice(0, 6));
+                  setMessage(null);
+                }}
+                placeholder="123456"
+                placeholderTextColor={theme.colors.inkFaint}
+                keyboardType="number-pad"
+                textContentType="oneTimeCode"
+                autoComplete="sms-otp"
+                maxLength={6}
+                accessibilityLabel="Code à 6 chiffres"
+              />
+            </>
+          ) : null}
+        </View>
         {message ? (
           <Text style={styles.error} accessibilityLiveRegion="polite" testID="checkout-phone-message">
             {message}
@@ -305,14 +366,22 @@ function PhoneStep({ verifiedPhone, onDone }: { verifiedPhone: string | null; on
   );
 }
 
+// "+212612345678" -> "6 12 34 56 78"
+function localPart(e164: string | null | undefined): string {
+  const f = formatMoroccanMobile(e164 ?? '');
+  return f.startsWith('0') ? f.slice(1) : '';
+}
+
 // ---------------------------------------------------------------- 3. summary
 function SummaryStep({ items, onNeedPhone, onNeedAddress }: { items: CartItem[]; onNeedPhone: () => void; onNeedAddress: () => void }) {
   const clearCart = useCartStore((s) => s.clearCart);
+  const promoCode = useCheckoutDraftStore((s) => s.promoCode);
+  const setPromoCode = useCheckoutDraftStore((s) => s.setPromoCode);
+  const resetDraft = useCheckoutDraftStore((s) => s.reset);
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState<CheckoutPreview | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [promoInput, setPromoInput] = useState('');
-  const [promoCode, setPromoCode] = useState<string | null>(null);
   const [promoMessage, setPromoMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [placing, setPlacing] = useState(false);
   const [orderMessage, setOrderMessage] = useState<string | null>(null);
@@ -320,60 +389,65 @@ function SummaryStep({ items, onNeedPhone, onNeedAddress }: { items: CartItem[];
   // the same order instead of creating a second one.
   const requestId = useRef<string | null>(null);
   const lines = toLines(items);
+  // The basket as sent to the server: when it changes (back from the cart),
+  // the order is priced again.
+  const basket = JSON.stringify(lines);
+  const images = new Map(items.map((i) => [i.mealId, i.image ?? null]));
 
   // Road-distance quote first (server), then the server's price of the cart.
   // Callers that are not the first load set `loading` themselves.
-  const price = useCallback(
-    async (code: string | null) => {
-      const q = await requestDeliveryQuote();
-      setProblem(null);
-      if (!q.ok) {
-        setPreview(null);
-        setProblem(q.message);
-        setLoading(false);
-        return null;
-      }
-      const r = await previewCheckout({ kitchenId: q.quote.kitchenId, items: lines, promoCode: code });
+  const price = useCallback(async (code: string | null, cart: OrderLineRequest[]) => {
+    const q = await requestDeliveryQuote();
+    setProblem(null);
+    if (!q.ok) {
+      setPreview(null);
+      setProblem(q.message);
       setLoading(false);
-      if (!r.ok) {
-        setPreview(null);
-        setProblem(r.message);
-        return null;
-      }
-      setPreview(r.preview);
-      return r.preview;
-    },
-    // `lines` is derived from the cart, which cannot change on this screen.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+      return null;
+    }
+    const r = await previewCheckout({ kitchenId: q.quote.kitchenId, items: cart, promoCode: code });
+    setLoading(false);
+    if (!r.ok) {
+      setPreview(null);
+      setProblem(r.message);
+      return null;
+    }
+    setPreview(r.preview);
+    return r.preview;
+  }, []);
 
   useEffect(() => {
-    // First load: state is set when the server answers (after the quote).
-    void Promise.resolve(null).then(price);
-  }, [price]);
+    // State is set when the server answers (after the quote).
+    void Promise.resolve().then(() => price(promoCode, JSON.parse(basket) as OrderLineRequest[]));
+    requestId.current = null; // another basket is another order attempt
+    // promoCode changes are priced by their own handlers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basket, price]);
+
+  const reprice = async (code: string | null) => {
+    setLoading(true);
+    return price(code, lines);
+  };
 
   const applyPromo = async () => {
     const code = promoInput.trim().toUpperCase();
     if (!code) return;
-    setLoading(true);
-    const p = await price(code);
+    const p = await reprice(code);
     if (!p) return;
     const ok = p.promo.status === 'valid';
     setPromoCode(ok ? code : null);
-    setPromoMessage({ ok, text: p.promo.status === 'none' ? '' : PROMO_MESSAGES[p.promo.status] });
+    if (ok) setPromoInput('');
+    setPromoMessage(p.promo.status === 'none' ? null : { ok, text: PROMO_MESSAGES[p.promo.status] });
   };
 
   const removePromo = async () => {
     setPromoCode(null);
-    setPromoInput('');
     setPromoMessage(null);
-    setLoading(true);
-    await price(null);
+    await reprice(null);
   };
 
   const confirm = async () => {
-    if (!preview) return;
+    if (!preview || placing) return;
     requestId.current ??= randomUUID();
     setPlacing(true);
     setOrderMessage(null);
@@ -382,6 +456,7 @@ function SummaryStep({ items, onNeedPhone, onNeedAddress }: { items: CartItem[];
     if (r.ok) {
       requestId.current = null;
       clearCart();
+      resetDraft();
       router.replace(`/(app)/order-tracking/${r.orderId}`);
       return;
     }
@@ -392,8 +467,7 @@ function SummaryStep({ items, onNeedPhone, onNeedAddress }: { items: CartItem[];
       // Show the new server total before the customer confirms again.
       requestId.current = null;
       if (r.reason === 'promo_rejected') setPromoCode(null);
-      setLoading(true);
-      await price(r.reason === 'promo_rejected' ? null : promoCode);
+      await reprice(r.reason === 'promo_rejected' ? null : promoCode);
     }
   };
 
@@ -409,43 +483,53 @@ function SummaryStep({ items, onNeedPhone, onNeedAddress }: { items: CartItem[];
   if (!preview) {
     return (
       <View style={styles.center}>
-        <Text style={styles.error} testID="checkout-quote-message">
+        <Ionicons name="alert-circle-outline" size={32} color={theme.colors.inkMuted} />
+        <Text style={[styles.error, { textAlign: 'center' }]} testID="checkout-quote-message">
           {problem ?? 'Le total n’a pas pu être calculé.'}
         </Text>
-        <BrandButton
-          title="Réessayer"
-          variant="soft"
-          onPress={() => {
-            setLoading(true);
-            void price(promoCode);
-          }}
-        />
+        <BrandButton title="Réessayer" variant="soft" onPress={() => void reprice(promoCode)} />
+        <TouchableOpacity onPress={onNeedAddress} accessibilityRole="button" style={styles.inlineAction}>
+          <Text style={styles.link}>Vérifier mon adresse</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
   const p = preview;
+  const serviceOffered = p.serviceFee === 0 && p.serviceFeeBeforeDiscount > 0;
+  const deliveryOffered = p.deliveryFee === 0 && p.deliveryFeeBeforeDiscount > 0;
   return (
     <>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <Section title="Votre commande">
+        <View style={styles.card}>
+          <SectionTitle
+            action={
+              <TouchableOpacity onPress={() => router.push('/(app)/cart')} style={styles.inlineAction} accessibilityRole="button">
+                <Text style={styles.link}>Modifier le panier</Text>
+              </TouchableOpacity>
+            }
+          >
+            Votre commande
+          </SectionTitle>
           {p.lines.map((l, i) => (
-            <LineRow
+            <SummaryLine
               key={`${l.mealId}-${i}`}
               name={l.name}
               quantity={l.quantity}
-              options={l.options.map((o) => (o.price > 0 ? `${o.name} (+${mad(o.price)})` : o.name)).join(' · ')}
-              total={l.lineTotal}
+              options={l.options.map((o) => (o.price > 0 ? `${o.name} (+${formatMad(o.price)})` : o.name)).join(' · ')}
+              amount={l.lineTotal}
+              image={images.get(l.mealId) ?? null}
             />
           ))}
-        </Section>
+        </View>
 
-        <Section title="Code promo">
-          {promoCode ? (
+        <View style={styles.card}>
+          <SectionTitle>Code promo</SectionTitle>
+          {promoCode && p.promo.status === 'valid' ? (
             <View style={styles.promoApplied}>
               <Ionicons name="pricetag" size={18} color={theme.colors.success} />
               <Text style={styles.promoAppliedText}>{promoCode}</Text>
-              <TouchableOpacity onPress={() => void removePromo()} accessibilityRole="button">
+              <TouchableOpacity onPress={() => void removePromo()} style={styles.inlineAction} accessibilityRole="button">
                 <Text style={styles.link}>Retirer</Text>
               </TouchableOpacity>
             </View>
@@ -464,49 +548,69 @@ function SummaryStep({ items, onNeedPhone, onNeedAddress }: { items: CartItem[];
                 autoCorrect={false}
                 accessibilityLabel="Code promo"
               />
-              <TouchableOpacity style={styles.promoButton} onPress={() => void applyPromo()} disabled={!promoInput.trim() || loading} accessibilityRole="button">
+              <TouchableOpacity
+                style={[styles.promoButton, (!promoInput.trim() || loading) && { opacity: 0.5 }]}
+                onPress={() => void applyPromo()}
+                disabled={!promoInput.trim() || loading}
+                accessibilityRole="button"
+              >
                 <Text style={styles.promoButtonText}>Appliquer</Text>
               </TouchableOpacity>
             </View>
           )}
-          {promoMessage?.text ? (
+          {promoMessage ? (
             <Text style={[styles.note, { color: promoMessage.ok ? theme.colors.success : theme.colors.error }]} testID="checkout-promo-message">
               {promoMessage.text}
             </Text>
           ) : null}
-        </Section>
+        </View>
 
-        <Section title="Total">
-          <Row label="Sous-total produits" value={mad(p.productsSubtotal)} />
-          {p.promo.discount > 0 ? <Row label={`Code ${p.promo.code}`} value={`-${mad(p.promo.discount)}`} tone="success" /> : null}
-          <Row
+        <View style={styles.card}>
+          <SectionTitle>Récapitulatif de votre commande</SectionTitle>
+          <PriceRow label="Sous-total produits" value={formatMad(p.productsSubtotal)} />
+          {p.promo.discount > 0 ? <PriceRow label={`Réduction (${p.promo.code})`} value={`-${formatMad(p.promo.discount)}`} tone="success" /> : null}
+          <PriceRow
             label="Frais de service"
-            value={p.serviceFee === 0 && p.serviceFeeBeforeDiscount > 0 ? 'Offerts' : mad(p.serviceFee)}
-            struck={p.serviceFee === 0 && p.serviceFeeBeforeDiscount > 0 ? mad(p.serviceFeeBeforeDiscount) : undefined}
-            tone={p.serviceFee === 0 && p.serviceFeeBeforeDiscount > 0 ? 'success' : undefined}
+            value={serviceOffered ? 'Offerts' : formatMad(p.serviceFee)}
+            struck={serviceOffered ? formatMad(p.serviceFeeBeforeDiscount) : undefined}
+            tone={serviceOffered ? 'success' : undefined}
           />
-          <Row
-            label={`Livraison (${p.distanceKm.toFixed(1).replace('.', ',')} km)`}
-            value={p.deliveryFee === 0 && p.deliveryFeeBeforeDiscount > 0 ? 'Offerte' : mad(p.deliveryFee)}
-            struck={p.deliveryFee === 0 && p.deliveryFeeBeforeDiscount > 0 ? mad(p.deliveryFeeBeforeDiscount) : undefined}
-            tone={p.deliveryFee === 0 && p.deliveryFeeBeforeDiscount > 0 ? 'success' : undefined}
+          <PriceRow
+            label="Frais de livraison"
+            value={deliveryOffered ? 'Offerts' : formatMad(p.deliveryFee)}
+            struck={deliveryOffered ? formatMad(p.deliveryFeeBeforeDiscount) : undefined}
+            tone={deliveryOffered ? 'success' : undefined}
             testID="checkout-delivery-fee"
           />
-          {p.firstOrder ? <Text style={styles.offer}>Première commande : frais de service et de livraison offerts.</Text> : null}
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total à payer</Text>
-            <Text style={styles.totalValue} testID="checkout-total">
-              {mad(p.total)}
-            </Text>
-          </View>
-          <Text style={styles.note}>{TVA_INCLUDED_NOTE}</Text>
-        </Section>
+          {p.firstOrder ? <Text style={styles.offer}>Première commande : service et livraison offerts.</Text> : null}
+          <Divider />
+          <PriceRow label="Total à payer" value={formatMad(p.total)} strong testID="checkout-total" />
+          <Text style={styles.note}>{`${TVA_INCLUDED_NOTE} Livraison calculée sur ${p.distanceKm.toFixed(1).replace('.', ',')} km.`}</Text>
+        </View>
 
-        <Section title="Livraison">
-          <Text style={styles.detail}>{p.address}</Text>
-          <Text style={styles.detail}>{p.phone.e164 ? formatMoroccanMobile(p.phone.e164) : '—'}</Text>
-        </Section>
-        <PaymentSection />
+        <View style={styles.card}>
+          <SectionTitle>Livraison</SectionTitle>
+          <View style={styles.detailRow}>
+            <Ionicons name="location-outline" size={18} color={theme.colors.inkMuted} />
+            <Text style={styles.detailText}>{p.address}</Text>
+            <TouchableOpacity onPress={onNeedAddress} style={styles.inlineAction} accessibilityRole="button" accessibilityLabel="Modifier l’adresse">
+              <Text style={styles.link}>Modifier</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.detailRow}>
+            <Ionicons name="call-outline" size={18} color={theme.colors.inkMuted} />
+            <Text style={styles.detailText}>
+              {p.phone.e164 ? `${formatMoroccanMobile(p.phone.e164)}${p.phone.verified ? ' · vérifié' : ''}` : '—'}
+            </Text>
+            <TouchableOpacity onPress={onNeedPhone} style={styles.inlineAction} accessibilityRole="button" accessibilityLabel="Modifier le téléphone">
+              <Text style={styles.link}>Modifier</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <CashOnDelivery amount={p.total} />
+        </View>
       </ScrollView>
       <View style={styles.footer}>
         {orderMessage ? (
@@ -514,8 +618,9 @@ function SummaryStep({ items, onNeedPhone, onNeedAddress }: { items: CartItem[];
             {orderMessage}
           </Text>
         ) : null}
+        {!p.phone.verified ? <Text style={styles.reasonText}>Vérifiez votre numéro de téléphone pour confirmer.</Text> : null}
         <BrandButton
-          title={`Confirmer la commande · ${mad(p.total)}`}
+          title={`Confirmer ma commande · ${formatMad(p.total)}`}
           onPress={() => void confirm()}
           loading={placing || loading}
           disabled={!p.phone.verified}
@@ -525,102 +630,43 @@ function SummaryStep({ items, onNeedPhone, onNeedAddress }: { items: CartItem[];
   );
 }
 
-// ---------------------------------------------------------------- pieces
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {children}
-    </View>
-  );
-}
-
-function LineRow({ name, quantity, options, total }: { name: string; quantity: number; options: string; total: number }) {
-  return (
-    <View style={styles.line}>
-      <Text style={styles.lineQty}>{`${quantity}×`}</Text>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.lineName}>{name}</Text>
-        {options ? <Text style={styles.lineOptions}>{options}</Text> : null}
-      </View>
-      <Text style={styles.lineTotal}>{mad(total)}</Text>
-    </View>
-  );
-}
-
-function Row({ label, value, struck, tone, testID }: { label: string; value: string; struck?: string; tone?: 'success'; testID?: string }) {
-  return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <View style={styles.rowValueWrap}>
-        {struck ? <Text style={styles.struck}>{struck}</Text> : null}
-        <Text style={[styles.rowValue, tone === 'success' && { color: theme.colors.success }]} testID={testID}>
-          {value}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-function PaymentSection() {
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Paiement</Text>
-      <View style={styles.payment} testID="payment-method-cod">
-        <Ionicons name="cash-outline" size={22} color={theme.colors.ink} />
-        <Text style={styles.paymentText}>Espèces à la livraison</Text>
-        <Ionicons name="checkmark-circle" size={22} color={theme.colors.brand} />
-      </View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.colors.canvas },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: theme.spacing.xl, paddingVertical: theme.spacing.md },
-  headerTitle: { fontSize: theme.typography.sizes.lg, fontWeight: theme.typography.weights.bold, color: theme.colors.ink },
-  progress: { paddingHorizontal: theme.spacing.xl, paddingBottom: theme.spacing.sm },
+  headerTitle: { flex: 1, textAlign: 'center', fontSize: theme.typography.sizes.lg, fontWeight: theme.typography.weights.bold, color: theme.colors.ink },
+  steps: { flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.xl, paddingBottom: theme.spacing.md },
+  stepItem: { flex: 1, gap: 6 },
+  stepBar: { height: 4, borderRadius: 2, backgroundColor: theme.colors.hairline },
+  stepBarOn: { backgroundColor: theme.colors.brand },
+  stepLabel: { fontSize: theme.typography.sizes.xs, color: theme.colors.inkMuted, fontWeight: theme.typography.weights.semibold },
+  stepLabelOn: { color: theme.colors.brand },
   scroll: { paddingHorizontal: theme.spacing.xl, paddingBottom: theme.spacing['2xl'], gap: theme.spacing.lg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: theme.spacing.lg, padding: theme.spacing.xl },
-  stepIntro: { fontSize: theme.typography.sizes.md, lineHeight: theme.typography.lineHeights.md, color: theme.colors.inkMuted, marginTop: theme.spacing.sm },
-  section: { backgroundColor: theme.colors.surface, borderRadius: theme.radii.lg, padding: theme.spacing.lg, gap: theme.spacing.sm },
-  sectionTitle: { fontSize: theme.typography.sizes.md, fontWeight: theme.typography.weights.bold, color: theme.colors.ink, marginBottom: theme.spacing.xs },
-  line: { flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing.md, paddingVertical: theme.spacing.xs },
-  lineQty: { fontSize: theme.typography.sizes.md, fontWeight: theme.typography.weights.bold, color: theme.colors.brand, minWidth: 28 },
-  lineName: { fontSize: theme.typography.sizes.md, fontWeight: theme.typography.weights.semibold, color: theme.colors.ink },
-  lineOptions: { fontSize: theme.typography.sizes.sm, lineHeight: theme.typography.lineHeights.sm, color: theme.colors.inkMuted, marginTop: 2 },
-  lineTotal: { fontSize: theme.typography.sizes.md, fontWeight: theme.typography.weights.semibold, color: theme.colors.ink },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 2 },
-  rowLabel: { fontSize: theme.typography.sizes.md, color: theme.colors.inkMuted },
-  rowValueWrap: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
-  rowValue: { fontSize: theme.typography.sizes.md, color: theme.colors.ink, fontWeight: theme.typography.weights.semibold },
-  struck: { fontSize: theme.typography.sizes.sm, color: theme.colors.inkFaint, textDecorationLine: 'line-through' },
-  offer: { fontSize: theme.typography.sizes.sm, color: theme.colors.success, fontWeight: theme.typography.weights.semibold },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: theme.spacing.sm,
-    paddingTop: theme.spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colors.hairline,
-  },
-  totalLabel: { fontSize: theme.typography.sizes.lg, fontWeight: theme.typography.weights.bold, color: theme.colors.ink },
-  totalValue: { fontSize: theme.typography.sizes['2xl'], fontWeight: theme.typography.weights.extrabold, color: theme.colors.ink },
-  note: { fontSize: theme.typography.sizes.sm, lineHeight: theme.typography.lineHeights.sm, color: theme.colors.inkMuted },
-  detail: { fontSize: theme.typography.sizes.md, color: theme.colors.ink },
-  addressCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.md,
-    padding: theme.spacing.lg,
-    borderRadius: theme.radii.lg,
-    backgroundColor: theme.colors.surface,
-    minHeight: 64,
-  },
+  stepIntro: { fontSize: theme.typography.sizes.md, lineHeight: theme.typography.lineHeights.md, color: theme.colors.inkMuted, marginTop: theme.spacing.xs },
+  card: { backgroundColor: theme.colors.surface, borderRadius: theme.radii.lg, padding: theme.spacing.lg },
+  note: { fontSize: theme.typography.sizes.sm, lineHeight: theme.typography.lineHeights.sm, color: theme.colors.inkMuted, marginTop: theme.spacing.xs },
+  offer: { fontSize: theme.typography.sizes.sm, color: theme.colors.success, fontWeight: theme.typography.weights.semibold, marginTop: theme.spacing.xs },
+  addressCard: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, minHeight: 64 },
   addressText: { fontSize: theme.typography.sizes.md, fontWeight: theme.typography.weights.semibold, color: theme.colors.ink },
-  addressCity: { fontSize: theme.typography.sizes.sm, color: theme.colors.inkMuted, marginTop: 2 },
+  addressMeta: { fontSize: theme.typography.sizes.sm, color: theme.colors.inkMuted, marginTop: 2 },
+  inlineAction: { minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.xs },
   link: { fontSize: theme.typography.sizes.sm, fontWeight: theme.typography.weights.bold, color: theme.colors.brand },
+  verified: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  verifiedText: { fontSize: theme.typography.sizes.sm, color: theme.colors.success, fontWeight: theme.typography.weights.semibold },
+  fieldLabel: { fontSize: theme.typography.sizes.sm, fontWeight: theme.typography.weights.semibold, color: theme.colors.ink, marginBottom: theme.spacing.sm },
+  phoneRow: { flexDirection: 'row', gap: theme.spacing.sm },
+  prefix: { height: 52, paddingHorizontal: theme.spacing.md, borderRadius: theme.radii.md, backgroundColor: theme.colors.canvas, justifyContent: 'center' },
+  prefixText: { fontSize: theme.typography.sizes.md, fontWeight: theme.typography.weights.semibold, color: theme.colors.ink },
+  phoneInput: {
+    flex: 1,
+    height: 52,
+    borderRadius: theme.radii.md,
+    backgroundColor: theme.colors.canvas,
+    paddingHorizontal: theme.spacing.md,
+    fontSize: theme.typography.sizes.lg,
+    color: theme.colors.ink,
+  },
+  codeInput: { flex: 0, letterSpacing: 6, textAlign: 'center' },
   promoRow: { flexDirection: 'row', gap: theme.spacing.sm },
   promoInput: {
     flex: 1,
@@ -635,8 +681,8 @@ const styles = StyleSheet.create({
   promoButtonText: { fontSize: theme.typography.sizes.md, fontWeight: theme.typography.weights.bold, color: theme.colors.brand },
   promoApplied: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
   promoAppliedText: { flex: 1, fontSize: theme.typography.sizes.md, fontWeight: theme.typography.weights.bold, color: theme.colors.ink },
-  payment: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },
-  paymentText: { flex: 1, fontSize: theme.typography.sizes.md, color: theme.colors.ink, fontWeight: theme.typography.weights.semibold },
+  detailRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
+  detailText: { flex: 1, fontSize: theme.typography.sizes.md, color: theme.colors.ink },
   footer: {
     paddingHorizontal: theme.spacing.xl,
     paddingTop: theme.spacing.md,
@@ -644,9 +690,12 @@ const styles = StyleSheet.create({
     gap: theme.spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: theme.colors.hairline,
-    backgroundColor: theme.colors.canvas,
+    backgroundColor: theme.colors.surface,
   },
-  notice: { gap: theme.spacing.xs },
+  reason: { flexDirection: 'row', gap: theme.spacing.sm, alignItems: 'flex-start' },
+  reasonTitle: { fontSize: theme.typography.sizes.sm, fontWeight: theme.typography.weights.bold, color: theme.colors.ink },
+  reasonText: { fontSize: theme.typography.sizes.sm, lineHeight: theme.typography.lineHeights.sm, color: theme.colors.inkMuted },
+  notice: { gap: theme.spacing.xs, padding: theme.spacing.lg, borderRadius: theme.radii.lg, backgroundColor: theme.colors.surface },
   noticeTitle: { fontSize: theme.typography.sizes.md, fontWeight: theme.typography.weights.bold, color: theme.colors.ink },
   noticeText: { fontSize: theme.typography.sizes.sm, lineHeight: theme.typography.lineHeights.sm, color: theme.colors.inkMuted },
   error: { fontSize: theme.typography.sizes.sm, lineHeight: theme.typography.lineHeights.sm, color: theme.colors.error, fontWeight: theme.typography.weights.semibold },

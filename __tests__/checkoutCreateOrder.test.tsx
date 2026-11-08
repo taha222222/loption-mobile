@@ -17,6 +17,7 @@ import CheckoutScreen from '../app/(app)/checkout';
 import { useAuthStore } from '../src/stores/authStore';
 import { useCartStore } from '../src/stores/cartStore';
 import { useUserStore } from '../src/stores/userStore';
+import { useCheckoutDraftStore } from '../src/stores/checkoutDraftStore';
 
 jest.mock('../src/checkout/checkoutAvailability', () => ({
   CHECKOUT_OPEN: true,
@@ -75,6 +76,7 @@ const verifiedProfile = { delivery_address: '12 Rue Test, Casablanca', delivery_
 beforeEach(() => {
   jest.clearAllMocks();
   mockUuid = 0;
+  useCheckoutDraftStore.getState().reset();
   mockPricing.rows = [{ kitchen_id: 'kA', service_fee: '3.00', delivery_min_fee: '10.00', delivery_max_fee: '25.00', config_version: 'v1' }];
   mockInvoke.mockImplementation(async (name: string) => (name === 'quote-delivery' ? quoteOk() : refused('other')));
   rpcHandler();
@@ -90,7 +92,7 @@ beforeEach(() => {
 
 async function toSummary() {
   await render(<CheckoutScreen />);
-  await fireEvent.press(screen.getByText('Continuer'));
+  await fireEvent.press(screen.getByText('Livrer à cette adresse'));
   await waitFor(() => expect(screen.getByTestId('checkout-total')).toBeTruthy());
 }
 
@@ -144,14 +146,16 @@ describe('checkout steps', () => {
   it('address -> (verified phone) -> summary priced by the server; confirming sends the total shown', async () => {
     await render(<CheckoutScreen />);
     expect(screen.getByTestId('checkout-address')).toHaveTextContent(/12 Rue Test, Casablanca/);
-    await fireEvent.press(screen.getByText('Continuer'));
+    await fireEvent.press(screen.getByText('Livrer à cette adresse'));
     await waitFor(() => expect(screen.getByTestId('checkout-total')).toHaveTextContent('149 MAD'));
+    expect(screen.getByText('Récapitulatif de votre commande')).toBeTruthy();
     expect(screen.getByText('Harissa · Fromage (+5 MAD)')).toBeTruthy();
-    expect(screen.getByText('Livraison (5,0 km)')).toBeTruthy();
+    expect(screen.getByText('TVA incluse dans les prix affichés. Livraison calculée sur 5,0 km.')).toBeTruthy();
     expect(screen.getByTestId('checkout-delivery-fee')).toHaveTextContent('16 MAD');
-    expect(screen.getByText('TVA incluse dans les prix affichés.')).toBeTruthy();
-    expect(screen.getByText('Espèces à la livraison')).toBeTruthy();
-    await fireEvent.press(screen.getByText('Confirmer la commande · 149 MAD'));
+    expect(screen.getByText('Paiement à la livraison')).toBeTruthy();
+    expect(screen.getByText('Montant à payer : 149 MAD')).toBeTruthy();
+    expect(screen.getByText('06 12 34 56 78 · vérifié')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Confirmer ma commande · 149 MAD'));
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/(app)/order-tracking/order-9'));
     const call = mockRpc.mock.calls.find((c) => c[0] === 'create_order')![1];
     expect(call).toMatchObject({ p_kitchen: 'kQ', p_expected_total: 149, p_promo_code: null,
@@ -162,10 +166,11 @@ describe('checkout steps', () => {
   it('first qualifying order: service and delivery shown as offered (struck through), total = products', async () => {
     rpcHandler({ checkout_preview: () => ({ data: preview({ first_order: true, service_fee: 0, delivery_fee: 0, total: 130 }), error: null }) });
     await toSummary();
-    expect(screen.getByText('Offerts')).toBeTruthy();
-    expect(screen.getByText('3 MAD')).toBeTruthy(); // struck-through amount
-    expect(screen.getByTestId('checkout-delivery-fee')).toHaveTextContent('Offerte');
-    expect(screen.getByText('Première commande : frais de service et de livraison offerts.')).toBeTruthy();
+    expect(screen.getAllByText('Offerts')).toHaveLength(2);
+    expect(screen.getByText('3 MAD')).toBeTruthy(); // struck-through service fee
+    expect(screen.getByText('16 MAD')).toBeTruthy(); // struck-through delivery fee
+    expect(screen.getByTestId('checkout-delivery-fee')).toHaveTextContent('Offerts');
+    expect(screen.getByText('Première commande : service et livraison offerts.')).toBeTruthy();
     expect(screen.getByTestId('checkout-total')).toHaveTextContent('130 MAD');
   });
 
@@ -176,7 +181,7 @@ describe('checkout steps', () => {
       create_order: () => ({ data: null, error: { code: '40001', message: 'the order total changed' } }),
     });
     await toSummary();
-    await fireEvent.press(screen.getByText('Confirmer la commande · 149 MAD'));
+    await fireEvent.press(screen.getByText('Confirmer ma commande · 149 MAD'));
     await waitFor(() => expect(screen.getByTestId('checkout-total')).toHaveTextContent('152 MAD'));
     expect(screen.getByTestId('checkout-order-message')).toHaveTextContent(/Le total de votre commande a changé/);
     expect(mockReplace).not.toHaveBeenCalled();
@@ -187,9 +192,9 @@ describe('checkout steps', () => {
     let calls = 0;
     rpcHandler({ create_order: () => (calls++ === 0 ? Promise.reject(new Error('Network request failed')) : { data: 'order-9', error: null }) });
     await toSummary();
-    await fireEvent.press(screen.getByText('Confirmer la commande · 149 MAD'));
+    await fireEvent.press(screen.getByText('Confirmer ma commande · 149 MAD'));
     await waitFor(() => expect(screen.getByTestId('checkout-order-message')).toHaveTextContent(/elle ne sera pas doublée/));
-    await fireEvent.press(screen.getByText('Confirmer la commande · 149 MAD'));
+    await fireEvent.press(screen.getByText('Confirmer ma commande · 149 MAD'));
     await waitFor(() => expect(mockReplace).toHaveBeenCalled());
     const ids = mockRpc.mock.calls.filter((c) => c[0] === 'create_order').map((c) => c[1].p_client_request_id);
     expect(ids).toEqual(['req-1', 'req-1']);
@@ -198,9 +203,9 @@ describe('checkout steps', () => {
   it('routing unavailable: no fee is guessed and nothing can be confirmed', async () => {
     mockInvoke.mockImplementation(async () => refused('routing_unavailable'));
     await render(<CheckoutScreen />);
-    await fireEvent.press(screen.getByText('Continuer'));
+    await fireEvent.press(screen.getByText('Livrer à cette adresse'));
     await waitFor(() => expect(screen.getByTestId('checkout-quote-message')).toHaveTextContent(/distance de livraison est indisponible/));
-    expect(screen.queryByText(/Confirmer la commande/)).toBeNull();
+    expect(screen.queryByText(/Confirmer ma commande/)).toBeNull();
     expect(mockRpc).not.toHaveBeenCalledWith('create_order', expect.anything());
   });
 
@@ -219,19 +224,55 @@ describe('checkout steps', () => {
     await waitFor(() => expect(screen.getByTestId('checkout-promo-message')).toHaveTextContent('Ce code promo n’existe pas ou n’est plus actif.'));
     await fireEvent.changeText(screen.getByLabelText('Code promo'), 'test10');
     await fireEvent.press(screen.getByText('Appliquer'));
-    await waitFor(() => expect(screen.getByText('Code TEST10')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Réduction (TEST10)')).toBeTruthy());
     expect(screen.getByText('-8 MAD')).toBeTruthy();
-    await fireEvent.press(screen.getByText('Confirmer la commande · 141 MAD'));
+    await fireEvent.press(screen.getByText('Confirmer ma commande · 141 MAD'));
     await waitFor(() => expect(mockReplace).toHaveBeenCalled());
     expect(mockRpc.mock.calls.find((c) => c[0] === 'create_order')![1]).toMatchObject({ p_promo_code: 'TEST10', p_expected_total: 141 });
+  });
+
+  it('going back to the cart keeps the step and the accepted promo code; a changed basket is priced again', async () => {
+    rpcHandler({
+      checkout_preview: (a) =>
+        a.p_promo_code === 'TEST10'
+          ? { data: preview({ promo: { code: 'TEST10', status: 'valid', discount: 8 }, total: 141 }), error: null }
+          : { data: preview(), error: null },
+    });
+    await toSummary();
+    await fireEvent.changeText(screen.getByLabelText('Code promo'), 'test10');
+    await fireEvent.press(screen.getByText('Appliquer'));
+    await waitFor(() => expect(screen.getByText('Réduction (TEST10)')).toBeTruthy());
+    await fireEvent.press(screen.getByText('Modifier le panier'));
+    expect(mockPush).toHaveBeenCalledWith('/(app)/cart');
+    expect(useCheckoutDraftStore.getState()).toMatchObject({ step: 'summary', promoCode: 'TEST10' });
+    const count = () => mockRpc.mock.calls.filter((c) => c[0] === 'checkout_preview').length;
+    const before = count();
+    useCartStore.getState().updateQuantity(useCartStore.getState().items[0].id, 3);
+    await waitFor(() => expect(count()).toBe(before + 1));
+    const last = mockRpc.mock.calls.filter((c) => c[0] === 'checkout_preview').pop()![1];
+    expect(last).toMatchObject({ p_promo_code: 'TEST10', p_items: [expect.objectContaining({ quantity: 3 })] });
+  });
+
+  it('a double tap sends one order; after the order the checkout starts over', async () => {
+    let resolve: (v: unknown) => void = () => undefined;
+    rpcHandler({ create_order: () => new Promise((r) => (resolve = r)) });
+    await toSummary();
+    const button = screen.getByText('Confirmer ma commande · 149 MAD');
+    await fireEvent.press(button);
+    await fireEvent.press(button);
+    resolve({ data: 'order-9', error: null });
+    await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+    expect(mockRpc.mock.calls.filter((c) => c[0] === 'create_order')).toHaveLength(1);
+    expect(useCheckoutDraftStore.getState()).toMatchObject({ step: 'address', promoCode: null });
   });
 
   it('without an address the customer must add one first (manual entry or position, confirmed)', async () => {
     useUserStore.setState({ profile: { delivery_address: null, delivery_city: null } as never });
     await render(<CheckoutScreen />);
+    expect(screen.getByText('Ajoutez votre adresse de livraison pour continuer.')).toBeTruthy(); // why the button is disabled
     await fireEvent.press(screen.getByText('Ajouter une adresse de livraison'));
     expect(mockPush).toHaveBeenCalledWith('/(app)/delivery-address');
-    await fireEvent.press(screen.getByText('Continuer'));
+    await fireEvent.press(screen.getByText('Livrer à cette adresse'));
     expect(mockInvoke).not.toHaveBeenCalled();
   });
 });
@@ -251,7 +292,7 @@ describe('WhatsApp phone verification', () => {
     useUserStore.setState({ loadProfile: loadProfile as never });
     rpcHandler({ phone_otp_verify: () => ({ data: { ok: true, phone_e164: '+212612345678' }, error: null }) });
     await render(<CheckoutScreen />);
-    await fireEvent.press(screen.getByText('Continuer'));
+    await fireEvent.press(screen.getByText('Livrer à cette adresse'));
     await fireEvent.press(screen.getByText('Recevoir le code sur WhatsApp'));
     await waitFor(() => expect(screen.getByText(/Code envoyé sur WhatsApp au 06 12 34 56 78/)).toBeTruthy());
     expect(mockInvoke).toHaveBeenCalledWith('phone-otp', { method: 'POST', body: { phone: '+212612345678' } });
@@ -267,7 +308,7 @@ describe('WhatsApp phone verification', () => {
     mockInvoke.mockImplementation(async () => ({ data: { ok: true, verification_id: 'v1', phone_e164: '+212612345678', expires_at: 'x' }, error: null }));
     rpcHandler({ phone_otp_verify: () => ({ data: { ok: false, reason: 'wrong_code', attempts_left: 3 }, error: null }) });
     await render(<CheckoutScreen />);
-    await fireEvent.press(screen.getByText('Continuer'));
+    await fireEvent.press(screen.getByText('Livrer à cette adresse'));
     await fireEvent.press(screen.getByText('Recevoir le code sur WhatsApp'));
     await waitFor(() => expect(screen.getByPlaceholderText('123456')).toBeTruthy());
     await fireEvent.changeText(screen.getByPlaceholderText('123456'), '000000');
@@ -279,7 +320,7 @@ describe('WhatsApp phone verification', () => {
   it('WhatsApp not configured: explained, never treated as verified', async () => {
     mockInvoke.mockImplementation(async () => refused('provider_unavailable'));
     await render(<CheckoutScreen />);
-    await fireEvent.press(screen.getByText('Continuer'));
+    await fireEvent.press(screen.getByText('Livrer à cette adresse'));
     await fireEvent.press(screen.getByText('Recevoir le code sur WhatsApp'));
     await waitFor(() => expect(screen.getByTestId('checkout-phone-message')).toHaveTextContent(/pas encore disponible/));
     expect(screen.queryByPlaceholderText('123456')).toBeNull();
@@ -288,8 +329,9 @@ describe('WhatsApp phone verification', () => {
 
   it('a number that is not a Moroccan mobile is refused before any code is sent', async () => {
     await render(<CheckoutScreen />);
-    await fireEvent.press(screen.getByText('Continuer'));
-    await fireEvent.changeText(screen.getByPlaceholderText('06 12 34 56 78'), '05 22 12 34 56');
+    await fireEvent.press(screen.getByText('Livrer à cette adresse'));
+    expect(screen.getByLabelText('Numéro de mobile').props.value).toBe('6 12 34 56 78'); // prefilled after +212
+    await fireEvent.changeText(screen.getByLabelText('Numéro de mobile'), '5 22 12 34 56');
     await fireEvent.press(screen.getByText('Recevoir le code sur WhatsApp'));
     expect(screen.getByTestId('checkout-phone-message')).toHaveTextContent('Saisissez un numéro de mobile marocain (06 ou 07).');
     expect(mockInvoke).not.toHaveBeenCalled();

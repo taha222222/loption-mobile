@@ -8,6 +8,7 @@ import { locationService } from '../services/locationService';
 import { useActivityStore } from './activityStore';
 import { useAdminStore } from './adminStore';
 import { useCartStore } from './cartStore';
+import { useCheckoutDraftStore } from './checkoutDraftStore';
 import { useCollaboratorStore } from './collaboratorStore';
 import { useNutritionStore } from './nutritionStore';
 import { useSetupStore } from './setupStore';
@@ -29,6 +30,7 @@ export async function resetUserScopedState(
     useWorkoutStore.getState().reset();
   }
   useUserStore.getState().reset();
+  useCheckoutDraftStore.getState().reset();
   useSetupStore.getState().reset();
   useNutritionStore.getState().reset();
   useTrackingStore.getState().reset();

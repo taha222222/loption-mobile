@@ -46,11 +46,14 @@ describe('Checkout lockdown', () => {
     expect(screen.getByTestId('checkout-closed')).toBeTruthy();
     expect(screen.getByText(CHECKOUT_CLOSED_TITLE)).toBeTruthy();
     expect(screen.getByTestId('payment-method-cod')).toBeTruthy();
-    expect(screen.getByText('Espèces à la livraison')).toBeTruthy();
+    expect(screen.getByText('Paiement à la livraison')).toBeTruthy();
+    expect(screen.getByText('Vous payez en espèces à la réception de votre commande.')).toBeTruthy();
     expect(screen.queryByText(/carte|credit|debit/i)).toBeNull();
     expect(screen.getAllByText('120 MAD')).toHaveLength(2); // line and subtotal of menu prices, for information
     expect(screen.queryByText(/15 MAD|15 MAD/)).toBeNull(); // the old unapproved delivery fee
-    expect(screen.getByTestId('checkout-delivery-fee')).toHaveTextContent('À confirmer');
+    expect(screen.getByTestId('checkout-delivery-fee')).toHaveTextContent('Calculés après confirmation de l’adresse');
+    expect(screen.queryByText('À confirmer')).toBeNull();
+    expect(screen.queryByText(/paiement en ligne|Payer maintenant|Continuer vers le paiement/i)).toBeNull();
     expect(screen.getByText('TVA incluse dans les prix affichés.')).toBeTruthy();
     expect(mockInvoke).not.toHaveBeenCalled(); // no quote, no WhatsApp code while closed
   });
@@ -64,9 +67,10 @@ describe('Checkout lockdown', () => {
     useUserStore.setState({ profile: { delivery_city: 'casablanca', delivery_address: 'Maarif' } });
   });
 
-  it('the confirm button is disabled and pressing it writes nothing', async () => {
+  it('the confirm button is disabled, says why, and pressing it writes nothing', async () => {
     await render(<CheckoutScreen />);
-    await fireEvent.press(screen.getByText('Confirmer la commande'));
+    expect(screen.getByText('Votre panier est conservé. Rien n’est commandé ni facturé pour l’instant.')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Confirmer ma commande'));
     expect(mockFrom).not.toHaveBeenCalledWith('orders');
     expect(mockRpc).not.toHaveBeenCalled();
     expect(mockNotify).not.toHaveBeenCalled();

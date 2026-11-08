@@ -4,7 +4,7 @@ import { RouteGate } from '../../src/components/navigation/RouteGate';
 import { createPillTabBar } from '../../src/components/v2';
 import { CUSTOMER_TABS } from '../../src/navigation/customerTabs';
 
-const PillTabBar = createPillTabBar(CUSTOMER_TABS, ['meal/[id]', 'checkout', 'delivery-address']);
+const PillTabBar = createPillTabBar(CUSTOMER_TABS, ['meal/[id]', 'cart', 'checkout', 'delivery-address']);
 
 export default function AppLayout() {
   return (
