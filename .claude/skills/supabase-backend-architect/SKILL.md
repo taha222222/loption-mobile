@@ -28,7 +28,7 @@ description: L'OPTION Supabase/PostgreSQL backend — migrations, RLS and grants
 - Migrations: `supabase/migrations/` — chain: Phase 1C (`20261016170000`, `…171000` storage) → onboarding/offer
   (`20261028`) → nutrition (`20261029`) → activity (`20261030`) → standalone (`20261103`) → account deletion
   (`20261104`) → order workflow (`20261105`) → create_order (`20261106`) → zones (`20261107`) → pricing engine
-  (`20261108`) → checkout experience (`20261109`). Hosted has up to standalone (see `docs/v1/business/README.md`).
+  (`20261108`) → checkout experience (`20261109`) → order lifecycle hardening (`20261110`). Hosted has up to standalone (see `docs/v1/business/README.md`).
 - Rollbacks: `supabase/rollback/` (newest first). Monitor generator: `supabase/tools/generate_nutrition_monitor.py`.
 - Edge Functions: `supabase/functions/dispatch-notifications`, `quote-delivery`, `phone-otp` (pure core + `index.ts`).
 - Baseline of the hosted schema before V1: `supabase/baseline/staging_schema_2026-10-15.sql`.

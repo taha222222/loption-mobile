@@ -27,6 +27,7 @@ changes, change it in the authoritative file below and in `docs/v1/DECISIONS.md`
 
 Per `PROJECT_STATE.md`: the hosted project `loption-mobile` has Phase 1C, the onboarding/offer, nutrition, activity and
 standalone-tracking migrations. **Not applied to hosted:** account deletion (`20261104…`), order workflow (`20261105…`),
-create_order (`20261106…`), delivery zones (`20261107…`), pricing engine (`20261108…`), checkout experience (`20261109…`).
+create_order (`20261106…`), delivery zones (`20261107…`), pricing engine (`20261108…`), checkout experience (`20261109…`),
+order lifecycle hardening (`20261110…`).
 Everything about the delivery order workflow below is therefore **local only** until the owner approves applying it
 (DECISIONS #23, #34, #36, #37). Checkout in the app is closed (`src/checkout/checkoutAvailability.ts`, `CHECKOUT_OPEN = false`).

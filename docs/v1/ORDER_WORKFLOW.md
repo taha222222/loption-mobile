@@ -39,6 +39,14 @@ Approved audit model (2026-11-05): the timeline `order_status_updates` holds sta
 payment changes are audit-only; the location history is separate from both. A refusal never says whether an order
 the caller may not see exists ("order not found or not allowed").
 
+## Hardening (`20261110120000_v1_order_lifecycle_hardening.sql`, not applied)
+
+Milestone 1 audit (2026-11-08) closed four bypasses without adding any status or rule: a workflow order can no longer
+be deleted (an admin's `ALL` policy and `service_role` could); its timeline rows are written only by the order service
+and never changed or deleted (`order_status_updates_guard`); only account deletion (running as `postgres`) may detach
+the customer; the audit row of a cancellation carries the reason. Harness: `supabase/tests/run_v1_order_lifecycle.sh`
+(21 SQL tests incl. all 64 status × action combinations, concurrency, regressions, rollback).
+
 ## What the database refuses whatever the client does
 
 - A direct `UPDATE`/`INSERT` of a workflow order's state, driver, kitchen, payment or content — by a customer, staff,

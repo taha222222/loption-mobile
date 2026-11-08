@@ -24,7 +24,8 @@ statuses and the same server functions. This skill owns that contract; the role 
 - Server functions only: `order_confirm`, `order_kitchen_update`, `order_assign_driver`, `order_driver_update`,
   `order_cancel`, `order_set_payment`, `driver_report_location`; client wrapper `src/services/orderWorkflowApi.ts`.
 - Payment is separate from status (cash on delivery): `docs/v1/business/delivery-and-cash.md`.
-- Implemented **local only** (`supabase/migrations/20261105120000_v1_order_workflow.sql`), not on hosted.
+- Implemented **local only** (`supabase/migrations/20261105120000_v1_order_workflow.sql`, hardened by
+  `20261110120000_v1_order_lifecycle_hardening.sql`), not on hosted.
 
 ## Boundaries
 - Do not add statuses, skip steps or let an interface write `orders` directly; propose changes to the owner first.
@@ -42,6 +43,7 @@ statuses and the same server functions. This skill owns that contract; the role 
 4. Every change keeps the timeline (status changes only) and the audit rows (`security_audit_log`).
 
 ## Required tests
+`supabase/tests/run_v1_order_lifecycle.sh` (full chain: 64 status × action combinations, bypasses, payment, races) and
 `supabase/tests/run_v1_order_workflow.sh` (66 SQL tests: every allowed and refused transition, scope per role, races
 such as pickup vs cancellation, reassignment, revoked role on the same JWT); `__tests__/orderWorkflow.test.tsx`
 (mirror equals migration); for a role screen, a Jest test that it shows only allowed actions and calls the right

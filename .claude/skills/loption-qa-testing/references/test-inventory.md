@@ -22,6 +22,7 @@ Nutrition and activity: `energy`, `calorieWorkedExample`, `nutritionTracking`, `
 | `run_v1_delivery_zones.sh` | zones (10) |
 | `run_v1_pricing_engine.sh` | delivery formula, TVA, quotes, snapshot (40) |
 | `run_v1_checkout_experience.sh` | choices, promo, phone OTP, first-order fees, preview, create_order v2 (40) |
+| `run_v1_order_lifecycle.sh` | confirmed lifecycle end to end: 64 status × action combinations, cancellation, scope per role, direct-write/delete/timeline bypass, payment independence, first-order rule pinned, races (21) |
 
 Each V1 harness: generated-block check, refusals, migration + monitor md5, SQL tests, concurrency, regressions,
 rollback, re-apply. Note: the create_order, zones and pricing SQL suites call earlier `create_order` signatures and run

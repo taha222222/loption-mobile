@@ -67,3 +67,5 @@ Every workflow function locks the order row, checks role and scope, writes the c
 `kitchen_preparing`, `order_ready`, `driver_assigned` / `driver_reassigned`, `order_picked_up`, `order_on_the_way`,
 `order_delivered`, `order_cancelled`, `payment_confirmed` / `payment_failed` / `payment_refunded`, `order_created`).
 Assignment and payment are audit-only; the driver location history is separate (owner approval 2026-11-05).
+A cancellation's audit row includes the reason. A workflow order is never deleted and its timeline is never changed
+or deleted; only account deletion detaches the customer (`20261110…` hardening, local only).

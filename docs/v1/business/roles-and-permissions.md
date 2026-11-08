@@ -25,6 +25,8 @@ claims, `user_profiles.role/is_admin` or client state. Roles are granted/revoked
 | Write prices, pricing rows, tax categories, promo codes | ✘ | ✘ | ✘ | ✘ | ✘ (owner as `postgres`) | ✘ |
 | Edit meals / meal choices | ✘ | ✘ | ✘ | ✘ | ✔ (RLS admin policy) | ✘ |
 | Direct UPDATE/INSERT of orders | ✘ | ✘ | ✘ | ✘ | ✘ (guard) | ✘ |
+| Delete a workflow order, edit/delete its timeline | ✘ | ✘ | ✘ | ✘ | ✘ (guard, `20261110…`) | ✘ |
+| Detach the customer from an order | via account deletion only | ✘ | ✘ | ✘ | ✘ (`20261110…`) | ✘ |
 
 Confirmed by owner (2026-11-05): cashier confirms; cashier/admin assigns drivers; customer cancels while pending;
 staff cancel until ready with a reason; one active staff role per user; kitchen scoping kept.

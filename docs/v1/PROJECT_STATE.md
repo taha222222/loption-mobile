@@ -3,7 +3,13 @@
 Update this file incrementally when the state changes. Last verified: 2026-11-03 (production hardening: Android release build, all harnesses, hosted read-only checks).
 
 ## Current branch
-- **Latest: `claude/v1-claude-skills`** = `claude/v1-cart-checkout-redesign` + project skills in `.claude/skills/`
+- **Latest: `claude/v1-order-lifecycle-foundation`** = `claude/v1-claude-skills` + Milestone 1 (shared order lifecycle
+  foundation): `20261110120000_v1_order_lifecycle_hardening.sql` (**not applied**) — a workflow order is never deleted
+  (admin, service_role), its timeline is never rewritten or deleted, only account deletion (as `postgres`) detaches the
+  customer, the staff cancellation reason is in the audit row. Lifecycle, statuses and transitions unchanged; new
+  harness `run_v1_order_lifecycle.sh` (64 status × action combinations, roles, bypasses, payment, races). #48 pinned,
+  #54–#56/#58 not implemented. Evidence E-38.
+- Previous: `claude/v1-claude-skills` = `claude/v1-cart-checkout-redesign` + project skills in `.claude/skills/`
   (business logic, backend, order operations, kitchen, driver, cashier/finance, Expo app, QA; `loption-engineer` is now a
   router), business source of truth `docs/v1/business/`, concise `CLAUDE.md`. Documentation only; no app or schema change.
 - Previous: `claude/v1-cart-checkout-redesign` = `claude/v1-checkout-meal-fix` + redesigned « Mon panier » and
