@@ -16,7 +16,7 @@ winget install OpenJS.NodeJS.LTS Git.Git
 ```
 Then, in a new PowerShell window:
 ```powershell
-git clone https://github.com/taha222222/loption-mobile.git; cd loption-mobile; git checkout claude/v1-workflow-test-project; npm ci
+git clone https://github.com/taha222222/loption-mobile.git; cd loption-mobile; git checkout claude/v1-web-dev-map-fix; npm ci
 ```
 Create `.env.local` in the project folder (git-ignored; it overrides `.env` without touching it) with the test
 project's public URL and anon key (Supabase dashboard → loption-workflow-test → Project Settings → API):
@@ -25,8 +25,9 @@ EXPO_PUBLIC_SUPABASE_URL=https://bpkjuaoxhvnrlyvrqpae.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=<anon key of loption-workflow-test>
 ```
 ```powershell
-npx expo start --web
+npx expo start --web --clear
 ```
+(`--clear` makes Expo re-read `.env.local`; needed after creating or changing it.)
 Open the address it prints (usually http://localhost:8081) and use the accounts below. Same password, same steps.
 Orders LO-DEMO-001 … 005 are pending for you; LO-DEMO-006 was already taken through the whole lifecycle as a check.
 More orders: Supabase dashboard → SQL editor of loption-workflow-test → `select demo.new_order();`.
