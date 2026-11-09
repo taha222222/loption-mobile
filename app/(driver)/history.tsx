@@ -137,7 +137,7 @@ export default function DriverHistory() {
             <TouchableOpacity
               key={delivery.id}
               style={styles.deliveryCard}
-              onPress={() => router.push(`/(driver)/orders/${delivery.id}`)}
+              onPress={() => router.push(`/(driver)/delivery/${delivery.id}`)}
             >
               <View style={styles.deliveryHeader}>
                 <View style={styles.deliveryInfo}>

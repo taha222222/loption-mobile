@@ -3,7 +3,7 @@
 ## Jest (`__tests__/`, `npm run check` / `npx jest`) — mocked Supabase
 Checkout and orders: `cartStore`, `cartScreen`, `checkoutScreen` (closed checkout), `checkoutCreateOrder` (open flow:
 steps, promo, phone, totals, retries), `customization`, `mealScreen`, `menuApi`, `pricingDisplay`, `orderPayload`,
-`orderWorkflow` (mirror equals migration), `cashierOrders`, `cashierScreens`, `kitchenOrders`, `kitchenScreen`, `deliveryCities`, `quoteDelivery` and `phoneOtp` (Edge Function cores),
+`orderWorkflow` (mirror equals migration), `cashierOrders`, `cashierScreens`, `kitchenOrders`, `kitchenScreen`, `adminOrders`, `customerStatusLabel`, `deliveryCities`, `quoteDelivery` and `phoneOtp` (Edge Function cores),
 `dispatchNotifications`.
 Accounts and navigation: `authFlows`, `authProviders`, `authSession`, `welcomeScreen`, `onboardingScreen`,
 `setupScreen`, `routeDecision`, `userProfile`, `accountDeletion`, `env`.
@@ -31,6 +31,8 @@ rollback, re-apply. Note: the create_order, zones and pricing SQL suites call ea
 only on their own migration chain; later harnesses re-cover their cases.
 
 ## End-to-end
+`supabase/tests/e2e/run_workflow_demo.sh` — hands-on demo (one account per role, pending orders, stays up until Ctrl+C);
+`demo_walkthrough.js` drives all five roles through one order against it (guide: `docs/v1/TESTING_THE_ORDER_WORKFLOW.md`).
 `supabase/tests/e2e/run_app_e2e.sh` — web export of the app against local GoTrue/PostgREST, Playwright Chromium,
 SMTP sink; full migration chain; ~110 checks (sign-up, onboarding, nutrition, tracking, workouts, cart, cashier queue:
 confirm and cancel with reason, kitchen board: preparing and ready, cashier → kitchen hand-off).

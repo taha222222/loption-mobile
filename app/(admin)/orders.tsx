@@ -15,6 +15,7 @@ import { router } from 'expo-router';
 import { supabase } from '../../src/lib/supabase';
 import { Button } from '../../src/components/ui/Button';
 import { ASSIGNABLE_STATUSES, isWorkflowOrder, nextPayments, nextStatuses } from '../../src/orders/orderWorkflow';
+import { ORDER_DRIVER_EMBED } from '../../src/orders/orderQueries';
 import { assignDriver, cancelOrder, confirmOrder, setPayment, type WorkflowResult } from '../../src/services/orderWorkflowApi';
 
 interface Order {
@@ -46,6 +47,7 @@ export default function AdminOrders() {
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchOrders();
@@ -54,18 +56,17 @@ export default function AdminOrders() {
   const fetchOrders = async () => {
     let query = supabase
       .from('orders')
-      .select(`
-        *,
-        drivers:driver_id (first_name, last_name)
-      `)
+      .select(`*, ${ORDER_DRIVER_EMBED}`)
       .order('created_at', { ascending: false });
 
     if (filter !== 'all') {
       query = query.eq('status', filter);
     }
 
-    const { data } = await query;
-    
+    const { data, error } = await query;
+    // A failed request is shown as such, never as "No orders".
+    setLoadError(error ? `Orders could not be loaded (${error.message ?? 'unknown error'}). Pull to retry.` : null);
+
     if (data) {
       const formatted = data.map((order: any) => ({
         id: order.id,
@@ -174,7 +175,7 @@ export default function AdminOrders() {
       </View>
 
       {/* Filter Chips */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterContainer}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterContainer} contentContainerStyle={styles.filterContent}>
         {filters.map((f) => (
           <TouchableOpacity
             key={f.id}
@@ -191,7 +192,13 @@ export default function AdminOrders() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#8E8E93" />}
         contentContainerStyle={styles.content}
       >
-        {orders.length === 0 ? (
+        {loadError ? (
+          <View style={styles.emptyState} accessibilityLiveRegion="polite">
+            <Ionicons name="alert-circle-outline" size={64} color="#FF3B30" />
+            <Text style={styles.emptyTitle}>Orders unavailable</Text>
+            <Text style={styles.emptyText}>{loadError}</Text>
+          </View>
+        ) : orders.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="receipt-outline" size={64} color="#C6C6C8" />
             <Text style={styles.emptyTitle}>No orders</Text>
@@ -365,6 +372,10 @@ const styles = StyleSheet.create({
   filterContainer: {
     paddingHorizontal: 16,
     marginBottom: 12,
+    flexGrow: 0,
+  },
+  filterContent: {
+    alignItems: 'center',
   },
   filterChip: {
     paddingHorizontal: 16,

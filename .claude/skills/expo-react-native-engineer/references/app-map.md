@@ -6,7 +6,7 @@
 | `(auth)` | signed out | `welcome`, `login`, `signup`, `verify-email` |
 | root | onboarding | `onboarding.tsx`, `setup.tsx` (notifications, delivery address), `auth-callback.tsx` |
 | `(app)` | customer | tabs `index`, `menu`, `tracking`, `orders`, `profile`; `meal/[id]` (product page), `cart`, `checkout`, `delivery-address`, `order-tracking/[id]`, nutrition (`nutrition`, `log-meal`, `nutrition-profile`, `nutrition-reminders`), activity (`workout`, `workout-history`, `activity-connect`), `delete-account`; out of scope / mocked: `my-plan`, `upgrade`, `reorder` (hard-coded last order) |
-| `(driver)` | driver | `index`, `orders/[id]`, `history`, `earnings`, `profile` |
+| `(driver)` | driver | `index`, `delivery/[id]` (unique path: `/orders/[id]` clashed with the partner group on web), `history`, `earnings`, `profile` |
 | `(admin)` | admin (acts as cashier) | `index`, `orders`, `drivers`, `meals`, `earnings`, `collaborators` |
 | `(collaborator)` | retired partner model (rows kept) | `index`, `orders`, `earnings`, `profile` |
 | `cashier` | cashier (`staff_roles`), admin | `index` (queue: à confirmer / en cours / terminées), `[id]` (order, confirm, cancel with reason) |

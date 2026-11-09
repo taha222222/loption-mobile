@@ -299,7 +299,7 @@ const fetchEarnings = async () => {
             <Text style={styles.sectionTitle}>ACTIVE DELIVERY</Text>
             <TouchableOpacity 
               style={styles.activeCard}
-              onPress={() => router.push(`/(driver)/orders/${activeOrder.id}`)}
+              onPress={() => router.push(`/(driver)/delivery/${activeOrder.id}`)}
             >
               <Text style={styles.activeOrderNumber}>{activeOrder.order_number}</Text>
               <Text style={styles.activeAddress}>{activeOrder.delivery_address}</Text>
@@ -362,7 +362,7 @@ const fetchEarnings = async () => {
                       title={order.status === 'ready' ? 'PICK UP' : 'WAITING FOR KITCHEN'}
                       variant="primary"
                       size="sm"
-                      onPress={() => router.push(`/(driver)/orders/${order.id}`)}
+                      onPress={() => router.push(`/(driver)/delivery/${order.id}`)}
                     />
                   </View>
                 </View>

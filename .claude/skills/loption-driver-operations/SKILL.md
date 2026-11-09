@@ -14,7 +14,7 @@ description: L'OPTION driver side — driver approval and availability, assignme
 - Steps: ready → picked_up → on_the_way → delivered via `order_driver_update` (assigned driver only; identity re-checked
   under the row lock). Location only between pickup and delivery (`driver_report_location`, append-only history,
   admin read). All **local only** (`20261105120000_v1_order_workflow.sql`).
-- Screens: `app/(driver)/index.tsx`, `app/(driver)/orders/[id].tsx` (uses `driverUpdate`, shows `orders.total` as cash
+- Screens: `app/(driver)/index.tsx`, `app/(driver)/delivery/[id].tsx` (uses `driverUpdate`, shows `orders.total` as cash
   to collect and the verified `orders.delivery_phone`), `history.tsx`, `earnings.tsx`, `profile.tsx`. Earnings use the
   legacy 15 % `driver_commission` (not decided, #11). Stray files `app/(driver)/extractor.py`, `output.txt` come from the
   initial commit.

@@ -14,6 +14,8 @@ export default function DriverLayout() {
 function DriverTabs() {
   return (
     <Tabs
+      // Back from an order returns to the dashboard or history it was opened from.
+      backBehavior="history"
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
@@ -68,8 +70,10 @@ function DriverTabs() {
         }}
       />
 
-      {/* Hidden Driver Screens */}
-      <Tabs.Screen name="orders/[id]" options={{ href: null }} />
+      {/* Order screen without a tab button. Not `href: null`: in this Expo
+          Router version that marks the route hidden, and hidden routes
+          redirect (to the first tab) instead of rendering. */}
+      <Tabs.Screen name="delivery/[id]" options={{ title: 'Delivery', tabBarItemStyle: { display: 'none' } }} />
     </Tabs>
   );
 }

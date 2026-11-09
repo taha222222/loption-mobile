@@ -3,7 +3,12 @@
 Update this file incrementally when the state changes. Last verified: 2026-11-03 (production hardening: Android release build, all harnesses, hosted read-only checks).
 
 ## Current branch
-- **Latest: `claude/v1-kitchen-orders`** = `claude/v1-cashier-orders` + Milestone 3, the kitchen order workflow
+- **Latest: `claude/v1-workflow-demo`** = `claude/v1-kitchen-orders` + a hands-on local demo of the whole order
+  workflow (`supabase/tests/e2e/run_workflow_demo.sh`, guide `TESTING_THE_ORDER_WORKFLOW.md`) and a scripted five-role
+  walkthrough (`demo_walkthrough.js`), plus fixes for 3 pre-existing bugs it found: admin Orders list empty (duplicate
+  `orders.driver_id` foreign keys on hosted made the driver embed fail), driver order screen unreachable on the web
+  (route clash + `href: null`; now `(driver)/delivery/[id]`), raw status codes in the customer order list. Evidence E-41.
+- Previous: `claude/v1-kitchen-orders` = `claude/v1-cashier-orders` + Milestone 3, the kitchen order workflow
   (local, **no migration**): `app/kitchen/` board « À préparer / En préparation / Prêtes » with lines, choices and
   notes; « Commencer la préparation » / « Commande prête » through `order_kitchen_update`; kitchen routing from
   `staff_roles`; reads without phone, address or amounts. No kitchen accept/reject (#54), capacity (#57) or

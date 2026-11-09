@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { ORDER_DRIVER_EMBED } from '../orders/orderQueries';
 import { supabase } from '../lib/supabase';
 
 export interface AdminStats {
@@ -172,10 +173,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     try {
       const { data } = await supabase
         .from('orders')
-        .select(`
-          *,
-          drivers:driver_id (first_name, last_name)
-        `)
+        .select(`*, ${ORDER_DRIVER_EMBED}`)
         .order('created_at', { ascending: false })
         .limit(100);
       

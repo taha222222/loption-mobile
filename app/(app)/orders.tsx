@@ -12,6 +12,7 @@ import { router } from 'expo-router';
 import { theme } from '../../src/theme';
 import { supabase } from '../../src/lib/supabase';
 import { useAuthStore } from '../../src/stores/authStore';
+import { customerStatusLabel } from '../../src/orders/orderWorkflow';
 import { EmptyState, IconBadge, Screen, ScreenHeader, StatusBadge, SurfaceCard, formatPrice } from '../../src/components/v2';
 
 interface Order {
@@ -50,10 +51,15 @@ export default function OrdersScreen() {
         return theme.colors.pending;
       case 'preparing':
         return theme.colors.preparing;
+      case 'ready':
+        return theme.colors.preparing;
+      case 'picked_up':
       case 'on_the_way':
         return theme.colors.onTheWay;
       case 'delivered':
         return theme.colors.delivered;
+      case 'cancelled':
+        return theme.colors.cancelled;
       default:
         return theme.colors.textLight;
     }
@@ -65,29 +71,21 @@ export default function OrdersScreen() {
         return 'checkmark-circle';
       case 'preparing':
         return 'restaurant';
+      case 'ready':
+        return 'bag-check';
+      case 'picked_up':
       case 'on_the_way':
         return 'bicycle';
       case 'delivered':
         return 'home';
+      case 'cancelled':
+        return 'close-circle';
       default:
         return 'time';
     }
   };
 
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'confirmed':
-        return 'Confirmée';
-      case 'preparing':
-        return 'En préparation';
-      case 'on_the_way':
-        return 'En route';
-      case 'delivered':
-        return 'Livrée';
-      default:
-        return status.replace('_', ' ');
-    }
-  };
+  const getStatusLabel = (status: string) => customerStatusLabel(status);
 
   if (loading) {
     return (

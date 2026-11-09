@@ -65,6 +65,14 @@ export function nextPayments(payment: string | null | undefined, orderStatus: st
 }
 
 // Customer-facing labels (French, like the other customer screens).
+// Every status a customer can see in French: the lifecycle statuses, and the
+// statuses of historical (counter/kiosk) orders. Never a raw status code.
+const HISTORICAL_STATUS_LABEL_FR: Record<string, string> = { new: 'Reçue', served: 'Servie', paid: 'Payée' };
+export function customerStatusLabel(status: string): string {
+  if (isOrderStatus(status)) return ORDER_STATUS_LABEL_FR[status];
+  return HISTORICAL_STATUS_LABEL_FR[status] ?? 'Commande';
+}
+
 export const ORDER_STATUS_LABEL_FR: Record<OrderStatus, string> = {
   pending: 'En attente de confirmation',
   confirmed: 'Confirmée',
