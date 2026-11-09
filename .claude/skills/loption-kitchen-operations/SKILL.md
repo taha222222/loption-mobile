@@ -9,9 +9,10 @@ description: L'OPTION kitchen side of the order lifecycle — kitchen order queu
 - Kitchen staff role exists (`staff_roles.role = 'kitchen_staff'`, scoped to one kitchen). Allowed steps:
   confirmed → preparing → ready via `order_kitchen_update` (**local only**, `20261105120000_v1_order_workflow.sql`).
   Kitchen staff read the workflow orders of their kitchen (policy `orders_kitchen_staff_read`).
-- Client call exists: `kitchenUpdate()` in `src/services/orderWorkflowApi.ts`. **No kitchen screen exists** (app groups:
-  `app/(app)`, `app/(driver)`, `app/(admin)`, `app/(collaborator)`). Admins cannot perform kitchen steps, so orders
-  stop at `confirmed` today (gap G1).
+- Kitchen board `app/kitchen/` (Milestone 3, local): « À préparer / En préparation / Prêtes », lines with choices and
+  notes, « Commencer la préparation » / « Commande prête » via `kitchenUpdate()`; reads in `src/services/kitchenApi.ts`
+  (no phone, address or amounts), rules in `src/kitchen/kitchenOrders.ts`; routing from `staff_roles`. Admins still
+  cannot perform kitchen steps (server rule, unchanged).
 - Not decided / not built: kitchen acceptance or rejection (G2), capacity, opening hours, pausing a kitchen (G7),
   reduced kitchen view without address/phone (#31). Only `kitchens.is_active` exists.
 
@@ -32,6 +33,7 @@ Building the kitchen queue or screens, changing kitchen permissions, handling "t
 4. Loading, empty, error states; large touch targets (kitchen tablet/phone); French copy.
 
 ## Required tests
+`supabase/tests/run_v1_kitchen_orders.sh`, `__tests__/kitchenOrders.test.ts`, `__tests__/kitchenScreen.test.tsx`, e2e kitchen steps.
 SQL: kitchen staff of kitchen A can move A's orders confirmed→preparing→ready, not B's, not other steps
 (`run_v1_order_workflow.sh` already covers the server side). Jest: the queue shows only the kitchen's orders and only
 the allowed button per status; refusal messages shown. e2e once the screen exists.

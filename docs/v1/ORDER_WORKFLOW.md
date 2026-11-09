@@ -63,6 +63,21 @@ the customer; the audit row of a cancellation carries the reason. Harness: `supa
 - Tests: `supabase/tests/run_v1_cashier_orders.sh` (19 SQL tests with the app's own column lists, 4 races),
   `__tests__/cashierOrders.test.ts`, `__tests__/cashierScreens.test.tsx`, the cashier part of the e2e journey.
 
+## Kitchen board (`app/kitchen/`, Milestone 3; no migration)
+- Who: an active `staff_roles` row `kitchen_staff` (routing in `src/stores/authStore.ts`). Admins and cashiers stay on
+  their own screens: the server refuses kitchen steps from them (`order_staff_can`).
+- Reads (`src/services/kitchenApi.ts`): confirmed, preparing and ready workflow orders (number, status, times,
+  whether a driver is assigned) and their lines (meal, quantity, choices, note). No phone, address, amount, payment or
+  account column is requested (the row policy still allows them: #31/#62).
+- Actions: « Commencer la préparation » (confirmed → preparing) and « Commande prête » (preparing → ready) through
+  `kitchenUpdate` (`order_kitchen_update`); one button per order from the shared transition table. Ready orders show
+  « En attente du livreur ». No confirm, cancel, assignment or payment from the kitchen. Double taps send one request;
+  `unchanged`, refusals and cancellations by the cashier are explained and the board reloads.
+- Updates: Realtime (shared helper `src/services/orderRealtime.ts`), refetch after each action, on focus and on
+  « Actualiser » / pull-to-refresh.
+- Tests: `supabase/tests/run_v1_kitchen_orders.sh` (17 SQL tests with the app's own column lists, 4 races),
+  `__tests__/kitchenOrders.test.ts`, `__tests__/kitchenScreen.test.tsx`, kitchen part of the e2e journey.
+
 ## What the database refuses whatever the client does
 
 - A direct `UPDATE`/`INSERT` of a workflow order's state, driver, kitchen, payment or content — by a customer, staff,
@@ -136,8 +151,8 @@ select '<city_key>', '<City name>', id from public.kitchens where code = '<kitch
 - Approved taxes (DECISIONS #38–#40), Kitchen A's pricing row and routing key (#41, #42), and the migrations applied to
   `loption-mobile` (#34, #36, #37); then `CHECKOUT_OPEN`.
 - Limits inside Casablanca (districts or distance from Kitchen A) are not decided (DECISIONS #7); the zone is the city.
-- Kitchen screens: none yet (cashier screens exist since Milestone 2; driver assignment and payment records are still
-  on the admin orders screen).
+- Driver assignment and payment records are only on the admin orders screen (cashier and kitchen screens exist since
+  Milestones 2 and 3).
 - Order notifications (cashier on new order, kitchen on confirmation, driver on ready, customer on pickup/delivery)
   (DECISIONS #32).
 - Applying the migration to `loption-mobile` (owner authorization; DECISIONS #34).

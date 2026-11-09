@@ -31,8 +31,9 @@ statuses and the same server functions. This skill owns that contract; the role 
 - Do not add statuses, skip steps or let an interface write `orders` directly; propose changes to the owner first.
 - A new step (e.g. failed delivery, kitchen rejection) is a business decision (`loption-business-logic`), then one
   change of `order_transitions()` + the app mirror + tests, used by every interface.
-- Role screens: cashier `app/cashier/` (confirm, cancel); driver `app/(driver)`; admin `app/(admin)/orders.tsx`.
-- Known gaps to respect, not to paper over: G1 (no kitchen screens; admin cannot do kitchen steps), G2
+- Role screens: cashier `app/cashier/` (confirm, cancel); kitchen `app/kitchen/` (preparing, ready); driver `app/(driver)`;
+  admin `app/(admin)/orders.tsx` (assignment, payment).
+- Known gaps to respect, not to paper over: G1 (assignment only on the admin screen; admin cannot do kitchen steps), G2
   (kitchen rejection undefined), G3 (failed delivery undefined), G5 (one active delivery per driver undefined), G6
   (notifications later). See the gap table in `order-lifecycle.md`.
 

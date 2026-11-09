@@ -3,7 +3,12 @@
 Update this file incrementally when the state changes. Last verified: 2026-11-03 (production hardening: Android release build, all harnesses, hosted read-only checks).
 
 ## Current branch
-- **Latest: `claude/v1-cashier-orders`** = `claude/v1-order-lifecycle-foundation` + Milestone 2, the cashier order
+- **Latest: `claude/v1-kitchen-orders`** = `claude/v1-cashier-orders` + Milestone 3, the kitchen order workflow
+  (local, **no migration**): `app/kitchen/` board « À préparer / En préparation / Prêtes » with lines, choices and
+  notes; « Commencer la préparation » / « Commande prête » through `order_kitchen_update`; kitchen routing from
+  `staff_roles`; reads without phone, address or amounts. No kitchen accept/reject (#54), capacity (#57) or
+  assignment by the kitchen. New harness `run_v1_kitchen_orders.sh`. Evidence E-40.
+- Previous: `claude/v1-cashier-orders` = `claude/v1-order-lifecycle-foundation` + Milestone 2, the cashier order
   workflow (local, **no migration**): `app/cashier/` (queue « À confirmer / En cours / Terminées », order with lines,
   choices, note, verified phone, address, server amounts and COD state, history; confirm and cancel with a mandatory
   reason through `order_confirm` / `order_cancel`), cashier routing from `staff_roles` (`user_profiles.role` not

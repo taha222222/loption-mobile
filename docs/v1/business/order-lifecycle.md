@@ -52,7 +52,7 @@ driver pickup → on the way → delivered → cashier records payment (paid / f
 
 | # | Gap | Status |
 |---|---|---|
-| G1 | Cashier screens exist (`app/cashier/`: pending queue, confirm, cancel with reason; Milestone 2, local). No kitchen screen yet, and admins **cannot** perform kitchen steps (`order_staff_can`), so with today's screens an order stops at `confirmed`. Driver assignment is still on the admin orders screen only. | IMPLEMENTED gap (kitchen) |
+| G1 | Cashier screens (`app/cashier/`, Milestone 2) and the kitchen board (`app/kitchen/`, Milestone 3: start preparing, mark ready) exist, local. Admins still **cannot** perform kitchen steps (`order_staff_can`; unchanged). Driver assignment is only on the admin orders screen, so a ready order needs an admin to assign a driver. | Partly closed (screens); assignment UI for cashiers pending |
 | G2 | Kitchen "accept / reject": the lifecycle has no kitchen acceptance or rejection; only the cashier confirms or cancels. | UNKNOWN — owner decision needed (#54) |
 | G3 | Failed delivery (customer absent, refused, unreachable): no status; cancellation is impossible after pickup; `payment_status = failed` exists only once `delivered`. | UNKNOWN — owner decision needed (#55) |
 | G4 | Driver claiming vs assignment: drivers do not claim orders; cashier/admin assigns (CONFIRMED). Any "claim" feature contradicts the owner decision. | CONFIRMED assignment |

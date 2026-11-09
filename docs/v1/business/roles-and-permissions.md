@@ -29,7 +29,9 @@ claims, `user_profiles.role/is_admin` or client state. Roles are granted/revoked
 | Detach the customer from an order | via account deletion only | ✘ | ✘ | ✘ | ✘ (`20261110…`) | ✘ |
 
 Screens (local): cashier → `app/cashier/` (queue, confirm, cancel with reason; Milestone 2); admin → `app/(admin)` and
-the cashier queue; driver → `app/(driver)`; kitchen staff and support → no screens (customer app). The cashier sees the
+the cashier queue; driver → `app/(driver)`; kitchen staff → `app/kitchen/` (board, preparing/ready; Milestone 3);
+support → no screen (customer app). The kitchen board requests no phone, address or amount (the row policy still
+allows them, #31/#62). The cashier sees the
 order's verified phone and delivery address, not the customer's name or account (#61).
 
 Confirmed by owner (2026-11-05): cashier confirms; cashier/admin assigns drivers; customer cancels while pending;

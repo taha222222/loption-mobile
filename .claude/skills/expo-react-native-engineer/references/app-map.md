@@ -10,7 +10,7 @@
 | `(admin)` | admin (acts as cashier) | `index`, `orders`, `drivers`, `meals`, `earnings`, `collaborators` |
 | `(collaborator)` | retired partner model (rows kept) | `index`, `orders`, `earnings`, `profile` |
 | `cashier` | cashier (`staff_roles`), admin | `index` (queue: à confirmer / en cours / terminées), `[id]` (order, confirm, cancel with reason) |
-| — | kitchen staff | **no screens** |
+| `kitchen` | kitchen staff (`staff_roles`) | `index` (board: à préparer / en préparation / prêtes; preparing, ready) |
 
 Layout: `app/(app)/_layout.tsx` (pill tab bar from `src/navigation/customerTabs.ts`; hidden on `meal/[id]`, `cart`,
 `checkout`, `delivery-address`). Route gates: `src/navigation/routeDecision.ts`, `useRouteDecision.ts`,
@@ -23,12 +23,12 @@ Layout: `app/(app)/_layout.tsx` (pill tab bar from `src/navigation/customerTabs.
 `driverEarningsStore`, `collaboratorStore`, `subscriptionStore`; `sessionReset.ts` clears all on sign-out.
 
 ## Services (`src/services/`)
-`checkoutApi` (create_order, checkout_preview, quote, pricing), `cashierApi` (cashier reads, realtime), `menuApi` (meal, choices, popularity), `phoneApi`
+`checkoutApi` (create_order, checkout_preview, quote, pricing), `cashierApi` (cashier reads), `kitchenApi` (kitchen board reads), `orderRealtime` (shared Realtime), `menuApi` (meal, choices, popularity), `phoneApi`
 (WhatsApp code), `orderWorkflowApi` (workflow functions), `accountApi`, `authFlows`, `authProviders`, `nutritionApi`,
 `activityApi`, `workoutApi`, `locationService`, `notificationService`, `permissions`.
 
 ## Pure logic
-`src/checkout/` (availability, summary, order payload), `src/cashier/` (cashier actions and wording), `src/orders/` (workflow mirror, amounts), `src/menu/customization.ts`,
+`src/checkout/` (availability, summary, order payload), `src/cashier/` (cashier actions and wording), `src/kitchen/` (kitchen steps, board order, wording), `src/orders/` (workflow mirror, amounts), `src/menu/customization.ts`,
 `src/delivery/cities.ts`, `src/phone/moroccanPhone.ts`, `src/nutrition/`, `src/activity/`.
 
 ## Components
