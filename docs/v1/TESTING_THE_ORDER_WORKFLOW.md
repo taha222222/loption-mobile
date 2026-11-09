@@ -34,7 +34,8 @@ More orders: Supabase dashboard → SQL editor of loption-workflow-test → `sel
 How it was built (test project only): the reviewed migrations, downloaded from GitHub at a pinned commit with their
 checksums verified, plus one adjustment — new Supabase projects give `supabase_realtime_admin` membership in `anon`,
 `authenticated` and `service_role`, which the Phase 1C monitor rejects as drift, so the monitor copy in this project also
-allows those three memberships (DECISIONS #63). `containment_violations()` = 0 there.
+allows those three memberships. This exception exists **only** in the test project: the owner decided (#63, 2026-11-09)
+that the reviewed monitor keeps refusing them. `containment_violations()` = 0 there.
 
 ## 1. Start the demo (click through it yourself)
 ```bash

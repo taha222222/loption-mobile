@@ -6,7 +6,8 @@ Update this file incrementally when the state changes. Last verified: 2026-11-03
 - **Latest: `claude/v1-workflow-test-project`** = `claude/v1-workflow-demo` + docs for the hosted **test** project
   `loption-workflow-test` (`bpkjuaoxhvnrlyvrqpae`): full V1 schema, demo accounts and orders, testable from Windows
   without Docker (`TESTING_THE_ORDER_WORKFLOW.md` §0). Found: new Supabase projects add `supabase_realtime_admin`
-  memberships that the Phase 1C monitor rejects (DECISIONS #63). Live project untouched. Evidence E-42.
+  memberships that the Phase 1C monitor rejects; owner decision #63 (2026-11-09): **keep refusing them** (no monitor change;
+  the test project keeps a documented test-only exception). Live project untouched. Evidence E-42.
 - Previous: `claude/v1-workflow-demo` = `claude/v1-kitchen-orders` + a hands-on local demo of the whole order
   workflow (`supabase/tests/e2e/run_workflow_demo.sh`, guide `TESTING_THE_ORDER_WORKFLOW.md`) and a scripted five-role
   walkthrough (`demo_walkthrough.js`), plus fixes for 3 pre-existing bugs it found: admin Orders list empty (duplicate
