@@ -590,6 +590,74 @@ let sink = null; // SMTP sink process, always stopped on exit
   await waitForText(page3, 'E2E-C2', 15000);
   pass('the cancelled order is listed under « Terminées »');
 
+  // ------------------------------------------------ kitchen order workflow
+  // E2E-C1 was confirmed by the cashier above, E2E-C2 cancelled, E2E-C3 is pending.
+  const kitchenEmail = `cuisine+${stamp}@loption.test`;
+  const createdK = await fetch(REST.replace('/rest/v1', '/auth/v1') + '/admin/users', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${SERVICE_JWT}`, apikey: SERVICE_JWT, 'content-type': 'application/json' },
+    body: JSON.stringify({ email: kitchenEmail, password, email_confirm: true }),
+  });
+  const kitchenId = (await createdK.json()).id;
+  check(createdK.status < 300 && !!kitchenId, `kitchen staff account created in Auth (${createdK.status})`);
+  sql(`insert into public.staff_roles (user_id, role, kitchen_id) values ('${kitchenId}', 'kitchen_staff', '${kitchenA}')`);
+
+  await page2.goto(WEB + '/kitchen');
+  await page2.waitForTimeout(2500);
+  check(!new URL(page2.url()).pathname.startsWith('/kitchen'), `customer opening /kitchen is sent back to the customer app (${new URL(page2.url()).pathname})`);
+  await page3.goto(WEB + '/kitchen');
+  await page3.waitForTimeout(2500);
+  check(new URL(page3.url()).pathname === '/cashier', `cashier opening /kitchen is sent back to the cashier queue (${new URL(page3.url()).pathname})`);
+
+  const ctx4 = await browser.newContext({ viewport: { width: 390, height: 844 }, timezoneId: 'Africa/Casablanca' });
+  const page4 = await newPage(ctx4);
+  current = page4;
+  await page4.goto(WEB + '/login');
+  await page4.getByLabel('E-mail', { exact: true }).fill(kitchenEmail);
+  await page4.getByLabel('Mot de passe', { exact: true }).fill(password);
+  await page4.getByText('Se connecter', { exact: true }).click();
+  await waitForText(page4, 'E2E-C1', 20000);
+  const kvisible = (text) => page4.getByText(text, { exact: true }).filter({ visible: true }).count();
+  check(new URL(page4.url()).pathname === '/kitchen' && (await kvisible('À préparer (1)')) === 1,
+    `kitchen staff sign in and land on the board with the confirmed order (${new URL(page4.url()).pathname})`);
+  check((await kvisible('E2E-C2')) === 0 && (await kvisible('E2E-C3')) === 0, 'the board holds neither the cancelled nor the pending (unconfirmed) order');
+  check((await kvisible('2 × Test bowl')) === 1 && (await kvisible('Sauce : Harissa')) === 1 && (await kvisible('Note : sans oignon')) === 1,
+    'board: lines with choices and the customer note');
+  check((await page4.getByText(/\+212|Rue Test|MAD|Paiement/).count()) === 0, 'board: no phone, address, amount or payment shown to the kitchen');
+  await shot(page4, '26-kitchen-board');
+
+  await page4.getByRole('button', { name: 'Commencer la préparation' }).filter({ visible: true }).click();
+  await waitForText(page4, 'E2E-C1 : préparation commencée.', 15000);
+  check(sql(`select o.status || ':' || (o.preparing_at is not null) || ':' || o.payment_status || ':' ||
+               (select count(*) from public.security_audit_log a where a.details ->> 'order_id' = o.id::text and a.action = 'kitchen_preparing' and a.actor_id = '${kitchenId}')
+             from public.orders o where o.id = '${orderC1}'`) === 'preparing:true:pending:1',
+    'started through order_kitchen_update: preparing, server timestamp, payment untouched, audit row with the cook');
+  await page4.getByText('En préparation (1)', { exact: true }).filter({ visible: true }).click();
+  await page4.getByRole('button', { name: 'Commande prête' }).filter({ visible: true }).click();
+  await waitForText(page4, 'E2E-C1 est prête pour le livreur.', 15000);
+  check(sql(`select status || ':' || (ready_at is not null) || ':' || payment_status from public.orders where id = '${orderC1}'`) === 'ready:true:pending',
+    'marked ready through order_kitchen_update: ready, server timestamp, payment untouched');
+  await page4.getByText('Prêtes (1)', { exact: true }).filter({ visible: true }).click();
+  check((await kvisible('En attente du livreur (pas encore assigné par la caisse)')) === 1
+    && (await page4.getByRole('button', { name: /Commencer la préparation|Commande prête/ }).filter({ visible: true }).count()) === 0,
+    'ready orders wait for the driver; no further kitchen action');
+  await shot(page4, '27-kitchen-ready');
+
+  // The cashier confirms the pending order; the kitchen sees it after a refresh.
+  await page3.getByLabel(/^Commande E2E-C3,/).filter({ visible: true }).click();
+  await waitForText(page3, '2 × Test bowl', 20000);
+  await page3.getByRole('button', { name: 'Confirmer la commande' }).filter({ visible: true }).click();
+  await waitForText(page3, 'Commande confirmée. Le paiement reste à encaisser à la livraison.', 15000);
+  await page4.getByLabel('Actualiser').filter({ visible: true }).click();
+  await page4.getByText('À préparer (1)', { exact: true }).filter({ visible: true }).click();
+  await waitForText(page4, 'E2E-C3', 15000);
+  pass('an order confirmed by the cashier reaches the kitchen board');
+  // The cashier sees the kitchen's progress.
+  await page3.getByLabel('Retour à la liste').filter({ visible: true }).click();
+  await page3.getByText('En cours', { exact: true }).filter({ visible: true }).click();
+  await page3.getByLabel(/^Commande E2E-C1, Prête,/).filter({ visible: true }).waitFor({ timeout: 15000 });
+  pass('the cashier queue shows the order as « Prête » after the kitchen');
+
   check(pageErrors.length === 0, `no uncaught page errors${pageErrors.length ? ': ' + pageErrors.slice(0, 3).join(' | ') : ''}`);
   sink.kill();
   await browser.close();

@@ -114,21 +114,5 @@ export async function fetchCashierOrder(orderId: string): Promise<ReadResult<Cas
   }
 }
 
-// Realtime (best effort): any visible change of orders or of the timeline
-// triggers a refetch. Rows are filtered by the same RLS policies. Screens also
-// refetch after every action and on pull-to-refresh, so a missing Realtime
-// service only delays updates.
-export function subscribeCashierOrders(channelName: string, onChange: () => void): () => void {
-  try {
-    const channel = supabase
-      .channel(channelName)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => onChange())
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_status_updates' }, () => onChange())
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  } catch {
-    return () => {};
-  }
-}
+// Realtime: shared with the kitchen screens (src/services/orderRealtime.ts).
+export { subscribeOrderChanges as subscribeCashierOrders } from './orderRealtime';

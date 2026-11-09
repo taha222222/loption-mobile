@@ -43,6 +43,8 @@ const ROLE_HOME: Record<Exclude<UserRole, 'customer'>, { group: string; href: st
   driver: { group: '(driver)', href: '/(driver)' },
   collaborator: { group: '(collaborator)', href: '/(collaborator)' },
   cashier: { group: 'cashier', href: '/cashier' },
+  // Kitchen staff only: admins cannot perform kitchen steps (order_staff_can).
+  kitchen_staff: { group: 'kitchen', href: '/kitchen' },
 };
 
 // Groups a role may open besides its home: an admin also acts as cashier

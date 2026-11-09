@@ -9,7 +9,7 @@ import { useActivityStore } from './activityStore';
 import { useWorkoutStore } from './workoutStore';
 import { isMissingServerFeature } from '../lib/serverFeatures';
 
-export type UserRole = 'customer' | 'driver' | 'collaborator' | 'admin' | 'cashier';
+export type UserRole = 'customer' | 'driver' | 'collaborator' | 'admin' | 'cashier' | 'kitchen_staff';
 export type RoleStatus = 'idle' | 'loading' | 'resolved' | 'error';
 
 const KNOWN_ROLES: readonly UserRole[] = ['customer', 'driver', 'collaborator', 'admin'];
@@ -50,9 +50,9 @@ async function lookupRole(userId: string): Promise<UserRole> {
 
   if (profile && (profile.role === 'admin' || profile.is_admin === true)) return 'admin';
 
-  // Cashier: an active row in public.staff_roles (staff_roles_self_read lets
-  // a user read their own row). Kitchen scope and every action are checked
-  // again by the server; this only picks the cashier screens.
+  // Cashier and kitchen staff: an active row in public.staff_roles
+  // (staff_roles_self_read lets a user read their own row). Kitchen scope and
+  // every action are checked again by the server; this only picks the screens.
   const { data: staffRole, error: staffError } = await supabase
     .from('staff_roles')
     .select('role')
@@ -61,6 +61,7 @@ async function lookupRole(userId: string): Promise<UserRole> {
     .maybeSingle();
   if (staffError && !isMissingServerFeature(staffError)) throw staffError;
   if (staffRole?.role === 'cashier') return 'cashier';
+  if (staffRole?.role === 'kitchen_staff') return 'kitchen_staff';
 
   if (profile && KNOWN_ROLES.includes(profile.role)) return profile.role as UserRole;
 

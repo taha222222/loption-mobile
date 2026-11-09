@@ -60,6 +60,7 @@ describe('decideRoute', () => {
     ['driver', '(driver)', '/(driver)'],
     ['collaborator', '(collaborator)', '/(collaborator)'],
     ['cashier', 'cashier', '/cashier'],
+    ['kitchen_staff', 'kitchen', '/kitchen'],
   ] as const)('keeps %s inside its own group', (role, group, href) => {
     expect(decideRoute({ ...base, role, group })).toEqual({ kind: 'allow' });
     expect(decideRoute({ ...base, role, group: '(app)' })).toEqual({ kind: 'redirect', href });
@@ -77,8 +78,17 @@ describe('decideRoute', () => {
     expect(decideRoute({ ...base, role: 'admin', group: undefined })).toEqual({ kind: 'redirect', href: '/(admin)' });
   });
 
+  it('opens the kitchen board to kitchen staff only (admins cannot do kitchen steps)', () => {
+    expect(decideRoute({ ...base, role: 'kitchen_staff', group: 'kitchen' })).toEqual({ kind: 'allow' });
+    expect(decideRoute({ ...base, role: 'kitchen_staff', group: 'cashier' })).toEqual({ kind: 'redirect', href: '/kitchen' });
+    expect(decideRoute({ ...base, role: 'kitchen_staff', group: '(admin)' })).toEqual({ kind: 'redirect', href: '/kitchen' });
+    expect(decideRoute({ ...base, role: 'admin', group: 'kitchen' })).toEqual({ kind: 'redirect', href: '/(admin)' });
+    expect(decideRoute({ ...base, role: 'cashier', group: 'kitchen' })).toEqual({ kind: 'redirect', href: '/cashier' });
+    expect(decideRoute({ ...base, role: 'driver', group: 'kitchen' })).toEqual({ kind: 'redirect', href: '/(driver)' });
+  });
+
   it('keeps customers out of staff groups', () => {
-    for (const group of ['(admin)', '(driver)', '(collaborator)', 'cashier']) {
+    for (const group of ['(admin)', '(driver)', '(collaborator)', 'cashier', 'kitchen']) {
       expect(decideRoute({ ...base, group })).toEqual({ kind: 'redirect', href: '/(app)' });
     }
   });

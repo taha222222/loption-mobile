@@ -123,9 +123,21 @@ describe('cashier role (public.staff_roles)', () => {
     expect(useAuthStore.getState().role).toBe('customer');
   });
 
-  it('keeps other staff roles on their previous screens (no kitchen screens yet)', async () => {
+  it('gives the kitchen role from an active kitchen_staff row', async () => {
     mockState.rows.staff_roles = () => ({ data: { role: 'kitchen_staff' }, error: null });
     await useAuthStore.getState().signIn('k@x.ma', 'pw');
+    expect(useAuthStore.getState()).toMatchObject({ role: 'kitchen_staff', roleStatus: 'resolved' });
+  });
+
+  it('never trusts user_profiles.role = kitchen_staff without a staff role', async () => {
+    mockState.rows.user_profiles = () => ({ data: { role: 'kitchen_staff', is_admin: false }, error: null });
+    await useAuthStore.getState().signIn('k@x.ma', 'pw');
+    expect(useAuthStore.getState().role).toBe('customer');
+  });
+
+  it('keeps support on the previous screens (no support screen)', async () => {
+    mockState.rows.staff_roles = () => ({ data: { role: 'support' }, error: null });
+    await useAuthStore.getState().signIn('s@x.ma', 'pw');
     expect(useAuthStore.getState().role).toBe('customer');
   });
 
