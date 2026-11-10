@@ -31,6 +31,9 @@ npx expo start --web --clear
 Open the address it prints (usually http://localhost:8081) and use the accounts below. Same password, same steps.
 Orders LO-DEMO-001 … 005 are pending for you; LO-DEMO-006 was already taken through the whole lifecycle as a check.
 More orders: Supabase dashboard → SQL editor of loption-workflow-test → `select demo.new_order();`.
+Accounts missing or wrong password on a project: run `supabase/seed/demo_accounts.sql` in that project's SQL editor
+(creates or repairs the 5 accounts with confirmed e-mail and their roles; adds 5 pending orders where the order
+workflow is installed). Not for the live project: see the warning at the top of the file.
 
 How it was built (test project only): the reviewed migrations, downloaded from GitHub at a pinned commit with their
 checksums verified, plus one adjustment — new Supabase projects give `supabase_realtime_admin` membership in `anon`,
