@@ -78,3 +78,11 @@ describe('Checkout lockdown', () => {
     expect(useCartStore.getState().items).toHaveLength(1); // the cart is kept
   });
 });
+
+describe('checkout switch (EXPO_PUBLIC_CHECKOUT_OPEN)', () => {
+  it('opens only for the exact value "true"; closed when unset or anything else', () => {
+    const { checkoutOpenFrom } = jest.requireActual('../src/checkout/checkoutAvailability');
+    expect(checkoutOpenFrom('true')).toBe(true);
+    for (const v of [undefined, '', 'false', 'TRUE', '1', 'yes', ' true']) expect(checkoutOpenFrom(v)).toBe(false);
+  });
+});

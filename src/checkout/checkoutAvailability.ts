@@ -6,8 +6,12 @@
 //     (checklist H1-H3).
 // Owner decision 2026-11-05: the Place Order button is disabled until then.
 // The app never writes orders or order lines itself (the database refuses it
-// too); opening checkout is a reviewed change of this constant.
-export const CHECKOUT_OPEN = false;
+// too). Closed unless the build sets EXPO_PUBLIC_CHECKOUT_OPEN=true exactly:
+// only test builds pointed at a test project with approved test pricing do
+// (owner, 2026-11-10). The server refuses orders anyway while pricing, taxes
+// or the road-distance quote are missing.
+export const checkoutOpenFrom = (value: string | undefined): boolean => value === 'true';
+export const CHECKOUT_OPEN = checkoutOpenFrom(process.env.EXPO_PUBLIC_CHECKOUT_OPEN);
 
 // Shown next to the disabled confirm button, to say why it is disabled.
 export const CHECKOUT_CLOSED_TITLE = 'La commande en ligne ouvre bientôt';
